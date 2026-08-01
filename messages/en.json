@@ -11,8 +11,8 @@
   "home": {
     "title": "Webtoon reader",
     "subtitle": "Read and create vertical-scroll webtoons.",
-    "editorLink": "Open the editor",
-    "readerLink": "Browse webtoons"
+    "editorLink": "Editor",
+    "readerLink": "Reader"
   },
   "reader": {
     "empty": "No published webtoons",

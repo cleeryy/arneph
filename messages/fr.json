@@ -11,8 +11,8 @@
   "home": {
     "title": "Lecteur de webtoon",
     "subtitle": "Lisez et créez des webtoons en défilement vertical.",
-    "editorLink": "Ouvrir l'éditeur",
-    "readerLink": "Parcourir les webtoons"
+    "editorLink": "Éditeur",
+    "readerLink": "Lecteur"
   },
   "reader": {
     "empty": "Aucun webtoon publié",
