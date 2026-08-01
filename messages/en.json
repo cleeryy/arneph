@@ -1,0 +1,31 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "back": "Back",
+    "loading": "Loading…"
+  },
+  "home": {
+    "title": "Webtoon reader",
+    "subtitle": "Read and create vertical-scroll webtoons.",
+    "editorLink": "Open the editor",
+    "readerLink": "Browse webtoons"
+  },
+  "reader": {
+    "empty": "No published webtoons",
+    "back": "Back to home",
+    "loading": "Loading webtoons…"
+  },
+  "editor": {
+    "newWebtoon": "New webtoon",
+    "delete": "Delete this webtoon",
+    "confirm": "This action cannot be undone. Continue?"
+  },
+  "errors": {
+    "notFound": "Page not found",
+    "generic": "Something went wrong. Please try again later."
+  }
+}

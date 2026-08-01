@@ -1,0 +1,31 @@
+{
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "add": "Ajouter",
+    "back": "Retour",
+    "loading": "Chargement…"
+  },
+  "home": {
+    "title": "Lecteur de webtoon",
+    "subtitle": "Lisez et créez des webtoons en défilement vertical.",
+    "editorLink": "Ouvrir l'éditeur",
+    "readerLink": "Parcourir les webtoons"
+  },
+  "reader": {
+    "empty": "Aucun webtoon publié",
+    "back": "Retour à l'accueil",
+    "loading": "Chargement des webtoons…"
+  },
+  "editor": {
+    "newWebtoon": "Nouveau webtoon",
+    "delete": "Supprimer ce webtoon",
+    "confirm": "Cette action est irréversible. Continuer ?"
+  },
+  "errors": {
+    "notFound": "Page introuvable",
+    "generic": "Une erreur est survenue. Réessayez plus tard."
+  }
+}
