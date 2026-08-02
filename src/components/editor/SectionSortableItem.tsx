@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useTranslations } from "next-intl";
 import type { SectionWithImages } from "@/lib/db/queries";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -15,6 +16,7 @@ export function SectionSortableItem({
   section,
   children,
 }: SectionSortableItemProps) {
+  const t = useTranslations("editor");
   const {
     attributes,
     listeners,
@@ -45,7 +47,7 @@ export function SectionSortableItem({
         onClick={(e) => e.stopPropagation()}
         className="absolute left-2 top-2 z-10 cursor-grab rounded bg-muted/80 p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
         role="button"
-        aria-label="Glisser pour réorganiser"
+        aria-label={t("dragHandle")}
       >
         <GripVertical className="size-4" />
       </div>

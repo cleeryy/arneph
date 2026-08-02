@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import { panXFromProgress, frameIndexFromProgress, spritePositionFromFrame } from "@/lib/scroll/transforms";
+import { useTranslations } from "next-intl";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { PanXSectionConfig, AnimationSectionConfig } from "@/types/webtoon";
 import { ImageSection } from "../reader/ImageSection";

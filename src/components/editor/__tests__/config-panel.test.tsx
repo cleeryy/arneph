@@ -147,7 +147,7 @@ describe("SectionConfigPanel — T25", () => {
     const trigger = screen.getByRole("combobox", { name: "Type de section" });
     await userEvent.click(trigger);
 
-    const panXOption = screen.getByRole("option", { name: "Panoramic" });
+    const panXOption = screen.getByRole("option", { name: "Panoramique" });
     await userEvent.click(panXOption);
 
     expect(onChange).toHaveBeenCalledWith(

@@ -30,12 +30,18 @@ interface SectionConfigPanelProps {
   onClose: () => void;
 }
 
-const SECTION_TYPE_LABELS: Record<SectionType, string> = {
-  image: "Image",
-  "long-y": "Long-scroll",
-  "pan-x": "Panoramic",
-  animation: "Animation",
-};
+function getSectionTypeLabel(t: ReturnType<typeof useTranslations>, type: SectionType): string {
+  switch (type) {
+    case "image":
+      return t("sectionTypeImage");
+    case "long-y":
+      return t("sectionTypeLongY");
+    case "pan-x":
+      return t("sectionTypePanX");
+    case "animation":
+      return t("sectionTypeAnimation");
+  }
+}
 
 const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/webm", "audio/ogg"];
 
@@ -80,6 +86,7 @@ export function SectionConfigPanel({
   onClose,
 }: SectionConfigPanelProps) {
   const t = useTranslations("editor");
+  const tSection = useTranslations("reader.section");
   const [error, setError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -103,7 +110,7 @@ export function SectionConfigPanel({
     setError(null);
 
     if (!isImageFile(file)) {
-      setError("Veuillez sélectionner un fichier image.");
+      setError(t("uploadImageError"));
       return;
     }
 
@@ -149,7 +156,7 @@ export function SectionConfigPanel({
       if (err instanceof ImageProcessingError) {
         setError(err.message);
       } else {
-        setError("Erreur lors du téléchargement de l'image.");
+        setError(t("uploadImageErrorGeneric"));
       }
     } finally {
       setUploading(false);
@@ -165,7 +172,7 @@ export function SectionConfigPanel({
     const fileArray = Array.from(files);
     const invalidFile = fileArray.find((f) => !isImageFile(f));
     if (invalidFile) {
-      setError("Tous les fichiers doivent être des images.");
+      setError(t("uploadAnimationError"));
       return;
     }
 
@@ -202,7 +209,7 @@ export function SectionConfigPanel({
       if (err instanceof ImageProcessingError) {
         setError(err.message);
       } else {
-        setError("Erreur lors de la création de la sprite sheet.");
+        setError(t("uploadAnimationErrorGeneric"));
       }
     } finally {
       setUploading(false);
@@ -216,7 +223,7 @@ export function SectionConfigPanel({
     setError(null);
 
     if (!isAudioFile(file)) {
-      setError("Veuillez sélectionner un fichier audio (MP3, WebM ou OGG).");
+      setError(t("uploadAudioError"));
       return;
     }
 
@@ -280,9 +287,9 @@ export function SectionConfigPanel({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {(Object.keys(SECTION_TYPE_LABELS) as SectionType[]).map((type) => (
+              {(["image", "long-y", "pan-x", "animation"] as SectionType[]).map((type) => (
                 <SelectItem key={type} value={type}>
-                  {SECTION_TYPE_LABELS[type]}
+                  {getSectionTypeLabel(t, type)}
                 </SelectItem>
               ))}
             </SelectContent>
