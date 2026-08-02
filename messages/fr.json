@@ -29,9 +29,26 @@
     }
   },
   "editor": {
+    "title": "Éditeur",
     "newWebtoon": "Nouveau webtoon",
     "delete": "Supprimer ce webtoon",
-    "confirm": "Cette action est irréversible. Continuer ?"
+    "confirm": "Cette action est irréversible. Continuer ?",
+    "backToHome": "Retour à l'accueil",
+    "backToEditor": "Retour à l'éditeur",
+    "save": "Enregistrer",
+    "readerLink": "Lecteur",
+    "empty": "Aucun webtoon",
+    "draft": "Brouillon",
+    "published": "Publié",
+    "edit": "Éditer",
+    "read": "Lire",
+    "sections": "Sections",
+    "noSections": "Aucune section — ajoutez-en une pour commencer.",
+    "canvasEmpty": "Aucune section à afficher",
+    "selected": "Sélectionnée",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "deleteSection": "Supprimer la section"
   },
   "errors": {
     "notFound": "Page introuvable",

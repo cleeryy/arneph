@@ -29,9 +29,26 @@
     }
   },
   "editor": {
+    "title": "Editor",
     "newWebtoon": "New webtoon",
     "delete": "Delete this webtoon",
-    "confirm": "This action cannot be undone. Continue?"
+    "confirm": "This action cannot be undone. Continue?",
+    "backToHome": "Back to home",
+    "backToEditor": "Back to editor",
+    "save": "Save",
+    "readerLink": "Reader",
+    "empty": "No webtoons",
+    "draft": "Draft",
+    "published": "Published",
+    "edit": "Edit",
+    "read": "Read",
+    "sections": "Sections",
+    "noSections": "No sections — add one to get started.",
+    "canvasEmpty": "No sections to display",
+    "selected": "Selected",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "deleteSection": "Delete section"
   },
   "errors": {
     "notFound": "Page not found",

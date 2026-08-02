@@ -167,6 +167,16 @@ export async function listPublishedWebtoons(): Promise<Webtoon[]> {
   return (data ?? []).map((row) => mapWebtoon(row as WebtoonRow));
 }
 
+/** Tous les webtoons (drafts inclus) — utilisé par l'éditeur. */
+export async function listWebtoons(): Promise<Webtoon[]> {
+  const { data, error } = await supabase
+    .from("webtoons")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) throwDbError("listWebtoons", error);
+  return (data ?? []).map((row) => mapWebtoon(row as WebtoonRow));
+}
+
 export async function getWebtoon(id: string): Promise<WebtoonWithSections | null> {
   const { data: webtoonRow, error: webtoonError } = await supabase
     .from("webtoons")
