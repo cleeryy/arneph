@@ -32,6 +32,17 @@ supabase start     # local stack (Postgres, Studio, Auth, Storage)
 
 Supabase CLI config lives in `supabase/`. Local generated files in `supabase/.temp/` are git-ignored.
 
+## Environment variables
+
+`.env.local` (git-ignored) must define `NEXT_PUBLIC_SUPABASE_URL`. Two possible values:
+
+| Context | Value |
+| --- | --- |
+| Local dev | `http://127.0.0.1:54321` (Supabase CLI stack) |
+| Production | `https://<project-ref>.supabase.co` (hosted project) |
+
+The `next/image` `remotePatterns` are derived from this value at startup — never hardcoded.
+
 ## Tooling
 
 - `npm run lint` — ESLint (flat config)
