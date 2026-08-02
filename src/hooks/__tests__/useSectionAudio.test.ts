@@ -42,6 +42,11 @@ describe("useSectionAudio — déverrouillage geste + une piste à la fois", () 
   })
 
   afterEach(() => {
+    // window jsdom partagé entre tests : consomme les listeners "once" laissés
+    // par les modules singleton précédents (sinon fuite vers le test suivant)
+    for (const gesture of ["pointerdown", "touchstart", "scroll", "keydown"]) {
+      window.dispatchEvent(new Event(gesture))
+    }
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
