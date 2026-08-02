@@ -49,7 +49,18 @@
     "moveUp": "Move up",
     "moveDown": "Move down",
     "deleteSection": "Delete section",
-    "dragHandle": "Drag to reorder"
+    "dragHandle": "Drag to reorder",
+    "configPanelTitle": "Section Configuration",
+    "closePanel": "Close panel",
+    "sectionType": "Section type",
+    "imageUpload": "Upload image",
+    "animationUpload": "Upload animation frames",
+    "audioUpload": "Upload audio",
+    "deleteAudio": "Delete audio",
+    "imageCount": "{count} image(s)",
+    "frameCount": "{count} frame(s)",
+    "preview": "Preview",
+    "uploading": "Uploading…"
   },
   "errors": {
     "notFound": "Page not found",
