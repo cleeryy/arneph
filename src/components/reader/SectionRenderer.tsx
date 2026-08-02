@@ -63,11 +63,11 @@ function SectionStub({ section }: { section: SectionWithImages }) {
         <p className="text-xs text-muted-foreground">{t("pending")}</p>
         {section.images.length > 0 ? (
           <p className="text-[11px] text-muted-foreground">
-            {section.images.length} image{section.images.length > 1 ? "s" : ""}
+            {t("sectionImageCount", { count: section.images.length })}
           </p>
         ) : null}
         <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
-          position {section.position}
+          {t("position", { position: section.position })}
         </p>
       </div>
     </div>

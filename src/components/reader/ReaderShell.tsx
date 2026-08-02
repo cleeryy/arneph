@@ -75,7 +75,7 @@ export default function ReaderShell({ data }: { data: ReaderPageData }) {
                 {data.webtoon.title}
               </h1>
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                {sections.length} section{sections.length > 1 ? "s" : ""}
+                {t("sectionCount", { count: sections.length })}
               </span>
             </div>
           </header>

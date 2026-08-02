@@ -20,8 +20,9 @@
     "back": "Retour à l'accueil",
     "loading": "Chargement des webtoons…",
     "backToTop": "Haut de page",
-    "sectionCount": "{count} section",
-    "sectionImageCount": "{count} image",
+    "sectionCount": "{count, plural, one{# section} other{# sections}}",
+    "sectionImageCount": "{count, plural, one{# image} other{# images}}",
+    "position": "position {position}",
     "section": {
       "image": "Section image",
       "longY": "Section défilement long",

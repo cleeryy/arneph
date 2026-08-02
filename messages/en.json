@@ -20,8 +20,9 @@
     "back": "Back to home",
     "loading": "Loading webtoons…",
     "backToTop": "Back to top",
-    "sectionCount": "{count} section",
-    "sectionImageCount": "{count} image",
+    "sectionCount": "{count, plural, one{# section} other{# sections}}",
+    "sectionImageCount": "{count, plural, one{# image} other{# images}}",
+    "position": "position {position}",
     "section": {
       "image": "Image section",
       "longY": "Long-scroll section",

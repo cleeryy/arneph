@@ -28,7 +28,7 @@ export function EditorCanvasClient({
 
   return (
     <EditorCanvas
-      sections={sections}
+      sections={sorted}
       onSectionsChange={handleSectionsChange}
     />
   );
