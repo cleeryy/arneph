@@ -4,6 +4,8 @@ import { useTranslations } from "next-intl";
 
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { SectionType } from "@/types/webtoon";
+import { ImageSection } from "./ImageSection";
+import { LongYSection } from "./LongYSection";
 
 /**
  * Dispatch par type de section — réutilisable par l'éditeur (T22+).
@@ -77,9 +79,9 @@ export function SectionRenderer({ section }: SectionRendererProps) {
   // matérialise le dispatch par type exigé par le plan.
   switch (section.type) {
     case "image":
-      return <SectionStub section={section} />;
+      return <ImageSection section={section} priority={section.position === 1} />;
     case "long-y":
-      return <SectionStub section={section} />;
+      return <LongYSection section={section} priority={section.position === 1} />;
     case "pan-x":
       return <SectionStub section={section} />;
     case "animation":
