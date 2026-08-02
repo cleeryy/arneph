@@ -18,7 +18,15 @@
     "title": "Library",
     "empty": "No published webtoons",
     "back": "Back to home",
-    "loading": "Loading webtoons…"
+    "loading": "Loading webtoons…",
+    "backToTop": "Back to top",
+    "section": {
+      "image": "Image section",
+      "longY": "Long-scroll section",
+      "panX": "Panoramic section",
+      "animation": "Animation section",
+      "pending": "Temporary render — final component under development (T16–T18)"
+    }
   },
   "editor": {
     "newWebtoon": "New webtoon",

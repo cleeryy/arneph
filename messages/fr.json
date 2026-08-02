@@ -18,7 +18,15 @@
     "title": "Bibliothèque",
     "empty": "Aucun webtoon publié",
     "back": "Retour à l'accueil",
-    "loading": "Chargement des webtoons…"
+    "loading": "Chargement des webtoons…",
+    "backToTop": "Haut de page",
+    "section": {
+      "image": "Section image",
+      "longY": "Section défilement long",
+      "panX": "Section panoramique",
+      "animation": "Section animation",
+      "pending": "Rendu temporaire — composant final en cours de développement (T16–T18)"
+    }
   },
   "editor": {
     "newWebtoon": "Nouveau webtoon",
