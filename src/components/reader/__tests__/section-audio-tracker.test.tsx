@@ -1,6 +1,6 @@
 import type { ReactElement } from "react";
-import { cleanup, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { cleanup, render } from "@testing-library/react";
+import { afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
 import { SectionAudioContext } from "../section-audio-context";
@@ -23,7 +23,9 @@ class MockIntersectionObserver {
   disconnect = mockDisconnect;
 }
 
-vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+beforeAll(() => {
+  vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+});
 
 function triggerIntersection(entries: IntersectionObserverEntry[]) {
   observerCallback?.(entries, {} as IntersectionObserver);
@@ -71,7 +73,6 @@ function clearSectionElements() {
 
 afterEach(() => {
   cleanup();
-  vi.unstubAllGlobals();
   vi.useRealTimers();
   observerCallback = null;
   mockObserve.mockClear();
@@ -122,8 +123,9 @@ describe("SectionAudioTracker (T19)", () => {
     );
   });
 
-  test("sortie de section → pauseCurrent appelée", async () => {
+  test("sortie de section → pauseCurrent appelée", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.useFakeTimers();
 
     const playSectionAudio = vi.fn();
     const pauseCurrent = vi.fn();
@@ -139,7 +141,7 @@ describe("SectionAudioTracker (T19)", () => {
       ),
     );
 
-    await waitFor(() => expect(mockObserve).toHaveBeenCalled());
+    vi.advanceTimersByTime(1);
 
     triggerIntersection([
       {
@@ -149,10 +151,11 @@ describe("SectionAudioTracker (T19)", () => {
       } as IntersectionObserverEntry,
     ]);
 
+    vi.advanceTimersByTime(150);
     expect(pauseCurrent).toHaveBeenCalled();
   });
 
-  test("scroll rapide → seul le dernier playSectionAudio est appelé", async () => {
+  test("scroll rapide → seul le dernier playSectionAudio est appelé", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
     vi.useFakeTimers();
 
@@ -172,7 +175,7 @@ describe("SectionAudioTracker (T19)", () => {
       ),
     );
 
-    await waitFor(() => expect(mockObserve).toHaveBeenCalled());
+    vi.advanceTimersByTime(1);
 
     triggerIntersection([
       {

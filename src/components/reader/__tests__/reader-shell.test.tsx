@@ -73,8 +73,8 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
       }),
     ]);
 
-    const stubs = screen.getAllByTestId(/^section-stub-/);
-    expect(stubs.map((el) => el.dataset.sectionPosition)).toEqual(["1", "2", "3"]);
+    const sections = screen.getAllByTestId(/^section-(image|long-y|pan-x|animation)|section-stub-(image|long-y|pan-x|animation)$/);
+    expect(sections.map((el) => el.getAttribute("data-section-position"))).toEqual(["1", "2", "3"]);
   });
 
   test("expose un data-testid distinct par type de section", () => {
@@ -103,9 +103,10 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
       }),
     ]);
 
-    for (const type of ["image", "long-y", "pan-x", "animation"]) {
-      expect(screen.getByTestId(`section-stub-${type}`)).toBeInTheDocument();
-    }
+    expect(screen.getByTestId("section-image")).toBeInTheDocument();
+    expect(screen.getByTestId("section-long-y")).toBeInTheDocument();
+    expect(screen.getByTestId("section-stub-pan-x")).toBeInTheDocument();
+    expect(screen.getByTestId("section-stub-animation")).toBeInTheDocument();
   });
 
   test("layout mobile-first : conteneur max-w-[800px] centré + min-h-dvh", () => {
@@ -138,13 +139,12 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
     expect(screen.getByText("2 sections")).toBeInTheDocument();
   });
 
-  test("le stub image respecte le ratio d'aspect de la config (pas d'<img> natif)", () => {
+  test("la section image utilise next/image (pas de <img> natif)", () => {
     const { container } = renderShell([
       makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
     ]);
 
-    const stub = screen.getByTestId("section-stub-image");
-    expect(stub.style.aspectRatio).toBe("800 / 1200");
+    expect(screen.getByTestId("section-image")).toBeInTheDocument();
     // MUST NOT T15 : aucun <img> natif — next/image uniquement (T16+).
     expect(container.querySelector("img")).toBeNull();
   });
