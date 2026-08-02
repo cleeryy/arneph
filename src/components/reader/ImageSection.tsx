@@ -49,6 +49,7 @@ export function SectionImage({
       height={image.height}
       sizes={webtoonSizes()}
       priority={priority}
+      fetchPriority={priority ? "high" : "low"}
       loading={priority ? "eager" : "lazy"}
       className="h-auto w-full"
       {...(blurDataURL ? { placeholder: "blur", blurDataURL } : undefined)}
