@@ -15,6 +15,7 @@
     "readerLink": "Reader"
   },
   "reader": {
+    "title": "Library",
     "empty": "No published webtoons",
     "back": "Back to home",
     "loading": "Loading webtoons…"
@@ -26,6 +27,7 @@
   },
   "errors": {
     "notFound": "Page not found",
-    "generic": "Something went wrong. Please try again later."
+    "generic": "Something went wrong. Please try again later.",
+    "retry": "Retry"
   }
 }

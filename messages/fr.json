@@ -15,6 +15,7 @@
     "readerLink": "Lecteur"
   },
   "reader": {
+    "title": "Bibliothèque",
     "empty": "Aucun webtoon publié",
     "back": "Retour à l'accueil",
     "loading": "Chargement des webtoons…"
@@ -26,6 +27,7 @@
   },
   "errors": {
     "notFound": "Page introuvable",
-    "generic": "Une erreur est survenue. Réessayez plus tard."
+    "generic": "Une erreur est survenue. Réessayez plus tard.",
+    "retry": "Réessayer"
   }
 }
