@@ -22,6 +22,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { SectionPreview } from "./SectionPreview";
 import { SectionSortableItem } from "./SectionSortableItem";
+import { EditorStateContext } from "./EditorStateContext";
 import type { SectionWithImages } from "@/lib/db/queries";
 
 interface EditorCanvasProps {
@@ -32,7 +33,9 @@ interface EditorCanvasProps {
 export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) {
   const t = useTranslations("editor");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
-  const [dirty, setDirty] = React.useState(false);
+  const editorState = React.useContext(EditorStateContext);
+  const isDirty = editorState?.isDirty ?? false;
+  const setIsDirty = editorState?.setIsDirty ?? (() => {});
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -59,10 +62,10 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
     (id: string) => {
       const next = sections.filter((s) => s.id !== id);
       onSectionsChange(next);
-      setDirty(true);
+      setIsDirty(true);
       setSelectedId((prev) => (prev === id ? null : prev));
     },
-    [sections, onSectionsChange],
+    [sections, onSectionsChange, setIsDirty],
   );
 
   const handleMoveUp = React.useCallback(
@@ -77,9 +80,9 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
         s.position = i + 1;
       });
       onSectionsChange(next);
-      setDirty(true);
+      setIsDirty(true);
     },
-    [sections, onSectionsChange],
+    [sections, onSectionsChange, setIsDirty],
   );
 
   const handleMoveDown = React.useCallback(
@@ -94,9 +97,9 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
         s.position = i + 1;
       });
       onSectionsChange(next);
-      setDirty(true);
+      setIsDirty(true);
     },
-    [sections, onSectionsChange],
+    [sections, onSectionsChange, setIsDirty],
   );
 
   const handleDragEnd = React.useCallback(
@@ -112,10 +115,10 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
           position: i + 1,
         }));
         onSectionsChange(next);
-        setDirty(true);
+        setIsDirty(true);
       }
     },
-    [sorted, sortedIds, onSectionsChange],
+    [sorted, sortedIds, onSectionsChange, setIsDirty],
   );
 
   if (sorted.length === 0) {

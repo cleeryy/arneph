@@ -60,7 +60,10 @@
     "imageCount": "{count} image(s)",
     "frameCount": "{count} frame(s)",
     "preview": "Preview",
-    "uploading": "Uploading…"
+    "uploading": "Uploading…",
+    "unsavedChanges": "Unsaved changes",
+    "publish": "Publish",
+    "unpublish": "Unpublish"
   },
   "errors": {
     "notFound": "Page not found",

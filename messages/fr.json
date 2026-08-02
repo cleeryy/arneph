@@ -60,7 +60,10 @@
     "imageCount": "{count} image(s)",
     "frameCount": "{count} frame(s)",
     "preview": "Aperçu",
-    "uploading": "Envoi en cours…"
+    "uploading": "Envoi en cours…",
+    "unsavedChanges": "Modifications non enregistrées",
+    "publish": "Publier",
+    "unpublish": "Dépublier"
   },
   "errors": {
     "notFound": "Page introuvable",

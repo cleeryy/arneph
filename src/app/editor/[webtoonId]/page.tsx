@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
 import { getWebtoon } from "@/lib/db/queries";
-import { SectionPreview } from "@/components/editor/SectionPreview";
+import { EditorCanvasClient } from "@/components/editor/EditorCanvasClient";
 
 export default async function EditorWebtoonPage({
   params,
@@ -21,7 +21,6 @@ export default async function EditorWebtoonPage({
   return (
     <main className="flex flex-1 flex-col bg-background">
       <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col lg:flex-row">
-        {/* Sidebar */}
         <aside className="w-full border-b border-border bg-muted/30 p-4 lg:w-72 lg:border-b-0 lg:border-r" data-testid="editor-sidebar">
           <h2 className="font-heading text-sm font-semibold tracking-tight text-foreground mb-3">
             {t("sections")}
@@ -47,22 +46,11 @@ export default async function EditorWebtoonPage({
           )}
         </aside>
 
-        {/* Canvas zone */}
         <section
           data-testid="editor-canvas"
           className="flex-1 overflow-y-auto p-6"
         >
-          {webtoon.sections.length === 0 ? (
-            <p className="text-center text-muted-foreground">
-              {t("canvasEmpty")}
-            </p>
-          ) : (
-            <div className="flex flex-col gap-6">
-              {webtoon.sections.map((section) => (
-                <SectionPreview key={section.id} section={section} />
-              ))}
-            </div>
-          )}
+          <EditorCanvasClient initialSections={webtoon.sections} />
         </section>
       </div>
     </main>
