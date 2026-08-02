@@ -48,7 +48,8 @@
     "selected": "Selected",
     "moveUp": "Move up",
     "moveDown": "Move down",
-    "deleteSection": "Delete section"
+    "deleteSection": "Delete section",
+    "dragHandle": "Drag to reorder"
   },
   "errors": {
     "notFound": "Page not found",

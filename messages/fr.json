@@ -48,7 +48,8 @@
     "selected": "Sélectionnée",
     "moveUp": "Monter",
     "moveDown": "Descendre",
-    "deleteSection": "Supprimer la section"
+    "deleteSection": "Supprimer la section",
+    "dragHandle": "Glisser pour réorganiser"
   },
   "errors": {
     "notFound": "Page introuvable",

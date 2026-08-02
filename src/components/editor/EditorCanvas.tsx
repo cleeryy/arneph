@@ -3,9 +3,25 @@
 import * as React from "react";
 import { useTranslations } from "next-intl";
 import { ArrowUp, ArrowDown, Trash2 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 
 import { Button } from "@/components/ui/button";
 import { SectionPreview } from "./SectionPreview";
+import { SectionSortableItem } from "./SectionSortableItem";
 import type { SectionWithImages } from "@/lib/db/queries";
 
 interface EditorCanvasProps {
@@ -18,9 +34,21 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [dirty, setDirty] = React.useState(false);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
   const sorted = React.useMemo(
     () => [...sections].sort((a, b) => a.position - b.position),
     [sections],
+  );
+
+  const sortedIds = React.useMemo(
+    () => sorted.map((s) => s.id),
+    [sorted],
   );
 
   const handleSelect = React.useCallback((id: string) => {
@@ -71,6 +99,25 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
     [sections, onSectionsChange],
   );
 
+  const handleDragEnd = React.useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (active.id !== over?.id) {
+        const oldIndex = sortedIds.indexOf(active.id as string);
+        const newIndex = sortedIds.indexOf(over?.id as string);
+        if (oldIndex < 0 || newIndex < 0) return;
+        const reordered = arrayMove(sorted, oldIndex, newIndex);
+        const next = reordered.map((s, i) => ({
+          ...s,
+          position: i + 1,
+        }));
+        onSectionsChange(next);
+        setDirty(true);
+      }
+    },
+    [sorted, sortedIds, onSectionsChange],
+  );
+
   if (sorted.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center text-muted-foreground">
@@ -80,82 +127,94 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
   }
 
   return (
-    <div data-testid="editor-canvas" className="flex flex-1 flex-col gap-4 p-4">
-      {sorted.map((section) => {
-        const isSelected = selectedId === section.id;
-        const isFirst = section.position === 1;
-        const isLast = section.position === sections.length;
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
+        <div data-testid="editor-canvas" className="flex flex-1 flex-col gap-4 p-4">
+          {sorted.map((section) => {
+            const isSelected = selectedId === section.id;
+            const isFirst = section.position === 1;
+            const isLast = section.position === sections.length;
 
-        return (
-            <div
-            key={section.id}
-            data-testid={`editor-section-${section.id}`}
-            data-section-id={section.id}
-            data-selected={isSelected ? "true" : undefined}
-            className={`relative rounded-lg border transition-colors ${
-              isSelected
-                ? "border-primary ring-2 ring-primary/20"
-                : "border-border hover:border-muted-foreground/30"
-            }`}
-            onClick={() => handleSelect(section.id)}
-          >
-            {isSelected && (
-              <div className="absolute -top-2 -right-2 z-10 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-                {t("selected")}
-              </div>
-            )}
+            return (
+              <SectionSortableItem
+                key={section.id}
+                section={section}
+              >
+                <div
+                  data-testid={`editor-section-${section.id}`}
+                  data-section-id={section.id}
+                  data-selected={isSelected ? "true" : undefined}
+                  className={`relative rounded-lg border transition-colors group ${
+                    isSelected
+                      ? "border-primary ring-2 ring-primary/20"
+                      : "border-border hover:border-muted-foreground/30"
+                  }`}
+                  onClick={() => handleSelect(section.id)}
+                >
+                  {isSelected && (
+                    <div className="absolute -top-2 -right-2 z-10 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                      {t("selected")}
+                    </div>
+                  )}
 
-            <SectionPreview section={section} />
+                  <SectionPreview section={section} />
 
-            <div className="flex items-center gap-1 border-t border-border bg-muted/30 px-2 py-1.5">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t("moveUp")}
-                title={t("moveUp")}
-                disabled={isFirst}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMoveUp(section.id);
-                }}
-                className="size-7"
-              >
-                <ArrowUp className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t("moveDown")}
-                title={t("moveDown")}
-                disabled={isLast}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMoveDown(section.id);
-                }}
-                className="size-7"
-              >
-                <ArrowDown className="size-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={t("deleteSection")}
-                title={t("deleteSection")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(section.id);
-                }}
-                className="size-7 text-destructive hover:text-destructive"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-              <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                #{section.position}
-              </span>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+                  <div className="flex items-center gap-1 border-t border-border bg-muted/30 px-2 py-1.5">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t("moveUp")}
+                      title={t("moveUp")}
+                      disabled={isFirst}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMoveUp(section.id);
+                      }}
+                      className="size-7"
+                    >
+                      <ArrowUp className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t("moveDown")}
+                      title={t("moveDown")}
+                      disabled={isLast}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleMoveDown(section.id);
+                      }}
+                      className="size-7"
+                    >
+                      <ArrowDown className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={t("deleteSection")}
+                      title={t("deleteSection")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(section.id);
+                      }}
+                      className="size-7 text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                    <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                      #{section.position}
+                    </span>
+                  </div>
+                </div>
+              </SectionSortableItem>
+            );
+          })}
+        </div>
+      </SortableContext>
+    </DndContext>
   );
 }
