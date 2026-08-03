@@ -32,6 +32,18 @@ supabase start     # local stack (Postgres, Studio, Auth, Storage)
 
 Supabase CLI config lives in `supabase/`. Local generated files in `supabase/.temp/` are git-ignored.
 
+## Testing the demo
+
+After `npm install && supabase start && npm run dev`, open http://localhost:3000:
+
+- **`/`** — home page with links to the editor and reader
+- **`/read`** — list of published webtoons
+- **`/read/[id]`** — scroll-driven reader (4 section types + per-section audio)
+- **`/editor`** — create or open a webtoon
+- **`/editor/[id]`** — WYSIWYG editor (reorder, configure, upload, save, publish)
+
+A seeded demo webtoon **« Démo »** (id `98ed65b1-833f-4dac-ae8f-77d5789d986f`) ships with the 4 section types: image, long-y (vertical strip), pan-x (horizontal pan), and animation (frame-by-frame sprite).
+
 ## Environment variables
 
 `.env.local` (git-ignored) must define `NEXT_PUBLIC_SUPABASE_URL`. Two possible values:
