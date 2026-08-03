@@ -1,10 +1,10 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Save, Globe, Lock, AlertCircle } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { EditorStateProvider, useEditorState } from "@/components/editor/EditorStateContext";
 import { saveWebtoon, publishWebtoon, unpublishWebtoon } from "@/app/editor/actions";
 
@@ -33,7 +33,7 @@ function EditorDetailLayoutInner({
 }) {
   const t = useTranslations("editor");
   const { webtoonId } = React.use(params);
-  const { sections, setSections, isDirty, setIsDirty } = useEditorState();
+  const { sections, isDirty, setIsDirty } = useEditorState();
   const [visibility, setVisibility] = React.useState<"draft" | "published">("draft");
   const [saving, setSaving] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<{ ok: boolean; error?: string } | null>(null);
@@ -68,23 +68,23 @@ function EditorDetailLayoutInner({
       <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-7xl items-center justify-between px-4">
           <div className="flex items-center gap-3">
-            <a
+            <Link
               href="/editor"
               className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
             >
               ← {t("backToEditor")}
-            </a>
+            </Link>
           </div>
           <h1 className="font-heading text-lg font-semibold tracking-tight text-foreground truncate max-w-[400px]">
             {webtoonId}
           </h1>
           <div className="flex items-center gap-2">
-            <a
+            <Link
               href={`/read/${webtoonId}`}
               className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
             >
               {t("readerLink")}
-            </a>
+            </Link>
             {isDirty && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600" data-testid="dirty-indicator">
                 <AlertCircle className="size-3.5" />

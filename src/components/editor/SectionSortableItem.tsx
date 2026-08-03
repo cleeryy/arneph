@@ -24,7 +24,6 @@ export function SectionSortableItem({
     setActivatorNodeRef,
     transform,
     transition,
-    isDragging,
   } = useSortable({ id: section.id });
 
   const style = {

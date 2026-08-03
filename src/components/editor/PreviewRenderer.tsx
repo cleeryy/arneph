@@ -3,7 +3,6 @@
 import * as React from "react";
 
 import { panXFromProgress, frameIndexFromProgress, spritePositionFromFrame } from "@/lib/scroll/transforms";
-import { useTranslations } from "next-intl";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { PanXSectionConfig, AnimationSectionConfig } from "@/types/webtoon";
 import { ImageSection } from "../reader/ImageSection";
@@ -66,6 +65,9 @@ function PanXPreview({ section, progress }: { section: SectionWithImages; progre
       className="relative mx-auto w-full overflow-hidden border-b border-border bg-muted/20"
       style={{ aspectRatio: `${imageWidth} / ${imageHeight}`, maxHeight: "300px" }}
     >
+      {/* Pan pixel-exact (translateX) sur image 1600px : next/image cassé la
+          géométrie via optimization/sizes — <img> natif requis ici. */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
         alt="pan-x preview"

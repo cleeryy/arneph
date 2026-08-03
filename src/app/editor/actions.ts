@@ -13,7 +13,6 @@ import {
   deleteWebtoon,
   getWebtoon,
   reorderSections,
-  updateSection,
   updateWebtoon,
 } from "@/lib/db/queries";
 import type { ImageRecord } from "@/types/webtoon";

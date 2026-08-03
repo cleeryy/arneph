@@ -1,7 +1,51 @@
 import type { ReactElement } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
+
+// Les composants finaux rendus par ReaderShell (PanXSection T17, AnimationSection
+// T18) utilisent motion/react — mock des hooks + éléments motion en jsdom.
+const { mockUseScroll, mockUseTransform, mockUseReducedMotion } = vi.hoisted(() => ({
+  mockUseScroll: vi.fn(),
+  mockUseTransform: vi.fn(),
+  mockUseReducedMotion: vi.fn(),
+}));
+
+vi.mock("motion/react", async () => {
+  const React = await import("react");
+  return {
+    useScroll: mockUseScroll,
+    useTransform: mockUseTransform,
+    useReducedMotion: mockUseReducedMotion,
+    motion: {
+      div: (props: Record<string, unknown>) => React.createElement("div", props),
+      img: (props: Record<string, unknown>) => React.createElement("img", props),
+    },
+  };
+});
+
+// next/image requiert la config optimizer (hors test) → mock qui expose src/w/h.
+vi.mock("next/image", () => ({
+  default: (props: Record<string, unknown>) => {
+    const { src, alt, width, height, className } = props as {
+      src: string;
+      alt: string;
+      width: number;
+      height: number;
+      className?: string;
+    };
+    return (
+      <img
+        data-testid="next-image"
+        alt={alt}
+        src={src}
+        width={width}
+        height={height}
+        className={className}
+      />
+    );
+  },
+}));
 
 import ReaderShell from "../ReaderShell";
 import type { SectionWithImages } from "@/lib/db/queries";
@@ -10,6 +54,15 @@ import type { SectionConfig, SectionType } from "@/types/webtoon";
 import frMessages from "../../../../messages/fr.json";
 
 afterEach(cleanup);
+
+beforeEach(() => {
+  mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+  mockUseTransform.mockImplementation((value, a, b) => {
+    if (typeof a === "function") return a(value);
+    return Array.isArray(b) ? b[b.length - 1] : b;
+  });
+  mockUseReducedMotion.mockReturnValue(false);
+});
 
 function wrap(ui: ReactElement) {
   return (
@@ -73,7 +126,7 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
       }),
     ]);
 
-    const sections = screen.getAllByTestId(/^section-(image|long-y|pan-x|animation)|section-stub-(image|long-y|pan-x|animation)$/);
+    const sections = screen.getAllByTestId(/^(section-(image|long-y)|pan-x-section|animation-section)$/);
     expect(sections.map((el) => el.getAttribute("data-section-position"))).toEqual(["1", "2", "3"]);
   });
 
@@ -105,8 +158,8 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
 
     expect(screen.getByTestId("section-image")).toBeInTheDocument();
     expect(screen.getByTestId("section-long-y")).toBeInTheDocument();
-    expect(screen.getByTestId("section-stub-pan-x")).toBeInTheDocument();
-    expect(screen.getByTestId("section-stub-animation")).toBeInTheDocument();
+    expect(screen.getByTestId("pan-x-section")).toBeInTheDocument();
+    expect(screen.getByTestId("animation-section")).toBeInTheDocument();
   });
 
   test("layout mobile-first : conteneur max-w-[800px] centré + min-h-dvh", () => {
@@ -140,12 +193,29 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
   });
 
   test("la section image utilise next/image (pas de <img> natif)", () => {
-    const { container } = renderShell([
-      makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
-    ]);
+    const section = makeSection(1, "image", {
+      type: "image",
+      imagePath: "a.webp",
+      width: 800,
+      height: 1200,
+    });
+    section.images = [
+      {
+        id: "img-1",
+        sectionId: section.id,
+        webtoonId: section.webtoonId,
+        storagePath: "a.webp",
+        width: 800,
+        height: 1200,
+        mimeType: "image/webp",
+        position: 0,
+      },
+    ];
+    renderShell([section]);
 
     expect(screen.getByTestId("section-image")).toBeInTheDocument();
     // MUST NOT T15 : aucun <img> natif — next/image uniquement (T16+).
-    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByTestId("next-image")).toBeInTheDocument();
+    expect(document.querySelector("img:not([data-testid])")).toBeNull();
   });
 });

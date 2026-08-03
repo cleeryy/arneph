@@ -34,7 +34,6 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
   const t = useTranslations("editor");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const editorState = React.useContext(EditorStateContext);
-  const isDirty = editorState?.isDirty ?? false;
   const setIsDirty = editorState?.setIsDirty ?? (() => {});
 
   const sensors = useSensors(

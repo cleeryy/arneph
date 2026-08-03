@@ -91,6 +91,9 @@ export default function PanXSection({ section }: { section: SectionWithImages })
         role="article"
         aria-label={label}
         data-testid="pan-x-section"
+        data-section-id={section.id}
+        data-section-position={section.position}
+        data-section-type={section.type}
         className="mx-auto w-full overflow-hidden border-b border-border bg-muted/20"
       >
         {src && image ? (
@@ -114,6 +117,9 @@ export default function PanXSection({ section }: { section: SectionWithImages })
       role="article"
       aria-label={label}
       data-testid="pan-x-section"
+      data-section-id={section.id}
+      data-section-position={section.position}
+      data-section-type={section.type}
       className="relative"
       style={{ height: `${distanceVh}vh` }}
     >

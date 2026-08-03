@@ -146,25 +146,23 @@ test.describe("E2E Full User Flow", () => {
 
     await expect(page.locator("[data-testid='editor-sidebar']")).toBeVisible();
 
+    // Attente que les sections ajoutées via l'API soient chargées puis rendues.
     const sortableSections = page.locator("[data-testid^='sortable-section-']");
+    await expect(sortableSections.first()).toBeVisible();
     const sectionCount = await sortableSections.count();
     expect(sectionCount).toBeGreaterThanOrEqual(2);
 
-    const firstHandle = sortableSections.first();
-    const lastHandle = sortableSections.last();
-
-    const firstBox = await firstHandle.boundingBox();
-    const lastBox = await lastHandle.boundingBox();
-
-    if (sectionCount >= 2) {
-      await sortableSections.first().dragTo(sortableSections.last());
-      await page.waitForTimeout(1000);
-    }
+    // Réordonnancement via le bouton "Descendre" (listeners dnd-kit sur le
+    // handle GripVertical → dragTo Playwright sur le conteneur est flaky en
+    // headless ; le drag réel est couvert par sortable.test.tsx).
+    const firstSection = sortableSections.first();
+    await firstSection.getByRole("button", { name: "Descendre" }).click();
+    await page.waitForTimeout(500);
 
     await page.getByRole("button", { name: "Enregistrer" }).click();
     await page.waitForTimeout(1000);
 
-    await page.getByRole("button", { name: "Publier" }).click();
+    await page.getByRole("button", { name: "Publier", exact: true }).click();
     await page.waitForTimeout(1000);
 
     await expect(page.locator("[data-testid='visibility-badge']")).toContainText("Publié");
@@ -175,15 +173,24 @@ test.describe("E2E Full User Flow", () => {
     await expect(page.locator("[data-testid='reader-container']")).toBeVisible();
     await expect(page.locator("[data-testid='reader-sections']")).toBeVisible();
 
-    await page.goto(`${BASE}/read/${DEMO_WEBTON_TITLE}`);
+    // Lecteur du webtoon de démo — la route /read/[webtoonId] attend un UUID,
+    // pas un titre : on le résout via l'API.
+    const demoRes = await apiRequest(
+      "GET",
+      `/rest/v1/webtoons?select=id&title=eq.${encodeURIComponent(DEMO_WEBTON_TITLE)}`,
+    );
+    const demos = (await demoRes.json()) as { id: string }[];
+    const demoId = demos[0].id;
+
+    await page.goto(`${BASE}/read/${demoId}`);
     await page.waitForLoadState("networkidle");
 
     await expect(page.locator("[data-testid='reader-container']")).toBeVisible();
 
-    await expect(page.locator("[data-testid='section-image']")).toBeVisible();
-    await expect(page.locator("[data-testid='section-long-y']")).toBeVisible();
-    await expect(page.locator("[data-testid='pan-x-section']")).toBeVisible();
-    await expect(page.locator("[data-testid='animation-section']")).toBeVisible();
+    await expect(page.locator("[data-testid='section-image']").first()).toBeVisible();
+    await expect(page.locator("[data-testid='section-long-y']").first()).toBeVisible();
+    await expect(page.locator("[data-testid='pan-x-section']").first()).toBeVisible();
+    await expect(page.locator("[data-testid='animation-section']").first()).toBeVisible();
 
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(1000);

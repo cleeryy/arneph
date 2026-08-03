@@ -1,4 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { deflateSync } from "node:zlib";
 
 const BUCKET = "webtoon-images";
 const WEBTON_TITLE = "Démo";
@@ -77,7 +78,6 @@ function encodePng(pixels: Buffer, width: number, height: number): Buffer {
   ihdr[11] = 0;
   ihdr[12] = 0;
 
-  const { deflateSync } = require("node:zlib");
   const rawRows = Buffer.alloc(height * (1 + stride));
   for (let y = 0; y < height; y++) {
     rawRows[y * (1 + stride)] = 0;
@@ -159,7 +159,7 @@ function createWavBlob(frequency: number, durationSec: number, sampleRate: numbe
 }
 
 async function uploadAsset(
-  supabase: any,
+  supabase: SupabaseClient,
   path: string,
   blob: Blob,
   contentType: string,
@@ -173,7 +173,7 @@ async function uploadAsset(
 }
 
 async function getExistingWebtoonId(
-  supabase: any,
+  supabase: SupabaseClient,
   title: string,
 ): Promise<string | null> {
   const { data, error } = await supabase.from("webtoons").select("id").eq("title", title).maybeSingle();
@@ -182,7 +182,7 @@ async function getExistingWebtoonId(
 }
 
 async function deleteWebtoonAndAssets(
-  supabase: any,
+  supabase: SupabaseClient,
   webtoonId: string,
 ): Promise<void> {
   const prefix = `webtoons/sections/${webtoonId}/`;

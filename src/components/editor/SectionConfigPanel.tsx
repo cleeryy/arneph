@@ -86,7 +86,6 @@ export function SectionConfigPanel({
   onClose,
 }: SectionConfigPanelProps) {
   const t = useTranslations("editor");
-  const tSection = useTranslations("reader.section");
   const [error, setError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -247,7 +246,7 @@ export function SectionConfigPanel({
         audioPath: uploadData.path,
       };
       onSectionChange(updatedSection);
-    } catch (err) {
+    } catch {
       setError("Erreur lors du téléchargement de l'audio.");
     } finally {
       setUploading(false);
