@@ -8,7 +8,6 @@ const DEMO_WEBTON_TITLE = "Démo";
 
 const IMAGE_SVG = "/tmp/test-image.svg";
 const SPRITE_PNG = "/tmp/test-sprite.png";
-const AUDIO_WAV = "/tmp/test-audio.wav";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
 

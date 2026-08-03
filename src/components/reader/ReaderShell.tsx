@@ -44,15 +44,15 @@ function AudioBinder({ onAudio }: { onAudio: (a: UseSectionAudioResult) => void 
  */
 export default function ReaderShell({ data }: { data: ReaderPageData }) {
   const t = useTranslations("reader");
-  const [mounted, setMounted] = React.useState(false);
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const [audio, setAudio] = React.useState<UseSectionAudioResult>(FALLBACK_AUDIO);
   const [showBackToTop, setShowBackToTop] = React.useState(false);
 
   const handleAudio = React.useCallback((a: UseSectionAudioResult) => setAudio(a), []);
-
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
 
   React.useEffect(() => {
     const onScroll = () => setShowBackToTop(window.scrollY > 600);

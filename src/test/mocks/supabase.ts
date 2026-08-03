@@ -33,6 +33,7 @@ function createQueryBuilder() {
     builder[m] = vi.fn(() => builder)
   }
   const thenable = Promise.resolve(OK)
+  void thenable
   builder.then = (resolve: (v: typeof OK) => unknown) => resolve(OK)
   return builder as unknown as {
     select: ReturnType<typeof vi.fn>

@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generated / vendor code not owned by this project:
+    "supabase/.temp/**",
+    "src/components/motion/**",
   ]),
 ]);
 

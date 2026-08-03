@@ -17,7 +17,9 @@ export function SectionAudioTracker({ sections }: SectionAudioTrackerProps) {
   const sectionsRef = React.useRef(sections);
   const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  sectionsRef.current = sections;
+  React.useEffect(() => {
+    sectionsRef.current = sections;
+  }, [sections]);
 
   React.useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
