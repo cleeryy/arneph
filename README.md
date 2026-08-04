@@ -46,14 +46,15 @@ A seeded demo webtoon **« Démo »** (id `98ed65b1-833f-4dac-ae8f-77d5789d986f`
 
 ## Environment variables
 
-`.env.local` (git-ignored) must define `NEXT_PUBLIC_SUPABASE_URL`. Two possible values:
+`.env.local` (git-ignored) must define:
 
-| Context | Value |
+| Variable | Description |
 | --- | --- |
-| Local dev | `http://127.0.0.1:54321` (Supabase CLI stack) |
-| Production | `https://<project-ref>.supabase.co` (hosted project) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase URL (`http://127.0.0.1:54321` for local, `https://<project-ref>.supabase.co` for production) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for client-side operations (uploads, storage) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for server-side operations (required for local dev, production) |
 
-The `next/image` `remotePatterns` are derived from this value at startup — never hardcoded.
+The `next/image` `remotePatterns` are derived from `NEXT_PUBLIC_SUPABASE_URL` at startup — never hardcoded.
 
 ## Tooling
 

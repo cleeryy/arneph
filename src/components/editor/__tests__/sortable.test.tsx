@@ -128,7 +128,7 @@ describe("SectionSortableItem — T24", () => {
 describe("EditorCanvas — DndContext integration", () => {
   test("renders DndContext and SortableContext wrapper", () => {
     const sections = [makeSection("sec-1", 1, "image")];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
 
     expect(screen.getByTestId("editor-canvas")).toBeInTheDocument();
     expect(screen.getByTestId("sortable-section-sec-1")).toBeInTheDocument();
@@ -139,7 +139,7 @@ describe("EditorCanvas — DndContext integration", () => {
       makeSection("sec-1", 1, "image"),
       makeSection("sec-2", 2, "pan-x"),
     ];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
 
     expect(screen.getByTestId("sortable-section-sec-1")).toBeInTheDocument();
     expect(screen.getByTestId("sortable-section-sec-2")).toBeInTheDocument();
@@ -147,7 +147,7 @@ describe("EditorCanvas — DndContext integration", () => {
 
   test("drag handle does not trigger section selection", () => {
     const sections = [makeSection("sec-1", 1, "image")];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
 
     const handle = screen.getByRole("button", { name: "Glisser pour réorganiser" });
     fireEvent.click(handle);
@@ -163,7 +163,7 @@ describe("EditorCanvas — DndContext integration", () => {
       makeSection("sec-3", 3, "image"),
     ];
     const onChange = vi.fn();
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} webtoonId="test-webtoon-id"/>));
 
     const canvas = screen.getByTestId("editor-canvas");
     expect(canvas).toBeInTheDocument();
@@ -182,7 +182,7 @@ describe("EditorCanvas — DndContext integration", () => {
       makeSection("sec-2", 2, "image"),
     ];
     const onChange = vi.fn();
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} webtoonId="test-webtoon-id"/>));
 
     const canvas = screen.getByTestId("editor-canvas");
     fireEvent.dragEnd(canvas, {

@@ -175,6 +175,7 @@ describe("SectionConfigPanel — T25", () => {
 
   test("audio upload updates section audioPath", async () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
     const section = makeSection({ type: "image" });
     const onChange = vi.fn();
     render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));

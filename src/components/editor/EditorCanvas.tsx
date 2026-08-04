@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { ArrowUp, ArrowDown, Trash2 } from "lucide-react";
+import { ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -20,21 +20,48 @@ import {
 } from "@dnd-kit/sortable";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Edit3 } from "lucide-react";
 import { SectionPreview } from "./SectionPreview";
 import { SectionSortableItem } from "./SectionSortableItem";
 import { EditorStateContext } from "./EditorStateContext";
+import { SectionConfigPanel } from "./SectionConfigPanel";
 import type { SectionWithImages } from "@/lib/db/queries";
 
 interface EditorCanvasProps {
   sections: SectionWithImages[];
   onSectionsChange: (sections: SectionWithImages[]) => void;
+  webtoonId: string;
 }
 
-export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) {
+export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCanvasProps) {
   const t = useTranslations("editor");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const editorState = React.useContext(EditorStateContext);
   const setIsDirty = editorState?.setIsDirty ?? (() => {});
+  const [configPanelSection, setConfigPanelSection] = React.useState<SectionWithImages | null>(null);
+
+  const handleAddSection = React.useCallback(() => {
+    const newSection = {
+      id: crypto.randomUUID(),
+      webtoonId,
+      position: sections.length + 1,
+      type: "image" as const,
+      config: { type: "image", width: 800, height: 1280 },
+      images: [],
+      audioPath: undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    } as unknown as SectionWithImages;
+    onSectionsChange([...sections, newSection]);
+    setIsDirty(true);
+  }, [sections.length, onSectionsChange, setIsDirty, webtoonId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -56,6 +83,16 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
   const handleSelect = React.useCallback((id: string) => {
     setSelectedId((prev) => (prev === id ? null : id));
   }, []);
+
+  const handleCloseConfigPanel = React.useCallback(() => {
+    setConfigPanelSection(null);
+  }, []);
+
+  const handleConfigSectionChange = React.useCallback((section: SectionWithImages) => {
+    onSectionsChange(sections.map((s) => (s.id === section.id ? section : s)));
+    setConfigPanelSection(section);
+    setIsDirty(true);
+  }, [sections, onSectionsChange, setIsDirty]);
 
   const handleDelete = React.useCallback(
     (id: string) => {
@@ -122,101 +159,145 @@ export function EditorCanvas({ sections, onSectionsChange }: EditorCanvasProps) 
 
   if (sorted.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center text-muted-foreground">
-        {t("canvasEmpty")}
+      <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-4 p-4">
+        <p>{t("canvasEmpty")}</p>
+        <Button onClick={handleAddSection}>
+          <Plus className="mr-2 h-4 w-4" />
+          {t("addSection")}
+        </Button>
       </div>
     );
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
-      <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
-        <div data-testid="editor-canvas" className="flex flex-1 flex-col gap-4 p-4">
-          {sorted.map((section) => {
-            const isSelected = selectedId === section.id;
-            const isFirst = section.position === 1;
-            const isLast = section.position === sections.length;
+    <div className="flex flex-1 flex-col">
+      <div className="flex items-center justify-between mb-4 px-4">
+        <h3 className="font-heading text-sm font-semibold text-foreground">{t("sections")}</h3>
+        <Button size="sm" onClick={handleAddSection}>
+          <Plus className="mr-2 h-4 w-4" />
+          {t("addSection")}
+        </Button>
+      </div>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
+          <div data-testid="editor-canvas" className="flex flex-1 flex-col gap-4 p-4">
+            {sorted.map((section) => {
+              const isSelected = selectedId === section.id;
+              const isFirst = section.position === 1;
+              const isLast = section.position === sections.length;
 
-            return (
-              <SectionSortableItem
-                key={section.id}
-                section={section}
-              >
-                <div
-                  data-testid={`editor-section-${section.id}`}
-                  data-section-id={section.id}
-                  data-selected={isSelected ? "true" : undefined}
-                  className={`relative rounded-lg border transition-colors group ${
-                    isSelected
-                      ? "border-primary ring-2 ring-primary/20"
-                      : "border-border hover:border-muted-foreground/30"
-                  }`}
-                  onClick={() => handleSelect(section.id)}
+              return (
+                <SectionSortableItem
+                  key={section.id}
+                  section={section}
                 >
-                  {isSelected && (
-                    <div className="absolute -top-2 -right-2 z-10 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
-                      {t("selected")}
+                  <div
+                    data-testid={`editor-section-${section.id}`}
+                    data-section-id={section.id}
+                    data-selected={isSelected ? "true" : undefined}
+                    className={"relative rounded-lg border transition-colors group " +
+                      (isSelected
+                        ? "border-primary ring-2 ring-primary/20"
+                        : "border-border hover:border-muted-foreground/30"
+                    )}
+                    onClick={() => handleSelect(section.id)}
+                  >
+                    {isSelected && (
+                      <div className="absolute -top-2 -right-2 z-10 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                        {t("selected")}
+                      </div>
+                    )}
+                    <SectionPreview section={section} />
+                    <div className="flex items-center gap-1 border-t border-border bg-muted/30 px-2 py-1.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("moveUp")}
+                        title={t("moveUp")}
+                        disabled={isFirst}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveUp(section.id);
+                        }}
+                        className="size-7"
+                      >
+                        <ArrowUp className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("moveDown")}
+                        title={t("moveDown")}
+                        disabled={isLast}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveDown(section.id);
+                        }}
+                        className="size-7"
+                      >
+                        <ArrowDown className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("deleteSection")}
+                        title={t("deleteSection")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(section.id);
+                        }}
+                        className="size-7 text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("editSection")}
+                        title={t("editSection")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setConfigPanelSection(section);
+                        }}
+                        className="size-7"
+                      >
+                        <Edit3 className="size-3.5" />
+                      </Button>
+                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                        #{section.position}
+                      </span>
                     </div>
-                  )}
-
-                  <SectionPreview section={section} />
-
-                  <div className="flex items-center gap-1 border-t border-border bg-muted/30 px-2 py-1.5">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("moveUp")}
-                      title={t("moveUp")}
-                      disabled={isFirst}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMoveUp(section.id);
-                      }}
-                      className="size-7"
-                    >
-                      <ArrowUp className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("moveDown")}
-                      title={t("moveDown")}
-                      disabled={isLast}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleMoveDown(section.id);
-                      }}
-                      className="size-7"
-                    >
-                      <ArrowDown className="size-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("deleteSection")}
-                      title={t("deleteSection")}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(section.id);
-                      }}
-                      className="size-7 text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                    <span className="ml-auto text-xs text-muted-foreground tabular-nums">
-                      #{section.position}
-                    </span>
                   </div>
-                </div>
-              </SectionSortableItem>
-            );
-          })}
-        </div>
-      </SortableContext>
-    </DndContext>
+                </SectionSortableItem>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
+
+      {configPanelSection && (
+        <Dialog
+          open={!!configPanelSection}
+          onOpenChange={(open) => {
+            if (!open) setConfigPanelSection(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{t("configPanelTitle")}</DialogTitle>
+            </DialogHeader>
+            <SectionConfigPanel
+              section={configPanelSection}
+              onSectionChange={handleConfigSectionChange}
+              onClose={() => setConfigPanelSection(null)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
   );
 }

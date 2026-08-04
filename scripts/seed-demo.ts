@@ -2,49 +2,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { deflateSync } from "node:zlib";
 
 const BUCKET = "webtoon-images";
-const WEBTON_TITLE = "Démo";
 const FRAME_WIDTH = 800;
 const FRAME_HEIGHT = 1280;
 const ANIMATION_COLS = 3;
 const ANIMATION_ROWS = 4;
 const ANIMATION_FRAME_COUNT = ANIMATION_COLS * ANIMATION_ROWS;
-
-function svgToBlob(svg: string): Blob {
-  return new Blob([svg], { type: "image/svg+xml" });
-}
-
-function imageSvg(label: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${FRAME_WIDTH}" height="${FRAME_HEIGHT}">
-  <rect width="100%" height="100%" fill="#1a1a2e"/>
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-        fill="#e0e0e0" font-family="sans-serif" font-size="48" font-weight="bold">${label}</text>
-</svg>`;
-}
-
-function longYSvg(label: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="4000">
-  <rect width="100%" height="100%" fill="#16213e"/>
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-        fill="#e0e0e0" font-family="sans-serif" font-size="48" font-weight="bold">${label}</text>
-</svg>`;
-}
-
-function panXSvg(label: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="800">
-  <rect width="100%" height="100%" fill="#0f3460"/>
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-        fill="#e0e0e0" font-family="sans-serif" font-size="48" font-weight="bold">${label}</text>
-</svg>`;
-}
-
-function animationFrameSvg(frameIndex: number): string {
-  const hue = (frameIndex / ANIMATION_FRAME_COUNT) * 360;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${FRAME_WIDTH}" height="${FRAME_HEIGHT}">
-  <rect width="100%" height="100%" fill="hsl(${hue}, 60%, 25%)"/>
-  <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle"
-        fill="#ffffff" font-family="sans-serif" font-size="64" font-weight="bold">Frame ${frameIndex + 1}</text>
-</svg>`;
-}
 
 function crc32(buf: Buffer): number {
   let crc = 0xffffffff;
@@ -77,13 +39,11 @@ function encodePng(pixels: Buffer, width: number, height: number): Buffer {
   ihdr[10] = 0;
   ihdr[11] = 0;
   ihdr[12] = 0;
-
   const rawRows = Buffer.alloc(height * (1 + stride));
   for (let y = 0; y < height; y++) {
     rawRows[y * (1 + stride)] = 0;
     pixels.copy(rawRows, y * (1 + stride) + 1, y * stride, (y + 1) * stride);
   }
-
   const compressed = deflateSync(rawRows);
   return Buffer.concat([signature, pngChunk("IHDR", ihdr), pngChunk("IDAT", compressed), pngChunk("IEND", Buffer.alloc(0))]);
 }
@@ -104,25 +64,74 @@ function hslToRgb(h: number): [number, number, number] {
   return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
 }
 
-function createSpriteSheet(frames: Blob[]): Blob {
+function createGradientPng(width: number, height: number, hueStart: number, hueEnd: number): Buffer {
+  const pixels = Buffer.alloc(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const t = (y * width + x) / (width * height);
+      const h = hueStart + (hueEnd - hueStart) * t;
+      const [r, g, b] = hslToRgb(h);
+      const idx = (y * width + x) * 4;
+      pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+    }
+  }
+  return encodePng(pixels, width, height);
+}
+
+function createStripedPng(width: number, height: number, baseHue: number, stripeCount: number): Buffer {
+  const pixels = Buffer.alloc(width * height * 4);
+  const stripeWidth = width / stripeCount;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const stripe = Math.floor(x / stripeWidth);
+      const h = baseHue + (stripe % 2 === 0 ? 0 : 30);
+      const [r, g, b] = hslToRgb(h);
+      const idx = (y * width + x) * 4;
+      pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+    }
+  }
+  return encodePng(pixels, width, height);
+}
+
+function createCirclePatternPng(width: number, height: number, baseHue: number): Buffer {
+  const pixels = Buffer.alloc(width * height * 4);
+  const cx = width / 2;
+  const cy = height / 2;
+  const maxR = Math.min(cx, cy);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const t = dist / maxR;
+      const h = baseHue + t * 120;
+      const [r, g, b] = hslToRgb(h);
+      const idx = (y * width + x) * 4;
+      pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
+    }
+  }
+  return encodePng(pixels, width, height);
+}
+
+function createSpriteSheet(): Blob {
   const totalWidth = FRAME_WIDTH * ANIMATION_COLS;
   const totalHeight = FRAME_HEIGHT * ANIMATION_ROWS;
   const pixels = Buffer.alloc(totalWidth * totalHeight * 4);
 
-  for (let i = 0; i < frames.length; i++) {
+  for (let i = 0; i < ANIMATION_FRAME_COUNT; i++) {
     const col = i % ANIMATION_COLS;
     const row = Math.floor(i / ANIMATION_COLS);
     const x = col * FRAME_WIDTH;
     const y = row * FRAME_HEIGHT;
-    const [ri, gi, bi] = hslToRgb((i / frames.length) * 360);
+    const hue = (i / ANIMATION_FRAME_COUNT) * 360;
 
     for (let py = 0; py < FRAME_HEIGHT; py++) {
       for (let px = 0; px < FRAME_WIDTH; px++) {
-        const idx = ((y + py) * totalWidth + (x + px)) * 4;
-        pixels[idx] = ri;
-        pixels[idx + 1] = gi;
-        pixels[idx + 2] = bi;
-        pixels[idx + 3] = 255;
+        const t = (py * FRAME_WIDTH + px) / (FRAME_WIDTH * FRAME_HEIGHT);
+        const h = hue + t * 60;
+        const [r, g, b] = hslToRgb(h);
+        const dstIdx = ((y + py) * totalWidth + (x + px)) * 4;
+        pixels[dstIdx] = r; pixels[dstIdx + 1] = g; pixels[dstIdx + 2] = b; pixels[dstIdx + 3] = 255;
       }
     }
   }
@@ -195,6 +204,92 @@ async function deleteWebtoonAndAssets(
   if (error) throw new Error(`Failed to delete webtoon ${webtoonId}: ${error.message}`);
 }
 
+async function deleteAllWebtoons(supabase: SupabaseClient): Promise<void> {
+  const { data: webtoons, error: listError } = await supabase.from("webtoons").select("id");
+  if (listError) throw new Error(`Failed to list webtoons: ${listError.message}`);
+  for (const webtoon of (webtoons as { id: string }[]) ?? []) {
+    await deleteWebtoonAndAssets(supabase, webtoon.id);
+  }
+}
+
+async function createSectionWithImage(
+  supabase: SupabaseClient,
+  webtoonId: string,
+  position: number,
+  type: string,
+  config: Record<string, unknown>,
+  storagePath: string,
+  width: number,
+  height: number,
+  mimeType: string,
+  audioPath: string,
+): Promise<void> {
+  const { data: sectionRow, error: secError } = await supabase
+    .from("sections")
+    .insert({ webtoon_id: webtoonId, position, type, config, audio_path: audioPath })
+    .select()
+    .single();
+  if (secError) throw new Error(`Failed to create section: ${secError.message}`);
+  const sectionId = (sectionRow as { id: string }).id;
+
+  await supabase.from("images").insert({
+    id: crypto.randomUUID(),
+    section_id: sectionId,
+    webtoon_id: webtoonId,
+    storage_path: storagePath,
+    width,
+    height,
+    mime_type: mimeType,
+    position: 0,
+  });
+}
+
+interface SectionDef {
+  type: string;
+  config: Record<string, unknown>;
+  width: number;
+  height: number;
+  mimeType: string;
+  storagePath: string;
+}
+
+interface WebtoonDef {
+  title: string;
+  description: string;
+  sections: SectionDef[];
+}
+
+const WEBTOONS: WebtoonDef[] = [
+  {
+    title: "Démo",
+    description: "Webtoon de démonstration avec les 4 types de sections.",
+    sections: [
+      { type: "image", config: { type: "image", width: FRAME_WIDTH, height: FRAME_HEIGHT }, width: FRAME_WIDTH, height: FRAME_HEIGHT, mimeType: "image/png", storagePath: "webtoons/seed/demo/image.png" },
+      { type: "long-y", config: { type: "long-y", width: 800, height: 4000 }, width: 800, height: 4000, mimeType: "image/png", storagePath: "webtoons/seed/demo/long-y.png" },
+      { type: "pan-x", config: { type: "pan-x", width: 2400, height: 800, panSpeed: 100 }, width: 2400, height: 800, mimeType: "image/png", storagePath: "webtoons/seed/demo/pan-x.png" },
+      { type: "animation", config: { type: "animation", frameWidth: FRAME_WIDTH, frameHeight: FRAME_HEIGHT, columns: ANIMATION_COLS, rows: ANIMATION_ROWS, frameCount: ANIMATION_FRAME_COUNT, scrollHeight: 200 }, width: FRAME_WIDTH * ANIMATION_COLS, height: FRAME_HEIGHT * ANIMATION_ROWS, mimeType: "image/png", storagePath: "webtoons/seed/demo/sprite.png" },
+    ],
+  },
+  {
+    title: "Paysage",
+    description: "Webtoon de paysages — sections image et long-y.",
+    sections: [
+      { type: "image", config: { type: "image", width: FRAME_WIDTH, height: FRAME_HEIGHT }, width: FRAME_WIDTH, height: FRAME_HEIGHT, mimeType: "image/png", storagePath: "webtoons/seed/paysage/image.png" },
+      { type: "long-y", config: { type: "long-y", width: 800, height: 4000 }, width: 800, height: 4000, mimeType: "image/png", storagePath: "webtoons/seed/paysage/long-y.png" },
+      { type: "pan-x", config: { type: "pan-x", width: 2400, height: 800, panSpeed: 150 }, width: 2400, height: 800, mimeType: "image/png", storagePath: "webtoons/seed/paysage/pan-x.png" },
+    ],
+  },
+  {
+    title: "Urban",
+    description: "Webtoon urbain — sections animation et image.",
+    sections: [
+      { type: "animation", config: { type: "animation", frameWidth: FRAME_WIDTH, frameHeight: FRAME_HEIGHT, columns: ANIMATION_COLS, rows: ANIMATION_ROWS, frameCount: ANIMATION_FRAME_COUNT, scrollHeight: 200 }, width: FRAME_WIDTH * ANIMATION_COLS, height: FRAME_HEIGHT * ANIMATION_ROWS, mimeType: "image/png", storagePath: "webtoons/seed/urban/sprite.png" },
+      { type: "image", config: { type: "image", width: FRAME_WIDTH, height: FRAME_HEIGHT }, width: FRAME_WIDTH, height: FRAME_HEIGHT, mimeType: "image/png", storagePath: "webtoons/seed/urban/image.png" },
+      { type: "long-y", config: { type: "long-y", width: 800, height: 4000 }, width: 800, height: 4000, mimeType: "image/png", storagePath: "webtoons/seed/urban/long-y.png" },
+    ],
+  },
+];
+
 export async function seedDemo(force: boolean = false): Promise<{ webtoonId: string; created: boolean }> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -207,75 +302,72 @@ export async function seedDemo(force: boolean = false): Promise<{ webtoonId: str
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const existingId = await getExistingWebtoonId(supabase, WEBTON_TITLE);
+  let firstWebtoonId: string | null = null;
+  let anyCreated = false;
 
-  if (existingId) {
-    if (!force) {
-      console.log(`[seed-demo] "${WEBTON_TITLE}" already exists (id=${existingId}). Skipping. Use --force to recreate.`);
-      return { webtoonId: existingId, created: false };
+  if (force) {
+    console.log("[seed-demo] Force mode: deleting all existing webtoons...");
+    await deleteAllWebtoons(supabase);
+    console.log("[seed-demo] All existing webtoons deleted.");
+  }
+
+  for (const webtoonDef of WEBTOONS) {
+    const existingId = await getExistingWebtoonId(supabase, webtoonDef.title);
+
+    if (existingId) {
+      console.log(`[seed-demo] "${webtoonDef.title}" already exists (id=${existingId}). Skipping.`);
+      if (!firstWebtoonId) firstWebtoonId = existingId;
+      continue;
     }
-    console.log(`[seed-demo] Force mode: deleting existing webtoon ${existingId}...`);
-    await deleteWebtoonAndAssets(supabase, existingId);
-    console.log("[seed-demo] Existing webtoon deleted.");
-  }
 
-  const imagePath = await uploadAsset(supabase, "webtoons/seed/demo/image.svg", svgToBlob(imageSvg("Image simple")), "image/svg+xml");
-  const longYPath = await uploadAsset(supabase, "webtoons/seed/demo/long-y.svg", svgToBlob(longYSvg("Longue image axe Y")), "image/svg+xml");
-  const panXPath = await uploadAsset(supabase, "webtoons/seed/demo/pan-x.svg", svgToBlob(panXSvg("Image large axe X")), "image/svg+xml");
+    const audioPath = await uploadAsset(supabase, `webtoons/seed/${webtoonDef.title.toLowerCase()}/audio.wav`, createWavBlob(440, 1), "audio/wav");
 
-  const frameBlobs: Blob[] = [];
-  for (let i = 0; i < ANIMATION_FRAME_COUNT; i++) {
-    frameBlobs.push(svgToBlob(animationFrameSvg(i)));
-  }
-  const spriteBlob = createSpriteSheet(frameBlobs);
-  const spritePath = await uploadAsset(supabase, "webtoons/seed/demo/sprite.png", spriteBlob, "image/png");
-
-  const audioPath = await uploadAsset(supabase, "webtoons/seed/demo/audio.wav", createWavBlob(440, 1), "audio/wav");
-
-  const { data: webtoonRow, error: webtoonError } = await supabase
-    .from("webtoons")
-    .insert({ title: WEBTON_TITLE, description: "Webtoon de démonstration avec les 4 types de sections.", visibility: "published", settings: {} })
-    .select()
-    .single();
-  if (webtoonError) throw new Error(`Failed to create webtoon: ${webtoonError.message}`);
-  const webtoonId = (webtoonRow as { id: string }).id;
-
-  async function createSectionWithImage(
-    position: number,
-    type: string,
-    config: Record<string, unknown>,
-    storagePath: string,
-    width: number,
-    height: number,
-    mimeType: string,
-  ) {
-    const { data: sectionRow, error: secError } = await supabase
-      .from("sections")
-      .insert({ webtoon_id: webtoonId, position, type, config, audio_path: audioPath })
+    const { data: webtoonRow, error: webtoonError } = await supabase
+      .from("webtoons")
+      .insert({ title: webtoonDef.title, description: webtoonDef.description, visibility: "published", settings: {} })
       .select()
       .single();
-    if (secError) throw new Error(`Failed to create section: ${secError.message}`);
-    const sectionId = (sectionRow as { id: string }).id;
+    if (webtoonError) throw new Error(`Failed to create webtoon "${webtoonDef.title}": ${webtoonError.message}`);
+    const webtoonId = (webtoonRow as { id: string }).id;
+    if (!firstWebtoonId) firstWebtoonId = webtoonId;
 
-    await supabase.from("images").insert({
-      id: crypto.randomUUID(),
-      section_id: sectionId,
-      webtoon_id: webtoonId,
-      storage_path: storagePath,
-      width,
-      height,
-      mime_type: mimeType,
-      position: 0,
-    });
+    for (let i = 0; i < webtoonDef.sections.length; i++) {
+      const sectionDef = webtoonDef.sections[i];
+
+      let imageBlob: Blob;
+      switch (sectionDef.type) {
+        case "image":
+          imageBlob = new Blob([new Uint8Array(createGradientPng(sectionDef.width, sectionDef.height, 240, 280))], { type: "image/png" });
+          break;
+        case "long-y":
+          imageBlob = new Blob([new Uint8Array(createGradientPng(sectionDef.width, sectionDef.height, 180, 220))], { type: "image/png" });
+          break;
+        case "pan-x":
+          imageBlob = new Blob([new Uint8Array(createStripedPng(sectionDef.width, sectionDef.height, 30, 8))], { type: "image/png" });
+          break;
+        case "animation":
+          imageBlob = createSpriteSheet();
+          break;
+        default:
+          throw new Error(`Unknown section type: ${sectionDef.type}`);
+      }
+
+      const storagePath = await uploadAsset(supabase, sectionDef.storagePath, imageBlob, sectionDef.mimeType);
+
+      const config = { ...sectionDef.config, imagePath: storagePath, audioPath } as Record<string, unknown>;
+      if (sectionDef.type === "animation") {
+        config.spritePath = storagePath;
+        delete config.imagePath;
+      }
+
+      await createSectionWithImage(supabase, webtoonId, i + 1, sectionDef.type, config, storagePath, sectionDef.width, sectionDef.height, sectionDef.mimeType, audioPath);
+    }
+
+    anyCreated = true;
+    console.log(`[seed-demo] Webtoon "${webtoonDef.title}" created (id=${webtoonId}, published) with ${webtoonDef.sections.length} sections + audio.`);
   }
 
-  await createSectionWithImage(1, "image", { type: "image", imagePath, width: FRAME_WIDTH, height: FRAME_HEIGHT, audioPath: audioPath }, imagePath, FRAME_WIDTH, FRAME_HEIGHT, "image/svg+xml");
-  await createSectionWithImage(2, "long-y", { type: "long-y", imagePath: longYPath, width: 800, height: 4000, audioPath: audioPath }, longYPath, 800, 4000, "image/svg+xml");
-  await createSectionWithImage(3, "pan-x", { type: "pan-x", imagePath: panXPath, width: 2400, height: 800, panSpeed: 100, audioPath: audioPath }, panXPath, 2400, 800, "image/svg+xml");
-  await createSectionWithImage(4, "animation", { type: "animation", spritePath, frameWidth: FRAME_WIDTH, frameHeight: FRAME_HEIGHT, columns: ANIMATION_COLS, rows: ANIMATION_ROWS, frameCount: ANIMATION_FRAME_COUNT, scrollHeight: 200, audioPath: audioPath } as Record<string, unknown>, spritePath, FRAME_WIDTH * ANIMATION_COLS, FRAME_HEIGHT * ANIMATION_ROWS, "image/png");
-
-  console.log(`[seed-demo] Webtoon "${WEBTON_TITLE}" created (id=${webtoonId}, published) with 4 sections + audio.`);
-  return { webtoonId, created: true };
+  return { webtoonId: firstWebtoonId ?? "", created: anyCreated };
 }
 
 const isMainModule = process.argv[1]?.endsWith("seed-demo.ts");

@@ -76,19 +76,19 @@ function makeSection(
 
 describe("EditorCanvas — T23", () => {
   test("rend empty state when no sections", () => {
-    render(wrap(<EditorCanvas sections={[]} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={[]} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
     expect(screen.getByText(/Aucune section/)).toBeInTheDocument();
   });
 
   test("rend sections via SectionPreview", () => {
     const sections = [makeSection("sec-1", 1, "image")];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
     expect(screen.getByTestId("editor-canvas")).toBeInTheDocument();
   });
 
   test("click section → selection (outline + badge)", () => {
     const sections = [makeSection("sec-1", 1, "image")];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
 
     const sectionEl = screen.getByTestId("editor-section-sec-1");
     fireEvent.click(sectionEl);
@@ -99,7 +99,7 @@ describe("EditorCanvas — T23", () => {
 
   test("click same section again → deselect", () => {
     const sections = [makeSection("sec-1", 1, "image")];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
 
     const sectionEl = screen.getByTestId("editor-section-sec-1");
     fireEvent.click(sectionEl);
@@ -111,7 +111,7 @@ describe("EditorCanvas — T23", () => {
   test("move up button calls onSectionsChange with reordered sections", () => {
     const sections = [makeSection("sec-1", 1, "image"), makeSection("sec-2", 2, "image")];
     const onChange = vi.fn();
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} webtoonId="test-webtoon-id" />));
 
     // sec-1 is first (disabled), sec-2 is second (enabled)
     const moveUpBtns = screen.getAllByRole("button", { name: "Monter" });
@@ -129,7 +129,7 @@ describe("EditorCanvas — T23", () => {
   test("move down button calls onSectionsChange with reordered sections", () => {
     const sections = [makeSection("sec-1", 1, "image"), makeSection("sec-2", 2, "image")];
     const onChange = vi.fn();
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} webtoonId="test-webtoon-id" />));
 
     // sec-1 is first (enabled for move down), sec-2 is last (disabled)
     const moveDownBtns = screen.getAllByRole("button", { name: "Descendre" });
@@ -147,7 +147,7 @@ describe("EditorCanvas — T23", () => {
   test("delete button calls onSectionsChange without deleted section", () => {
     const sections = [makeSection("sec-1", 1, "image"), makeSection("sec-2", 2, "image")];
     const onChange = vi.fn();
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={onChange} webtoonId="test-webtoon-id" />));
 
     const deleteBtns = screen.getAllByRole("button", { name: "Supprimer la section" });
     // Delete the first section (sec-1)
@@ -162,7 +162,7 @@ describe("EditorCanvas — T23", () => {
 
   test("move up disabled for first section", () => {
     const sections = [makeSection("sec-1", 1, "image")];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
 
     const moveUpBtn = screen.getByRole("button", { name: "Monter" });
     expect(moveUpBtn).toBeDisabled();
@@ -170,7 +170,7 @@ describe("EditorCanvas — T23", () => {
 
   test("move down disabled for last section", () => {
     const sections = [makeSection("sec-1", 1, "image")];
-    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} />));
+    render(wrap(<EditorCanvas sections={sections} onSectionsChange={vi.fn()} webtoonId="test-webtoon-id" />));
 
     const moveDownBtn = screen.getByRole("button", { name: "Descendre" });
     expect(moveDownBtn).toBeDisabled();

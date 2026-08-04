@@ -7,11 +7,10 @@ import type { SectionWithImages } from "@/lib/db/queries";
 
 interface EditorCanvasClientProps {
   initialSections: SectionWithImages[];
+  webtoonId: string;
 }
 
-export function EditorCanvasClient({
-  initialSections,
-}: EditorCanvasClientProps) {
+export function EditorCanvasClient({ initialSections, webtoonId }: EditorCanvasClientProps) {
   const { sections, setSections, setIsDirty } = useEditorState();
 
   React.useEffect(() => {
@@ -30,6 +29,7 @@ export function EditorCanvasClient({
     <EditorCanvas
       sections={sections}
       onSectionsChange={handleSectionsChange}
+      webtoonId={webtoonId}
     />
   );
 }

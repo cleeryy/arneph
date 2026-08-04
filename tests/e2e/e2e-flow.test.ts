@@ -120,9 +120,28 @@ async function addSection(webtoonId: string, type: string, imagePath: string) {
   );
 }
 
+async function deleteWebtoon(webtoonId: string) {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+  const { data: sections } = await apiRequest(
+    "GET",
+    `/rest/v1/sections?webtoon_id=eq.${webtoonId}`,
+  ).then((r) => r.json());
+
+  for (const section of (sections as { id: string }[]) ?? []) {
+    await apiRequest("DELETE", `/rest/v1/sections?id=eq.${section.id}`);
+  }
+
+  await apiRequest("DELETE", `/rest/v1/webtoons?id=eq.${webtoonId}`);
+}
+
 test.describe("E2E Full User Flow", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto(BASE);
+  });
+
+  test.afterEach(async () => {
+    await deleteWebtoon(WEBTON_ID);
   });
 
   test("full user flow: create → edit → save → publish → read", async ({ page }) => {

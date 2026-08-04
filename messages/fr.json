@@ -52,7 +52,9 @@
     "moveUp": "Monter",
     "moveDown": "Descendre",
     "deleteSection": "Supprimer la section",
+    "editSection": "Modifier la section",
     "dragHandle": "Glisser pour réorganiser",
+    "addSection": "Ajouter une section",
     "configPanelTitle": "Configuration de la section",
     "closePanel": "Fermer le panneau",
     "sectionType": "Type de section",
@@ -78,6 +80,7 @@
     "uploadAnimationErrorGeneric": "Erreur lors de la création de la sprite sheet.",
     "uploadAudioError": "Veuillez sélectionner un fichier audio (MP3, WebM ou OGG).",
     "uploadAudioErrorGeneric": "Erreur lors du téléchargement de l'audio.",
+    "uploadScriptError": "Erreur lors du traitement du fichier.",
     "scrollProgress": "Progression du scroll"
   },
   "errors": {

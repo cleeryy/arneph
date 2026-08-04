@@ -105,6 +105,6 @@ function pauseCurrent(): void {
 }
 
 export function useSectionAudio(): UseSectionAudioResult {
-  const isPlaying = React.useSyncExternalStore(subscribe, getSnapshot)
+  const isPlaying = React.useSyncExternalStore(subscribe, getSnapshot, () => false)
   return { playSectionAudio, pauseCurrent, isPlaying }
 }

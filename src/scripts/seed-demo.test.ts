@@ -34,8 +34,8 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 describe("seedDemo idempotence", () => {
-  test("returns created:false when webtoon already exists", async () => {
-    mockMaybeSingle.mockResolvedValueOnce({
+  test("returns created:false when all webtoons already exist", async () => {
+    mockMaybeSingle.mockResolvedValue({
       data: { id: "existing-demo-id" },
       error: null,
     });

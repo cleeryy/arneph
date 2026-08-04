@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+build
+coverage
+.git
+.sisyphus
+playwright-report
+test-results
+*.md
+.env
+.env.local
+!.env.example
+supabase/.temp

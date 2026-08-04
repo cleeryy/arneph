@@ -121,8 +121,10 @@ export function SectionConfigPanel({
 
       const { createClient } = await import("@supabase/supabase-js");
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl) throw new Error("Supabase URL not configured");
-      const supabase = createClient(supabaseUrl, "");
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey)
+        throw new Error("Supabase URL or anon key not configured");
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
       const { data: uploadData, error: uploadError } = await supabase
         .storage
         .from("webtoon-images")
@@ -182,8 +184,10 @@ export function SectionConfigPanel({
 
       const { createClient } = await import("@supabase/supabase-js");
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl) throw new Error("Supabase URL not configured");
-      const supabase = createClient(supabaseUrl, "");
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey)
+        throw new Error("Supabase URL or anon key not configured");
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
       const { data: uploadData, error: uploadError } = await supabase
         .storage
         .from("webtoon-images")
@@ -232,8 +236,10 @@ export function SectionConfigPanel({
 
       const { createClient } = await import("@supabase/supabase-js");
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (!supabaseUrl) throw new Error("Supabase URL not configured");
-      const supabase = createClient(supabaseUrl, "");
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey)
+        throw new Error("Supabase URL or anon key not configured");
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
       const { data: uploadData, error: uploadError } = await supabase
         .storage
         .from("webtoon-images")
@@ -246,8 +252,14 @@ export function SectionConfigPanel({
         audioPath: uploadData.path,
       };
       onSectionChange(updatedSection);
-    } catch {
-      setError("Erreur lors du téléchargement de l'audio.");
+    } catch (err) {
+      if (err instanceof ImageProcessingError) {
+        setError(err.message);
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError(t("uploadScriptError"));
+      }
     } finally {
       setUploading(false);
       if (audioInputRef.current) audioInputRef.current.value = "";
