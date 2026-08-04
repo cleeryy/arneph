@@ -7,8 +7,10 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-COPY . .
+COPY .next ./.next
+COPY public ./public
+COPY package.json ./package.json
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npm run build && npm run start"]
+CMD ["sh", "-c", "npm run start"]

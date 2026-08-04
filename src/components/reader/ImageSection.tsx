@@ -7,7 +7,7 @@ import { webtoonSizes } from "@/lib/image/sizes";
 import type { SectionWithImages } from "@/lib/db/queries";
 
 /**
- * URL publique d'une image du bucket storage `webtoon-images`
+ * URL publique d'une image du bucket storage `webtoon-images`.
  * (même pattern que `coverUrl` T14).
  */
 export function sectionImageUrl(storagePath: string): string {
@@ -52,6 +52,7 @@ export function SectionImage({
       fetchPriority={priority ? "high" : "low"}
       loading={priority ? "eager" : "lazy"}
       className="h-auto w-full"
+      unoptimized={true}
       {...(blurDataURL ? { placeholder: "blur", blurDataURL } : undefined)}
     />
   );
