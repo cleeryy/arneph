@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { getWebtoon } from "@/lib/db/queries";
 import { EditorCanvasClient } from "@/components/editor/EditorCanvasClient";
+import { SectionLayersPanelClient } from "@/components/editor/SectionLayersPanelClient";
 
 export const dynamic = "force-dynamic";
 
@@ -27,25 +28,7 @@ export default async function EditorWebtoonPage({
           <h2 className="font-heading text-sm font-semibold tracking-tight text-foreground mb-3">
             {t("sections")}
           </h2>
-          {webtoon.sections.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t("noSections")}</p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {webtoon.sections.map((section) => (
-                <li
-                  key={section.id}
-                  className="rounded-md border border-border bg-background p-3 text-sm"
-                >
-                  <span className="font-medium capitalize">
-                    {section.type.replace("-", " ")}
-                  </span>
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    #{section.position}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <SectionLayersPanelClient initialSections={webtoon.sections} />
         </aside>
 
         <section
