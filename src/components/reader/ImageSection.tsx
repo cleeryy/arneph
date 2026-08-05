@@ -6,6 +6,8 @@ import { useTranslations } from "next-intl";
 import { isAnimatedMime } from "@/lib/image/animated";
 import type { SectionWithImages } from "@/lib/db/queries";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
+import type { FxOverlayConfig } from "@/types/webtoon";
+import { FxOverlay } from "./FxOverlay";
 
 /**
  * URL publique d'une image du bucket storage `webtoon-images`.
@@ -100,6 +102,12 @@ export interface ImageSectionProps {
  */
 export function ImageSection({ section, priority = false, blurDataURL }: ImageSectionProps) {
   const t = useTranslations("reader.section");
+  const fxPath = (section.config as { fxPath?: string }).fxPath;
+  const fxConfig = (section.config as { fxConfig?: FxOverlayConfig }).fxConfig;
+
+  const image = (
+    <SectionImage section={section} priority={priority} blurDataURL={blurDataURL} alt={t("image")} />
+  );
 
   return (
     <div
@@ -109,7 +117,14 @@ export function ImageSection({ section, priority = false, blurDataURL }: ImageSe
       data-section-position={section.position}
       className="w-full"
     >
-      <SectionImage section={section} priority={priority} blurDataURL={blurDataURL} alt={t("image")} />
+      {fxPath ? (
+        <div className="relative">
+          {image}
+          <FxOverlay fxPath={fxPath} fxConfig={fxConfig} />
+        </div>
+      ) : (
+        image
+      )}
     </div>
   );
 }

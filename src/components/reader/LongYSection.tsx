@@ -3,6 +3,8 @@
 import { useTranslations } from "next-intl";
 
 import type { SectionWithImages } from "@/lib/db/queries";
+import type { FxOverlayConfig } from "@/types/webtoon";
+import { FxOverlay } from "./FxOverlay";
 import { SectionImage } from "./ImageSection";
 
 export interface LongYSectionProps {
@@ -16,15 +18,25 @@ export interface LongYSectionProps {
 /**
  * Section image longue axe Y — délègue à `SectionImage` (ImageSection).
  *
- * Même rendu qu'ImageSection : l'image très haute occupe sa hauteur naturelle
- * et défile avec la page. Les images animées (GIF) sont rendues en `<img>`
- * natif pour préserver l'animation ; les images statiques utilisent
- * `next/image` avec `unoptimized`. Le `sizes` forcé à 800px est supprimé
- * (shrink fix T16). DÉCISION (plan) : PAS d'animation sticky/zoom — le
- * scroll natif est déjà la meilleure perf.
+ * Même rendu qu'ImageSection : l'image très haute occupe sa hauteur
+ * naturelle et défile avec la page. Les images animées (GIF) sont
+ * rendues en `<img>` natif pour préserver l'animation ; les images
+ * statiques utilisent `next/image` avec `unoptimized`. Le `sizes`
+ * forcé à 800px est supprimé (shrink fix T16).
  */
 export function LongYSection({ section, priority = false, blurDataURL }: LongYSectionProps) {
   const t = useTranslations("reader.section");
+  const fxPath = (section.config as { fxPath?: string }).fxPath;
+  const fxConfig = (section.config as { fxConfig?: FxOverlayConfig }).fxConfig;
+
+  const image = (
+    <SectionImage
+      section={section}
+      priority={priority}
+      blurDataURL={blurDataURL}
+      alt={t("longY")}
+    />
+  );
 
   return (
     <div
@@ -34,12 +46,14 @@ export function LongYSection({ section, priority = false, blurDataURL }: LongYSe
       data-section-position={section.position}
       className="w-full"
     >
-      <SectionImage
-        section={section}
-        priority={priority}
-        blurDataURL={blurDataURL}
-        alt={t("longY")}
-      />
+      {fxPath ? (
+        <div className="relative">
+          {image}
+          <FxOverlay fxPath={fxPath} fxConfig={fxConfig} />
+        </div>
+      ) : (
+        image
+      )}
     </div>
   );
 }
