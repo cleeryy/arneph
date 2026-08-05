@@ -117,14 +117,16 @@ describe("ImageSection (T16) — image simple", () => {
     expect(img).toHaveAttribute("height", "1200");
   });
 
-  test("sizes du T12 (webtoonSizes) appliqué", () => {
+  test("sizes ne force plus 800px — rendu à la taille réelle (shrink fix)", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<ImageSection section={makeSection()} />));
 
-    expect(screen.getByTestId("next-image")).toHaveAttribute(
+    const img = screen.getByTestId("next-image");
+    expect(img).not.toHaveAttribute(
       "sizes",
       "(min-width:1024px) 800px, 100vw",
     );
+    expect(img.style.maxWidth).toBe("800px");
   });
 
   test("loading lazy par défaut, eager + priority quand priority=true (1ère section)", () => {
@@ -164,6 +166,115 @@ describe("ImageSection (T16) — image simple", () => {
     const { container } = render(wrap(<ImageSection section={makeSection({ images: [] })} />));
 
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  test("image GIF (mimeType image/gif) → <img> natif, PAS next/image", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(
+      wrap(
+        <ImageSection
+          section={makeSection({
+            images: [
+              {
+                id: "img-gif",
+                sectionId: "sec-img",
+                webtoonId: "w1",
+                storagePath: "test/anim.gif",
+                width: 400,
+                height: 300,
+                mimeType: "image/gif",
+                position: 0,
+              },
+            ],
+          })}
+        />
+      ),
+    );
+
+    expect(screen.getByTestId("native-img")).toBeInTheDocument();
+    expect(screen.queryByTestId("next-image")).not.toBeInTheDocument();
+  });
+
+  test("image GIF par extension (.gif dans le chemin) → <img> natif, PAS next/image", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(
+      wrap(
+        <ImageSection
+          section={makeSection({
+            images: [
+              {
+                id: "img-gif2",
+                sectionId: "sec-img",
+                webtoonId: "w1",
+                storagePath: "test/animation.gif",
+                width: 500,
+                height: 400,
+                mimeType: "image/webp",
+                position: 0,
+              },
+            ],
+          })}
+        />
+      ),
+    );
+
+    expect(screen.getByTestId("native-img")).toBeInTheDocument();
+    expect(screen.queryByTestId("next-image")).not.toBeInTheDocument();
+  });
+
+  test("image GIF native a loading=lazy et decoding=async", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(
+      wrap(
+        <ImageSection
+          section={makeSection({
+            images: [
+              {
+                id: "img-gif3",
+                sectionId: "sec-img",
+                webtoonId: "w1",
+                storagePath: "test/anim.gif",
+                width: 400,
+                height: 300,
+                mimeType: "image/gif",
+                position: 0,
+              },
+            ],
+          })}
+        />
+      ),
+    );
+
+    const nativeImg = screen.getByTestId("native-img");
+    expect(nativeImg).toHaveAttribute("loading", "lazy");
+    expect(nativeImg).toHaveAttribute("decoding", "async");
+  });
+
+  test("LongYSection avec GIF → <img> natif, PAS next/image", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(
+      wrap(
+        <LongYSection
+          section={makeLongYSection({
+            images: [
+              {
+                id: "img-long-gif",
+                sectionId: "sec-long",
+                webtoonId: "w1",
+                storagePath: "test/long-anim.gif",
+                width: 800,
+                height: 4000,
+                mimeType: "image/gif",
+                position: 0,
+              },
+            ],
+          })}
+        />
+      ),
+    );
+
+    expect(screen.getByTestId("native-img")).toBeInTheDocument();
+    expect(screen.queryByTestId("next-image")).not.toBeInTheDocument();
   });
 });
 

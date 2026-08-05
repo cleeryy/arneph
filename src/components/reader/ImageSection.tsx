@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 
-import { webtoonSizes } from "@/lib/image/sizes";
+import { isAnimatedMime } from "@/lib/image/animated";
 import type { SectionWithImages } from "@/lib/db/queries";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
@@ -19,9 +19,11 @@ export function sectionImageUrl(storagePath: string): string {
  * Rendu commun des sections à flux NATIF (image simple + long-y).
  *
  * Une section de ce type contient UNE image (position 0) — c'est la première
- * qui est rendue. `next/image` reçoit width/height (dims réelles post-resize
- * T11 stockées en BDD) et `sizes` (T12) ; le ratio est conservé par
- * `h-auto w-full`. AUCUNE animation : le défilement est celui de la page.
+ * qui est rendue. Les images animées (GIF) sont servies via `<img>` natif
+ * pour préserver l'animation ; les images statiques utilisent `next/image`
+ * avec `unoptimized` (contrainte AGENTS.md). Le `sizes` forcé à 800px est
+ * supprimé (shrink fix T16) — l'image rend à sa taille réelle, bornée par
+ * le conteneur via `max-w-none`.
  */
 export function SectionImage({
   section,
@@ -41,18 +43,39 @@ export function SectionImage({
   // Section sans image → aucun contenu à rendre (défensif, cas éditeur vide).
   if (!image) return null;
 
+  const src = sectionImageUrl(image.storagePath);
+  const animated =
+    isAnimatedMime(image.mimeType) || image.storagePath.endsWith(".gif");
+
+  // Images animées (GIF) → <img> natif pour préserver l'animation.
+  if (animated) {
+    return (
+      <img
+        data-testid="native-img"
+        src={src}
+        alt={alt}
+        width={image.width}
+        height={image.height}
+        loading={priority ? "eager" : "lazy"}
+        decoding="async"
+        className="mx-auto block h-auto w-full max-w-none"
+      />
+    );
+  }
+
+  // Images statiques → next/image avec unoptimized (contrainte AGENTS.md).
   return (
     <Image
-      src={sectionImageUrl(image.storagePath)}
+      src={src}
       alt={alt}
       width={image.width}
       height={image.height}
-      sizes={webtoonSizes()}
       priority={priority}
       fetchPriority={priority ? "high" : "low"}
       loading={priority ? "eager" : "lazy"}
-      className="h-auto w-full"
+      className="mx-auto block h-auto w-full max-w-none"
       unoptimized
+      style={{ maxWidth: image.width > 0 ? image.width : undefined }}
       {...(blurDataURL ? { placeholder: "blur", blurDataURL } : undefined)}
     />
   );
@@ -69,9 +92,11 @@ export interface ImageSectionProps {
 /**
  * Section image simple — cas de base du lecteur webtoon.
  *
- * Flux natif strictement : aucune animation, l'image occupe sa hauteur
- * naturelle et défile avec la page. `next/image` sert l'optimisé
- * (AVIF/WebP T12), jamais `<img>` natif ni le fichier source.
+ * Les images animées (GIF, mimeType `image/gif` ou extension `.gif`)
+ * sont rendues en `<img>` natif pour préserver l'animation.
+ * Les images statiques utilisent `next/image` avec `unoptimized`
+ * (contrainte AGENTS.md). Le `sizes` forcé à 800px est supprimé
+ * (shrink fix T16) — l'image rend à sa taille réelle.
  */
 export function ImageSection({ section, priority = false, blurDataURL }: ImageSectionProps) {
   const t = useTranslations("reader.section");

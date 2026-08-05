@@ -14,12 +14,14 @@ export interface LongYSectionProps {
 }
 
 /**
- * Section image longue axe Y — flux natif strictement.
+ * Section image longue axe Y — délègue à `SectionImage` (ImageSection).
  *
  * Même rendu qu'ImageSection : l'image très haute occupe sa hauteur naturelle
- * et défile avec la page. DÉCISION (plan) : PAS d'animation sticky/zoom — le
- * scroll natif est déjà la meilleure perf. `next/image` sert le WebP optimisé
- * (T12), pas le fichier source (contrainte mémoire).
+ * et défile avec la page. Les images animées (GIF) sont rendues en `<img>`
+ * natif pour préserver l'animation ; les images statiques utilisent
+ * `next/image` avec `unoptimized`. Le `sizes` forcé à 800px est supprimé
+ * (shrink fix T16). DÉCISION (plan) : PAS d'animation sticky/zoom — le
+ * scroll natif est déjà la meilleure perf.
  */
 export function LongYSection({ section, priority = false, blurDataURL }: LongYSectionProps) {
   const t = useTranslations("reader.section");

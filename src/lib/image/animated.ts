@@ -1,4 +1,20 @@
 /**
+ * Détection d'images animées par mimeType / extension de chemin.
+ *
+ * Retourne `true` si le mimeType est exactement `"image/gif"` ou si la
+ * chaîne se termine par l'extension `.gif`.
+ *
+ * Ne fait PAS de détection par octets (coûteux côté lecteur) — on se
+ * fie au mimeType/extension stocké en BDD (T5 conserve `file.type`).
+ * Le WebP animé n'est pas détectable par mimeType seul
+ * (`image/webp` est partagé avec le WebP statique) ; la détection par
+ * octets reste côté upload (T3).
+ */
+export function isAnimatedMime(mimeType: string): boolean {
+  return mimeType === "image/gif" || mimeType.endsWith(".gif");
+}
+
+/**
  * Détection d'images animées (GIF/WebP) par inspection d'octets.
  *
  * Aucun décodage d'image, aucune bibliothèque externe, aucun drawImage.
