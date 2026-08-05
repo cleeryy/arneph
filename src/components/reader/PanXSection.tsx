@@ -1,13 +1,11 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { motion, useReducedMotion, useScroll, useTransform } from "motion/react";
 
 import { panDistance, panXFromProgress } from "@/lib/scroll/transforms";
 import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
-import { webtoonSizes } from "@/lib/image/sizes";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { PanXSectionConfig } from "@/types/webtoon";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
@@ -82,9 +80,6 @@ export default function PanXSection({ section }: { section: SectionWithImages })
 
   const label = t("panX");
 
-  // reduced-motion OU rien à panner (image ≤ conteneur) : rendu statique —
-  // image centrée, clampée au conteneur, aucune section synthétique.
-  // Utilise next/image (pas de <img> natif) pour l'optimisation.
   if (reduceMotion || maxPan <= 0) {
     return (
       <section
@@ -97,15 +92,12 @@ export default function PanXSection({ section }: { section: SectionWithImages })
         className="mx-auto w-full overflow-hidden border-b border-border bg-muted/20"
       >
         {src && image ? (
-          <Image
+          <img
             src={src}
             alt={label}
-            width={image.width}
-            height={image.height}
-            sizes={webtoonSizes()}
-            className="mx-auto block h-auto w-full"
-            style={{ maxWidth: imageWidth > 0 ? imageWidth : undefined }}
-            unoptimized
+            data-testid="pan-x-image"
+            className="mx-auto block h-auto"
+            style={{ width: imageWidth, maxWidth: "100%", height: imageHeight }}
           />
         ) : null}
       </section>
