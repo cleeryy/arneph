@@ -54,7 +54,9 @@ function PanXPreview({ section, progress }: { section: SectionWithImages; progre
     return () => ro.disconnect();
   }, []);
 
-  const panX = panXFromProgress(progress, imageWidth, viewportWidth || imageWidth);
+  const PAN_PREVIEW_VIEWPORT_FALLBACK = 800;
+  const effectiveViewportWidth = viewportWidth || PAN_PREVIEW_VIEWPORT_FALLBACK;
+  const panX = panXFromProgress(progress, imageWidth, effectiveViewportWidth);
 
   if (!src || !image) return null;
 

@@ -217,6 +217,47 @@ describe("ScrollScrubber — slider value → progress mapping", () => {
     fireEvent.change(slider, { target: { value: "0" } });
     expect(onChange).toHaveBeenCalledWith(0);
   });
+
+  test("slider drag updates pan-x preview img translateX transform", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<SectionPreview section={makePanXSection()} />));
+
+    const slider = screen.getByRole("slider");
+    const img = screen.getByTestId("preview-pan-x").querySelector("img");
+    expect(img).toBeInTheDocument();
+
+    expect(img?.style.transform).toBe("translateX(-0px)");
+
+    fireEvent.change(slider, { target: { value: "50" } });
+    expect(img?.style.transform).toBe("translateX(-600px)");
+
+    fireEvent.change(slider, { target: { value: "100" } });
+    expect(img?.style.transform).toBe("translateX(-1200px)");
+  });
+
+  test("slider is visible only for pan-x and animation sections", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<SectionPreview section={makePanXSection()} />));
+    expect(screen.getByRole("slider")).toBeInTheDocument();
+  });
+
+  test("slider is visible for animation sections", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<SectionPreview section={makeAnimationSection()} />));
+    expect(screen.getByRole("slider")).toBeInTheDocument();
+  });
+
+  test("slider is not visible for image sections", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<SectionPreview section={makeImageSection()} />));
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+  });
+
+  test("slider is not visible for long-y sections", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<SectionPreview section={makeLongYSection()} />));
+    expect(screen.queryByRole("slider")).not.toBeInTheDocument();
+  });
 });
 
 describe("PreviewRenderer — correct component per section type", () => {
