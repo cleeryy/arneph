@@ -6,6 +6,13 @@
 
 export type SectionType = 'image' | 'long-y' | 'pan-x' | 'animation';
 
+/** Configuration de l'overlay FX (GIF/WebP animé) positionné sur une section. */
+export interface FxOverlayConfig {
+  position: { x: 'left' | 'center' | 'right'; y: 'top' | 'center' | 'bottom' };
+  size: { mode: 'px' | 'percent'; width?: number; height?: number };
+  opacity: number;
+}
+
 /** Affichage statique. */
 export interface ImageSectionConfig {
   type: 'image';
@@ -13,6 +20,10 @@ export interface ImageSectionConfig {
   width: number;
   height: number;
   audioPath?: string;
+  /** Overlay GIF/WebP animé (positionné par fxConfig). */
+  fxPath?: string;
+  /** Configuration de positionnement/opacité de l'overlay. */
+  fxConfig?: FxOverlayConfig;
 }
 
 /** Image haute, défilement natif sans animation. */
@@ -22,6 +33,10 @@ export interface LongYSectionConfig {
   width: number;
   height: number;
   audioPath?: string;
+  /** Overlay GIF/WebP animé (positionné par fxConfig). */
+  fxPath?: string;
+  /** Configuration de positionnement/opacité de l'overlay. */
+  fxConfig?: FxOverlayConfig;
 }
 
 /** Image large qui panne horizontalement au scroll. */
