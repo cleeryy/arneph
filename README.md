@@ -75,7 +75,7 @@ docker compose logs --tail=100 app
 
 Compose lit `.env` pour le runtime et transmet les variables `NEXT_PUBLIC_*`
 au build Next. Cloudflared est externe à ce dépôt et doit publier
-`http://127.0.0.1:3000` vers le domaine applicatif.
+`http://<adresse-LAN-de-l-hote-Docker>:3000` vers le domaine applicatif.
 
 ## Tooling
 

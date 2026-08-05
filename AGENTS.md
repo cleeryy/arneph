@@ -100,8 +100,9 @@ curl -I http://127.0.0.1:3000/
 ## Production et Cloudflared
 
 Docker Compose lance uniquement Next.js sur `0.0.0.0:3000`. Le tunnel
-Cloudflared est géré en dehors de ce dépôt et doit pointer vers
-`http://127.0.0.1:3000`.
+Cloudflared est géré en dehors de ce dépôt. S'il tourne sur une autre machine
+du réseau, il doit pointer vers l'adresse LAN de l'hôte Docker, par exemple
+`http://192.168.1.20:3000`, et non vers `127.0.0.1`.
 
 Domaine applicatif : `https://arneph.cleeryy.cloud`.
 

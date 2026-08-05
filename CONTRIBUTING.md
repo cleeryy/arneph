@@ -74,4 +74,5 @@ Tester ensuite :
 
 Le tunnel Cloudflared n'est pas lancé par Compose. Next écoute explicitement
 sur `0.0.0.0:3000` pour permettre à Cloudflared installé sur une autre machine
-du réseau de joindre le service.
+du réseau de joindre le service via l'adresse LAN de l'hôte Docker, par exemple
+`http://192.168.1.20:3000`.
