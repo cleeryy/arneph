@@ -1,6 +1,9 @@
+import * as React from "react";
 import type { ReactElement } from "react";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { readFileSync } from "fs";
+import { join } from "path";
 import { NextIntlClientProvider } from "next-intl";
 
 import { EditorCanvas } from "../EditorCanvas";
@@ -41,6 +44,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  delete (Element.prototype as any).scrollIntoView;
 });
 
 function wrap(ui: ReactElement) {
@@ -174,5 +178,79 @@ describe("EditorCanvas — T23", () => {
 
     const moveDownBtn = screen.getByRole("button", { name: "Descendre" });
     expect(moveDownBtn).toBeDisabled();
+  });
+});
+
+describe("EditorCanvas — T7: Scroll-to-new-section + sticky header/sidebar", () => {
+  test("after creating a section, scrollIntoView is called on the new section element", () => {
+    vi.useFakeTimers();
+    const mockScrollIntoView = vi.fn();
+    (Element.prototype as any).scrollIntoView = mockScrollIntoView;
+
+    const initialSections = [makeSection("sec-1", 1, "image")];
+    const onChange = vi.fn();
+    function Wrapper() {
+      const [sections, setSections] = React.useState(initialSections);
+      const handleChange = (next: SectionWithImages[]) => {
+        setSections(next);
+        onChange(next);
+      };
+      return <EditorCanvas sections={sections} onSectionsChange={handleChange} webtoonId="test-webtoon-id" />;
+    }
+
+    render(wrap(<Wrapper />));
+
+    fireEvent.click(screen.getByRole("button", { name: /Ajouter une section/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Créer/ }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const newSections = onChange.mock.calls[0][0] as SectionWithImages[];
+    const newSectionId = newSections[newSections.length - 1].id;
+
+    vi.runAllTimers();
+
+    const newSectionEl = document.querySelector(`[data-section-id="${newSectionId}"]`);
+    expect(newSectionEl).toBeTruthy();
+    expect(mockScrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
+
+    delete (Element.prototype as any).scrollIntoView;
+    vi.useRealTimers();
+  });
+
+  test("after creating a section, the new section is selected (data-selected=true)", () => {
+    const initialSections = [makeSection("sec-1", 1, "image")];
+    const onChange = vi.fn();
+    function Wrapper() {
+      const [sections, setSections] = React.useState(initialSections);
+      const handleChange = (next: SectionWithImages[]) => {
+        setSections(next);
+        onChange(next);
+      };
+      return <EditorCanvas sections={sections} onSectionsChange={handleChange} webtoonId="test-webtoon-id" />;
+    }
+
+    render(wrap(<Wrapper />));
+
+    fireEvent.click(screen.getByRole("button", { name: /Ajouter une section/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Créer/ }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const newSections = onChange.mock.calls[0][0] as SectionWithImages[];
+    const newSectionId = newSections[newSections.length - 1].id;
+
+    const newSectionEl = screen.getByTestId(`editor-section-${newSectionId}`);
+    expect(newSectionEl).toHaveAttribute("data-selected", "true");
+  });
+
+  test("aside has sticky positioning classes for desktop layout", () => {
+    const pageSource = readFileSync(
+      join(__dirname, "../../../app/editor/[webtoonId]/page.tsx"),
+      "utf-8",
+    );
+    expect(pageSource).toContain("lg:sticky");
+    expect(pageSource).toContain("lg:top-14");
+    expect(pageSource).toContain("lg:self-start");
+    expect(pageSource).toContain("lg:max-h-[calc(100vh-3.5rem)]");
+    expect(pageSource).toContain("lg:overflow-y-auto");
   });
 });

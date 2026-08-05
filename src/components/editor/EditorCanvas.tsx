@@ -52,6 +52,19 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
   const setIsDirty = editorState?.setIsDirty ?? noop;
   const [configPanelSection, setConfigPanelSection] = React.useState<SectionWithImages | null>(null);
   const [newSectionOpen, setNewSectionOpen] = React.useState(false);
+  const [scrollTargetId, setScrollTargetId] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!scrollTargetId) return;
+    const raf = requestAnimationFrame(() => {
+      document.querySelector(`[data-section-id="${scrollTargetId}"]`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      setScrollTargetId(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [scrollTargetId]);
 
   const handleAddSection = React.useCallback(() => {
     setNewSectionOpen(true);
@@ -62,8 +75,9 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
       const now = new Date().toISOString();
       const nextPosition =
         sections.reduce((max, section) => Math.max(max, section.position), 0) + 1;
+      const newId = crypto.randomUUID();
       const newSection = {
-        id: crypto.randomUUID(),
+        id: newId,
         webtoonId,
         position: nextPosition,
         type,
@@ -76,6 +90,8 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
       onSectionsChange([...sections, newSection]);
       setIsDirty(true);
       setNewSectionOpen(false);
+      setSelectedId(newId);
+      setScrollTargetId(newId);
     },
     [sections, onSectionsChange, setIsDirty, webtoonId],
   );
