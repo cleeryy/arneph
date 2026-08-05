@@ -7,8 +7,15 @@ import {
   deleteWebtoonAction,
 } from "@/app/editor/actions";
 
+import { supabase } from "@/lib/db/server";
+import type { WebtoonWithSections } from "@/lib/db/queries";
+import {
+  getWebtoon,
+  createSection,
+} from "@/lib/db/queries";
+
 vi.mock("@/lib/db/server", () => ({
-  supabase: vi.fn(() => ({
+  supabase: {
     from: vi.fn(() => ({
       select: vi.fn().mockReturnThis(),
       insert: vi.fn().mockReturnThis(),
@@ -27,11 +34,26 @@ vi.mock("@/lib/db/server", () => ({
         remove: vi.fn().mockResolvedValue({ data: null, error: null }),
       })),
     },
-  })),
+  },
 }));
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
+}));
+
+vi.mock("@/lib/db/queries", () => ({
+  getWebtoon: vi.fn().mockResolvedValue(null),
+  createSection: vi.fn().mockResolvedValue({
+    id: "new-id",
+    type: "image",
+    config: {},
+    position: 0,
+    webtoonId: "w1",
+  }),
+  upsertSection: vi.fn().mockResolvedValue(undefined),
+  reorderSections: vi.fn().mockResolvedValue(undefined),
+  deleteWebtoon: vi.fn().mockResolvedValue(true),
+  updateWebtoon: vi.fn().mockResolvedValue(null),
 }));
 
 beforeEach(() => {
@@ -85,5 +107,178 @@ describe("deleteWebtoonAction", () => {
     const result = await deleteWebtoonAction("");
     expect(result.ok).toBe(false);
     expect(result.error).toBeDefined();
+  });
+});
+
+describe("saveWebtoon — FX config persistence", () => {
+  test("saveWebtoon with fxPath/fxConfig on image section persists full config via createSection", async () => {
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: {
+          type: "image",
+          imagePath: "test.webp",
+          width: 800,
+          height: 1200,
+          fxPath: "fx/overlay.gif",
+          fxConfig: {
+            position: { x: "center", y: "center" },
+            size: { mode: "px", width: 100, height: 100 },
+            opacity: 0.5,
+          },
+        },
+        audioPath: undefined,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        images: [],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(createSection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          fxPath: "fx/overlay.gif",
+          fxConfig: {
+            position: { x: "center", y: "center" },
+            size: { mode: "px", width: 100, height: 100 },
+            opacity: 0.5,
+          },
+        }),
+      }),
+    );
+  });
+
+    test("saveWebtoon with existing section persists full fx config via supabase update", async () => {
+      vi.mocked(getWebtoon).mockResolvedValueOnce({
+        id: "w1",
+        title: "Test",
+        sections: [
+          {
+            id: "s1",
+            webtoonId: "w1",
+            position: 0,
+            type: "image",
+            config: { type: "image", imagePath: "old.webp", width: 800, height: 1200 },
+            audioPath: undefined,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            images: [],
+          },
+        ],
+      } as unknown as WebtoonWithSections);
+
+      const result = await saveWebtoon("w1", [
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image",
+          config: {
+            type: "image",
+            imagePath: "test.webp",
+            width: 800,
+            height: 1200,
+            fxPath: "fx/overlay.gif",
+            fxConfig: {
+              position: { x: "center", y: "center" },
+              size: { mode: "px", width: 100, height: 100 },
+              opacity: 0.5,
+            },
+          },
+          audioPath: undefined,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          images: [],
+        },
+      ]);
+
+      expect(result.ok).toBe(true);
+      expect(createSection).not.toHaveBeenCalled();
+
+      const fromCalls = vi.mocked(supabase.from).mock.calls;
+      const sectionsIndex = fromCalls.findIndex(
+        (call) => call[0] === "sections",
+      );
+      expect(sectionsIndex).toBeGreaterThanOrEqual(0);
+      const chain = vi.mocked(supabase.from).mock.results[sectionsIndex].value;
+      expect(chain.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({
+            fxPath: "fx/overlay.gif",
+            fxConfig: {
+              position: { x: "center", y: "center" },
+              size: { mode: "px", width: 100, height: 100 },
+              opacity: 0.5,
+            },
+          }),
+        }),
+      );
+    });
+
+  test("saveWebtoon with invalid fxConfig (opacity 1.5) rejected by Zod", async () => {
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: {
+          type: "image",
+          imagePath: "test.webp",
+          width: 800,
+          height: 1200,
+          fxPath: "fx/overlay.gif",
+          fxConfig: {
+            position: { x: "center", y: "center" },
+            size: { mode: "px", width: 100, height: 100 },
+            opacity: 1.5,
+          },
+        },
+        audioPath: undefined,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        images: [],
+      },
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+
+  test("saveWebtoon with image section without fx is still saveable (backward compat)", async () => {
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: {
+          type: "image",
+          imagePath: "test.webp",
+          width: 800,
+          height: 1200,
+        },
+        audioPath: undefined,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        images: [],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(createSection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          type: "image",
+          imagePath: "test.webp",
+          width: 800,
+          height: 1200,
+        }),
+      }),
+    );
   });
 });
