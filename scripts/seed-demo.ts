@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import WebSocket from "ws";
 import { deflateSync } from "node:zlib";
 
 const BUCKET = "webtoon-images";
@@ -300,6 +301,7 @@ export async function seedDemo(force: boolean = false): Promise<{ webtoonId: str
 
   const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    realtime: { transport: WebSocket },
   });
 
   let firstWebtoonId: string | null = null;
@@ -320,7 +322,7 @@ export async function seedDemo(force: boolean = false): Promise<{ webtoonId: str
       continue;
     }
 
-    const audioPath = await uploadAsset(supabase, `webtoons/seed/${webtoonDef.title.toLowerCase()}/audio.wav`, createWavBlob(440, 1), "audio/wav");
+    const audioPath = await uploadAsset(supabase, `webtoons/seed/${webtoonDef.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}/audio.wav`, createWavBlob(440, 1), "audio/wav");
 
     const { data: webtoonRow, error: webtoonError } = await supabase
       .from("webtoons")

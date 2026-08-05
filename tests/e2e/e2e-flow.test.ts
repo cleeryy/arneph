@@ -165,7 +165,9 @@ test.describe("E2E Full User Flow", () => {
     await expect(page.locator("[data-testid='editor-sidebar']")).toBeVisible();
 
     // Attente que les sections ajoutées via l'API soient chargées puis rendues.
-    const sortableSections = page.locator("[data-testid^='sortable-section-']");
+    const sortableSections = page.locator(
+      "[data-testid='editor-canvas'] [data-testid^='sortable-section-']",
+    );
     await expect(sortableSections.first()).toBeVisible();
     const sectionCount = await sortableSections.count();
     expect(sectionCount).toBeGreaterThanOrEqual(2);

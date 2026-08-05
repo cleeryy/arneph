@@ -152,6 +152,51 @@ describe("saveWebtoon — FX config persistence", () => {
     );
   });
 
+  test("saveWebtoon remaps images to server-created section id (AGENTS.md rule)", async () => {
+    const result = await saveWebtoon("w1", [
+      {
+        id: "client-temp-id",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: {
+          type: "image",
+          imagePath: "test.webp",
+          width: 800,
+          height: 1200,
+        },
+        audioPath: undefined,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        images: [
+          {
+            id: "img-1",
+            sectionId: "client-temp-id",
+            webtoonId: "w1",
+            storagePath: "webtoons/sections/client-temp-id/1.webp",
+            width: 800,
+            height: 1200,
+            mimeType: "image/webp",
+            position: 0,
+          },
+        ],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+
+    const fromCalls = vi.mocked(supabase.from).mock.calls;
+    const imagesIndex = fromCalls.map((call) => call[0]).lastIndexOf("images");
+    expect(imagesIndex).toBeGreaterThanOrEqual(0);
+    const chain = vi.mocked(supabase.from).mock.results[imagesIndex].value;
+    expect(chain.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        section_id: "new-id",
+        storage_path: "webtoons/sections/client-temp-id/1.webp",
+      }),
+    ]);
+  });
+
     test("saveWebtoon with existing section persists full fx config via supabase update", async () => {
       vi.mocked(getWebtoon).mockResolvedValueOnce({
         id: "w1",

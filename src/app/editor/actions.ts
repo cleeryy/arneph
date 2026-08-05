@@ -162,7 +162,7 @@ async function syncImages(
     .insert(
       images.map((img) => ({
         id: img.id,
-        section_id: img.sectionId,
+        section_id: sectionId,
         webtoon_id: img.webtoonId,
         storage_path: img.storagePath,
         width: img.width,

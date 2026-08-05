@@ -174,13 +174,20 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
 
   if (sorted.length === 0) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-4 p-4">
-        <p>{t("canvasEmpty")}</p>
-        <Button onClick={handleAddSection}>
-          <Plus className="mr-2 h-4 w-4" />
-          {t("addSection")}
-        </Button>
-      </div>
+      <>
+        <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-4 p-4">
+          <p>{t("canvasEmpty")}</p>
+          <Button onClick={handleAddSection}>
+            <Plus className="mr-2 h-4 w-4" />
+            {t("addSection")}
+          </Button>
+        </div>
+        <NewSectionDialog
+          open={newSectionOpen}
+          onOpenChange={setNewSectionOpen}
+          onConfirm={handleCreateSection}
+        />
+      </>
     );
   }
 
