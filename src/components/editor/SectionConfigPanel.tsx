@@ -47,7 +47,7 @@ function getSectionTypeLabel(t: ReturnType<typeof useTranslations>, type: Sectio
 
 const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/webm", "audio/ogg"];
 
-function createDefaultConfig(type: SectionType): SectionWithImages["config"] {
+export function createDefaultConfig(type: SectionType): SectionWithImages["config"] {
   switch (type) {
     case "image":
       return { type: "image", imagePath: "", width: 0, height: 0 };

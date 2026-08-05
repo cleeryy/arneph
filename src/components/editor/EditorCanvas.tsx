@@ -25,8 +25,10 @@ import { Edit3 } from "lucide-react";
 import { SectionPreview } from "./SectionPreview";
 import { SectionSortableItem } from "./SectionSortableItem";
 import { EditorStateContext } from "./EditorStateContext";
-import { SectionConfigPanel } from "./SectionConfigPanel";
+import { SectionConfigPanel, createDefaultConfig } from "./SectionConfigPanel";
+import { NewSectionDialog } from "./NewSectionDialog";
 import type { SectionWithImages } from "@/lib/db/queries";
+import type { SectionType } from "@/types/webtoon";
 
 interface EditorCanvasProps {
   sections: SectionWithImages[];
@@ -49,25 +51,34 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
   const editorState = React.useContext(EditorStateContext);
   const setIsDirty = editorState?.setIsDirty ?? noop;
   const [configPanelSection, setConfigPanelSection] = React.useState<SectionWithImages | null>(null);
+  const [newSectionOpen, setNewSectionOpen] = React.useState(false);
 
   const handleAddSection = React.useCallback(() => {
-    const now = new Date().toISOString();
-    const nextPosition =
-      sections.reduce((max, section) => Math.max(max, section.position), 0) + 1;
-    const newSection = {
-      id: crypto.randomUUID(),
-      webtoonId,
-      position: nextPosition,
-      type: "image" as const,
-      config: { type: "image", imagePath: "", width: 800, height: 1280 },
-      images: [],
-      audioPath: undefined,
-      createdAt: now,
-      updatedAt: now,
-    } satisfies SectionWithImages;
-    onSectionsChange([...sections, newSection]);
-    setIsDirty(true);
-  }, [sections, onSectionsChange, setIsDirty, webtoonId]);
+    setNewSectionOpen(true);
+  }, []);
+
+  const handleCreateSection = React.useCallback(
+    (type: SectionType) => {
+      const now = new Date().toISOString();
+      const nextPosition =
+        sections.reduce((max, section) => Math.max(max, section.position), 0) + 1;
+      const newSection = {
+        id: crypto.randomUUID(),
+        webtoonId,
+        position: nextPosition,
+        type,
+        config: createDefaultConfig(type),
+        images: [],
+        audioPath: undefined,
+        createdAt: now,
+        updatedAt: now,
+      } satisfies SectionWithImages;
+      onSectionsChange([...sections, newSection]);
+      setIsDirty(true);
+      setNewSectionOpen(false);
+    },
+    [sections, onSectionsChange, setIsDirty, webtoonId],
+  );
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -267,25 +278,31 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
         </SortableContext>
       </DndContext>
 
-      {configPanelSection && (
-        <Dialog
-          open={!!configPanelSection}
-          onOpenChange={(open) => {
-            if (!open) setConfigPanelSection(null);
-          }}
-        >
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{t("configPanelTitle")}</DialogTitle>
-            </DialogHeader>
-            <SectionConfigPanel
-              section={configPanelSection}
-              onSectionChange={handleConfigSectionChange}
-              onClose={() => setConfigPanelSection(null)}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
+       {configPanelSection && (
+         <Dialog
+           open={!!configPanelSection}
+           onOpenChange={(open) => {
+             if (!open) setConfigPanelSection(null);
+           }}
+         >
+           <DialogContent className="sm:max-w-lg">
+             <DialogHeader>
+               <DialogTitle>{t("configPanelTitle")}</DialogTitle>
+             </DialogHeader>
+             <SectionConfigPanel
+               section={configPanelSection}
+               onSectionChange={handleConfigSectionChange}
+               onClose={() => setConfigPanelSection(null)}
+             />
+           </DialogContent>
+         </Dialog>
+       )}
+
+       <NewSectionDialog
+         open={newSectionOpen}
+         onOpenChange={setNewSectionOpen}
+         onConfirm={handleCreateSection}
+       />
+     </div>
   );
 }
