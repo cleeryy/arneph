@@ -106,7 +106,6 @@ export function AnimationSection({ section }: AnimationSectionProps) {
           }}
         />
       </div>
-      <link rel="preload" as="image" href={backgroundImage} />
     </section>
   );
 }

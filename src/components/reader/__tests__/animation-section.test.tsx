@@ -164,17 +164,35 @@ describe("AnimationSection — sprite sheet scroll-driven (T18)", () => {
     expect(screen.getByTestId("animation-section").style.height).toBe("350vh");
   });
 
-  test("précharge le sprite via <link rel=preload> (pas next/image pour un background)", () => {
+  test("précharge le sprite via background-image (pas de <link rel=preload> dans le DOM)", () => {
     mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
 
     const { container } = render(wrap(<AnimationSection section={makeSection(baseConfig)} />));
 
-    const link =
-      container.querySelector('link[rel="preload"]') ??
-      document.head.querySelector('link[rel="preload"]');
-    expect(link).not.toBeNull();
-    expect(link).toHaveAttribute("as", "image");
-    expect(link).toHaveAttribute("href", spriteUrl("sprite.webp"));
+    expect(container.querySelector('link[rel="preload"]')).toBeNull();
+    expect(document.head.querySelector('link[rel="preload"]')).toBeNull();
+  });
+
+  test("frameCount=1 : frame médiane figée, backgroundPosition stable quel que soit le progress", () => {
+    const singleFrameConfig = { ...baseConfig, frameCount: 1 };
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+    const { rerender } = render(
+      wrap(<AnimationSection section={makeSection(singleFrameConfig)} />),
+    );
+    expect(screen.getByTestId("animation-frame").style.backgroundPosition).toBe("0px 0px");
+
+    mockUseScroll.mockReturnValue({ scrollYProgress: 1 });
+    rerender(wrap(<AnimationSection section={makeSection(singleFrameConfig)} />));
+    expect(screen.getByTestId("animation-frame").style.backgroundPosition).toBe("0px 0px");
+  });
+
+  test("backgroundSize = columns*frameWidth x rows*frameHeight (cohérent avec les dimensions réelles du sprite sheet)", () => {
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+
+    const { container } = render(wrap(<AnimationSection section={makeSection(baseConfig)} />));
+
+    const frame = screen.getByTestId("animation-frame");
+    expect(frame.style.backgroundSize).toBe("800px 450px");
   });
 
   test("sprite en secours via config.spritePath si aucune image n'est attachée", () => {
