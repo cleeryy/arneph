@@ -4,6 +4,7 @@ import * as React from "react";
 
 import { useSectionAudioContext } from "./section-audio-context";
 import type { SectionWithImages } from "@/lib/db/queries";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
 const AUDIO_THRESHOLD = 0.4;
 const DEBOUNCE_MS = 150;
@@ -68,6 +69,5 @@ export function SectionAudioTracker({ sections }: SectionAudioTrackerProps) {
 }
 
 function buildAudioUrl(audioPath: string): string {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  return `${base}/storage/v1/object/public/webtoon-images/${audioPath}`;
+  return getSupabasePublicObjectUrl(audioPath);
 }

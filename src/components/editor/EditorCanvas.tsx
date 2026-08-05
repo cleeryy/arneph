@@ -20,13 +20,7 @@ import {
 } from "@dnd-kit/sortable";
 
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Edit3 } from "lucide-react";
 import { SectionPreview } from "./SectionPreview";
 import { SectionSortableItem } from "./SectionSortableItem";
@@ -40,28 +34,40 @@ interface EditorCanvasProps {
   webtoonId: string;
 }
 
+const noop = () => {};
+
+function renumberSections(sections: SectionWithImages[]): SectionWithImages[] {
+  return sections.map((section, index) => ({
+    ...section,
+    position: index + 1,
+  }));
+}
+
 export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCanvasProps) {
   const t = useTranslations("editor");
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const editorState = React.useContext(EditorStateContext);
-  const setIsDirty = editorState?.setIsDirty ?? (() => {});
+  const setIsDirty = editorState?.setIsDirty ?? noop;
   const [configPanelSection, setConfigPanelSection] = React.useState<SectionWithImages | null>(null);
 
   const handleAddSection = React.useCallback(() => {
+    const now = new Date().toISOString();
+    const nextPosition =
+      sections.reduce((max, section) => Math.max(max, section.position), 0) + 1;
     const newSection = {
       id: crypto.randomUUID(),
       webtoonId,
-      position: sections.length + 1,
+      position: nextPosition,
       type: "image" as const,
-      config: { type: "image", width: 800, height: 1280 },
+      config: { type: "image", imagePath: "", width: 800, height: 1280 },
       images: [],
       audioPath: undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    } as unknown as SectionWithImages;
+      createdAt: now,
+      updatedAt: now,
+    } satisfies SectionWithImages;
     onSectionsChange([...sections, newSection]);
     setIsDirty(true);
-  }, [sections.length, onSectionsChange, setIsDirty, webtoonId]);
+  }, [sections, onSectionsChange, setIsDirty, webtoonId]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -84,20 +90,17 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
     setSelectedId((prev) => (prev === id ? null : id));
   }, []);
 
-  const handleCloseConfigPanel = React.useCallback(() => {
-    setConfigPanelSection(null);
-  }, []);
-
   const handleConfigSectionChange = React.useCallback((section: SectionWithImages) => {
-    onSectionsChange(sections.map((s) => (s.id === section.id ? section : s)));
+    onSectionsChange(sections.map((current) => (current.id === section.id ? section : current)));
     setConfigPanelSection(section);
     setIsDirty(true);
   }, [sections, onSectionsChange, setIsDirty]);
 
   const handleDelete = React.useCallback(
     (id: string) => {
-      const next = sections.filter((s) => s.id !== id);
-      onSectionsChange(next);
+      onSectionsChange(
+        renumberSections(sections.filter((section) => section.id !== id)),
+      );
       setIsDirty(true);
       setSelectedId((prev) => (prev === id ? null : prev));
     },
@@ -108,14 +111,9 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
     (id: string) => {
       const idx = sections.findIndex((s) => s.id === id);
       if (idx <= 0) return;
-      const next = [...sections];
-      const temp = next[idx];
-      next[idx] = next[idx - 1];
-      next[idx - 1] = temp;
-      next.forEach((s, i) => {
-        s.position = i + 1;
-      });
-      onSectionsChange(next);
+      onSectionsChange(
+        renumberSections(arrayMove(sections, idx, idx - 1)),
+      );
       setIsDirty(true);
     },
     [sections, onSectionsChange, setIsDirty],
@@ -125,14 +123,9 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
     (id: string) => {
       const idx = sections.findIndex((s) => s.id === id);
       if (idx < 0 || idx >= sections.length - 1) return;
-      const next = [...sections];
-      const temp = next[idx];
-      next[idx] = next[idx + 1];
-      next[idx + 1] = temp;
-      next.forEach((s, i) => {
-        s.position = i + 1;
-      });
-      onSectionsChange(next);
+      onSectionsChange(
+        renumberSections(arrayMove(sections, idx, idx + 1)),
+      );
       setIsDirty(true);
     },
     [sections, onSectionsChange, setIsDirty],
@@ -145,12 +138,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
         const oldIndex = sortedIds.indexOf(active.id as string);
         const newIndex = sortedIds.indexOf(over?.id as string);
         if (oldIndex < 0 || newIndex < 0) return;
-        const reordered = arrayMove(sorted, oldIndex, newIndex);
-        const next = reordered.map((s, i) => ({
-          ...s,
-          position: i + 1,
-        }));
-        onSectionsChange(next);
+        onSectionsChange(renumberSections(arrayMove(sorted, oldIndex, newIndex)));
         setIsDirty(true);
       }
     },

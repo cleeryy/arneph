@@ -17,6 +17,9 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
+Les règles détaillées pour les agents et contributeurs sont dans
+[`AGENTS.md`](./AGENTS.md) et [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
 ## Tests
 
 ```bash
@@ -54,7 +57,25 @@ A seeded demo webtoon **« Démo »** (id `98ed65b1-833f-4dac-ae8f-77d5789d986f`
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for client-side operations (uploads, storage) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for server-side operations (required for local dev, production) |
 
-The `next/image` `remotePatterns` are derived from `NEXT_PUBLIC_SUPABASE_URL` at startup — never hardcoded.
+Les URLs Storage sont construites par `src/lib/supabase/public-url.ts`. Les
+images Supabase dynamiques sont servies directement (`unoptimized`) après
+vérification de l'URL source, car l'optimiseur Next 16 peut refuser le domaine
+Cloudflare Storage avec une réponse `400`.
+
+## Production Docker
+
+Le service applicatif est lancé par Docker Compose sur `0.0.0.0:3000` :
+
+```bash
+docker compose config
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=100 app
+```
+
+Compose lit `.env` pour le runtime et transmet les variables `NEXT_PUBLIC_*`
+au build Next. Cloudflared est externe à ce dépôt et doit publier
+`http://127.0.0.1:3000` vers le domaine applicatif.
 
 ## Tooling
 

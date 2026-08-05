@@ -19,6 +19,7 @@ import {
   resizeImage,
   toWebP,
   buildSpriteSheet,
+  readImageDimensions,
   ImageProcessingError,
 } from "@/lib/image/process";
 import type { SectionWithImages } from "@/lib/db/queries";
@@ -117,6 +118,7 @@ export function SectionConfigPanel({
     try {
       const resized = await resizeImage(file);
       const webp = await toWebP(resized);
+      const dimensions = await readImageDimensions(webp);
       const path = generateStoragePath(section.id, file.name);
 
       const { createClient } = await import("@supabase/supabase-js");
@@ -138,8 +140,8 @@ export function SectionConfigPanel({
          sectionId: section.id,
          webtoonId: section.webtoonId,
          storagePath: uploadData.path,
-         width: resized.size > 0 ? imageConfig.width : 0,
-         height: resized.size > 0 ? imageConfig.height : 0,
+         width: dimensions.width,
+         height: dimensions.height,
          mimeType: "image/webp",
          position: section.images.length,
        };
@@ -150,6 +152,8 @@ export function SectionConfigPanel({
          config: {
            ...imageConfig,
            imagePath: uploadData.path,
+           width: dimensions.width,
+           height: dimensions.height,
          },
        };
       onSectionChange(updatedSection);

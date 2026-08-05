@@ -41,16 +41,17 @@ const publishWebtoonSchema = z.object({
   webtoonId: z.string().min(1),
 });
 
-async function cleanupSectionStorage(sectionId: string): Promise<void> {
+async function cleanupSectionStorage(sectionId: string, knownPaths: string[] = []): Promise<void> {
   const prefix = `webtoons/sections/${sectionId}/`;
   const { data: files, error: listError } = await supabase
     .storage
     .from("webtoon-images")
     .list(prefix, { limit: 1000 });
 
-  if (listError || !files || files.length === 0) return;
+  const listedPaths = listError || !files ? [] : files.map((file: { name: string }) => `${prefix}${file.name}`);
+  const paths = [...new Set([...knownPaths, ...listedPaths])];
+  if (paths.length === 0) return;
 
-  const paths = files.map((f) => `${prefix}${f.name}`);
   const { error: removeError } = await supabase
     .storage
     .from("webtoon-images")
@@ -83,29 +84,42 @@ export async function saveWebtoon(
       incomingSections.map((s) => s.id),
     );
 
-    const removedIds = [...existingSectionIds].filter(
-      (id) => !incomingSectionIds.has(id),
+    const removedSections = (current?.sections ?? []).filter(
+      (section) => !incomingSectionIds.has(section.id),
     );
-    await Promise.all(removedIds.map(cleanupSectionStorage));
+    const removedIds = removedSections.map((section) => section.id);
+    const removedStorage = removedSections.map((section) => [
+      ...section.images.map((image) => image.storagePath),
+      section.audioPath,
+      "imagePath" in section.config ? section.config.imagePath : undefined,
+      "spritePath" in section.config ? section.config.spritePath : undefined,
+    ].filter((path): path is string => Boolean(path)));
+    await Promise.all(
+      removedIds.map((id, index) => cleanupSectionStorage(id, removedStorage[index])),
+    );
 
+    const persistedIds = new Map<string, string>();
     for (const section of incomingSections) {
       if (existingSectionIds.has(section.id)) {
         await upsertSection(section);
+        persistedIds.set(section.id, section.id);
       } else {
-        await createSection({
+        const created = await createSection({
           webtoonId: section.webtoonId,
           type: section.type,
           config: section.config,
           position: section.position,
           audioPath: section.audioPath,
         });
-        await syncImages(section.id, section.images);
+        persistedIds.set(section.id, created.id);
+        await syncImages(created.id, section.images);
       }
     }
 
-    const orderedIds = incomingSections
+    const orderedIds = [...incomingSections]
       .sort((a, b) => a.position - b.position)
-      .map((s) => s.id);
+      .map((s) => persistedIds.get(s.id))
+      .filter((id): id is string => Boolean(id));
     await reorderSections(wid, orderedIds);
 
     revalidatePath(`/editor/${wid}`);
@@ -229,8 +243,16 @@ export async function deleteWebtoonAction(
   try {
     const current = await getWebtoon(webtoonId);
     if (current?.sections) {
-      const sectionIds = current.sections.map((s) => s.id);
-      await Promise.all(sectionIds.map(cleanupSectionStorage));
+      await Promise.all(
+        current.sections.map((section) =>
+          cleanupSectionStorage(section.id, [
+            ...section.images.map((image) => image.storagePath),
+            section.audioPath,
+            "imagePath" in section.config ? section.config.imagePath : undefined,
+            "spritePath" in section.config ? section.config.spritePath : undefined,
+          ].filter((path): path is string => Boolean(path))),
+        ),
+      );
     }
 
     await deleteWebtoon(webtoonId);

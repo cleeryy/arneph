@@ -10,11 +10,11 @@ import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
 import { webtoonSizes } from "@/lib/image/sizes";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { PanXSectionConfig } from "@/types/webtoon";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
 /** URL publique d'un objet du bucket storage `webtoon-images`. */
 function storageUrl(path: string): string {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${base}/storage/v1/object/public/webtoon-images/${path}`;
+  return getSupabasePublicObjectUrl(path);
 }
 
 /** Section pan-x : image large pannée horizontalement par le scroll sticky (T17). */
@@ -105,6 +105,7 @@ export default function PanXSection({ section }: { section: SectionWithImages })
             sizes={webtoonSizes()}
             className="mx-auto block h-auto w-full"
             style={{ maxWidth: imageWidth > 0 ? imageWidth : undefined }}
+            unoptimized
           />
         ) : null}
       </section>

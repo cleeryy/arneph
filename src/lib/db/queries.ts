@@ -1,4 +1,4 @@
-import { supabase } from "./server";
+import { supabase, type Database } from "./server";
 import type {
   ImageRecord,
   Section,
@@ -134,7 +134,7 @@ export async function updateWebtoon(
   id: string,
   data: UpdateWebtoonData,
 ): Promise<Webtoon | null> {
-  const patch: Record<string, unknown> = {};
+  const patch: Database["public"]["Tables"]["webtoons"]["Update"] = {};
   if (data.title !== undefined) patch.title = data.title;
   if (data.description !== undefined) patch.description = data.description;
   if (data.coverPath !== undefined) patch.cover_path = data.coverPath;
@@ -164,7 +164,7 @@ export async function listPublishedWebtoons(): Promise<Webtoon[]> {
     .eq("visibility", "published")
     .order("updated_at", { ascending: false });
   if (error) throwDbError("listPublishedWebtoons", error);
-  return (data ?? []).map((row) => mapWebtoon(row as WebtoonRow));
+  return (data ?? []).map((row: WebtoonRow) => mapWebtoon(row));
 }
 
 /** Tous les webtoons (drafts inclus) — utilisé par l'éditeur. */
@@ -174,7 +174,7 @@ export async function listWebtoons(): Promise<Webtoon[]> {
     .select("*")
     .order("updated_at", { ascending: false });
   if (error) throwDbError("listWebtoons", error);
-  return (data ?? []).map((row) => mapWebtoon(row as WebtoonRow));
+  return (data ?? []).map((row: WebtoonRow) => mapWebtoon(row));
 }
 
 export async function getWebtoon(id: string): Promise<WebtoonWithSections | null> {
@@ -202,15 +202,15 @@ export async function getWebtoon(id: string): Promise<WebtoonWithSections | null
   if (imagesError) throwDbError("getWebtoon.images", imagesError);
 
   const imagesBySection = new Map<string, ImageRecord[]>();
-  for (const imageRow of imageRows ?? []) {
-    const key = (imageRow as ImageRow).section_id;
+  for (const imageRow of (imageRows ?? []) as ImageRow[]) {
+    const key = imageRow.section_id;
     const list = imagesBySection.get(key) ?? [];
-    list.push(mapImage(imageRow as ImageRow));
+    list.push(mapImage(imageRow));
     imagesBySection.set(key, list);
   }
 
-  const sections: SectionWithImages[] = (sectionRows ?? []).map((sectionRow) => {
-    const section = mapSection(sectionRow as SectionRow);
+  const sections: SectionWithImages[] = (sectionRows ?? []).map((sectionRow: SectionRow) => {
+    const section = mapSection(sectionRow);
     return { ...section, images: imagesBySection.get(section.id) ?? [] };
   });
 
@@ -256,7 +256,7 @@ export async function updateSection(
   id: string,
   data: UpdateSectionData,
 ): Promise<Section | null> {
-  const patch: Record<string, unknown> = {};
+  const patch: Database["public"]["Tables"]["sections"]["Update"] = {};
   if (data.type !== undefined) patch.type = data.type;
   if (data.config !== undefined) patch.config = data.config;
   if (data.position !== undefined) patch.position = data.position;

@@ -11,10 +11,10 @@ import {
 } from "@/lib/scroll/transforms";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { AnimationSectionConfig } from "@/types/webtoon";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
 export function spriteUrl(storagePath: string): string {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${base}/storage/v1/object/public/webtoon-images/${storagePath}`;
+  return getSupabasePublicObjectUrl(storagePath);
 }
 
 function middleFrame(frameCount: number): number {

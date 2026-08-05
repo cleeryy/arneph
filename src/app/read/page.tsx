@@ -4,6 +4,7 @@ import { getTranslations } from "next-intl/server";
 import { BookOpen } from "lucide-react";
 
 import { listPublishedWebtoons } from "@/lib/db/queries";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import {
   Card,
   CardDescription,
@@ -11,11 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-/** URL publique d'un objet du bucket storage `webtoon-images`. */
-function coverUrl(coverPath: string): string {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${base}/storage/v1/object/public/webtoon-images/${coverPath}`;
-}
+export const dynamic = "force-dynamic";
 
 /** Bibliothèque lecteur : webtoons publiés uniquement (fetch serveur T10, drafts jamais exposés). */
 export default async function ReadPage() {
@@ -48,12 +45,13 @@ export default async function ReadPage() {
                 <Card className="h-full transition-colors hover:bg-accent/50">
                   {webtoon.coverPath ? (
                     <Image
-                      src={coverUrl(webtoon.coverPath)}
+                      src={getSupabasePublicObjectUrl(webtoon.coverPath)}
                       alt={webtoon.title}
                       width={800}
                       height={450}
                       sizes="(min-width:640px) 50vw, 100vw"
                       className="aspect-video w-full object-cover"
+                      unoptimized
                     />
                   ) : (
                     <div className="flex aspect-video w-full items-center justify-center bg-muted/50 text-muted-foreground">

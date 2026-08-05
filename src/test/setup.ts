@@ -1,6 +1,10 @@
 import "@testing-library/jest-dom/vitest"
 import { vi } from "vitest"
 
+process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://supabase-arneph.cleeryy.cloud"
+process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??= "test-anon-key"
+process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role-key"
+
 // ─── next/navigation ───
 // Les hooks de navigation Next.js sont inutilisables hors d'un contexte
 // App Router ; mock systématique pour que les tests composants restent isolés.

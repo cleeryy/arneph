@@ -4,6 +4,8 @@ import { getTranslations } from "next-intl/server";
 import { getWebtoon } from "@/lib/db/queries";
 import { EditorCanvasClient } from "@/components/editor/EditorCanvasClient";
 
+export const dynamic = "force-dynamic";
+
 export default async function EditorWebtoonPage({
   params,
 }: {

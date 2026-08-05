@@ -5,6 +5,7 @@ import * as React from "react";
 import { panXFromProgress, frameIndexFromProgress, spritePositionFromFrame } from "@/lib/scroll/transforms";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { PanXSectionConfig, AnimationSectionConfig } from "@/types/webtoon";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import { ImageSection } from "../reader/ImageSection";
 import { LongYSection } from "../reader/LongYSection";
 
@@ -120,11 +121,9 @@ function AnimationPreview({ section, progress }: { section: SectionWithImages; p
 }
 
 function sectionImageUrl(storagePath: string): string {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${base}/storage/v1/object/public/webtoon-images/${storagePath}`;
+  return getSupabasePublicObjectUrl(storagePath);
 }
 
 function spriteUrl(storagePath: string): string {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${base}/storage/v1/object/public/webtoon-images/${storagePath}`;
+  return getSupabasePublicObjectUrl(storagePath);
 }

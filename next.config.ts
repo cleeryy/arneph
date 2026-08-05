@@ -18,7 +18,7 @@ const nextConfig: NextConfig = {
               | "http"
               | "https",
             hostname: supabaseOrigin.hostname,
-            port: supabaseOrigin.port,
+            ...(supabaseOrigin.port ? { port: supabaseOrigin.port } : {}),
             pathname: "/storage/v1/object/public/webtoon-images/**",
           },
         ]

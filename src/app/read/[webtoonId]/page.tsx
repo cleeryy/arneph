@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { getWebtoon, type WebtoonWithSections } from "@/lib/db/queries";
 import ReaderShell from "@/components/reader/ReaderShell";
 
+export const dynamic = "force-dynamic";
+
 /**
  * Contrat de données de la page lecteur — consommé par T15 (ReaderShell).
  *

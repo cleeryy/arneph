@@ -5,14 +5,14 @@ import { useTranslations } from "next-intl";
 
 import { webtoonSizes } from "@/lib/image/sizes";
 import type { SectionWithImages } from "@/lib/db/queries";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
 /**
  * URL publique d'une image du bucket storage `webtoon-images`.
  * (même pattern que `coverUrl` T14).
  */
 export function sectionImageUrl(storagePath: string): string {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${base}/storage/v1/object/public/webtoon-images/${storagePath}`;
+  return getSupabasePublicObjectUrl(storagePath);
 }
 
 /**
@@ -52,7 +52,7 @@ export function SectionImage({
       fetchPriority={priority ? "high" : "low"}
       loading={priority ? "eager" : "lazy"}
       className="h-auto w-full"
-      unoptimized={true}
+      unoptimized
       {...(blurDataURL ? { placeholder: "blur", blurDataURL } : undefined)}
     />
   );
