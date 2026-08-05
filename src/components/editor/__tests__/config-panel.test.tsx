@@ -249,9 +249,7 @@ describe("SectionConfigPanel — T25", () => {
 
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(screen.getByText("Veuillez sélectionner un fichier image.")).toBeInTheDocument();
+    expect(await screen.findByText("Veuillez sélectionner un fichier image.")).toBeInTheDocument();
   });
 
   test("rejects non-audio files for audio upload", async () => {
@@ -263,10 +261,8 @@ describe("SectionConfigPanel — T25", () => {
 
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
     expect(
-      screen.getByText("Veuillez sélectionner un fichier audio (MP3, WebM ou OGG)."),
+      await screen.findByText("Veuillez sélectionner un fichier audio (MP3, WebM ou OGG)."),
     ).toBeInTheDocument();
   });
 
@@ -312,9 +308,7 @@ describe("SectionConfigPanel — T13 FX section", () => {
 
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(screen.getByText("Veuillez sélectionner un fichier GIF ou WebP animé.")).toBeInTheDocument();
+    expect(await screen.findByText("Veuillez sélectionner un fichier GIF ou WebP animé.")).toBeInTheDocument();
   });
 
   test("animated GIF FX upload sets fxPath with contentType image/gif", async () => {
