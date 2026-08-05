@@ -81,6 +81,7 @@
     "uploadAudioError": "Veuillez sélectionner un fichier audio (MP3, WebM ou OGG).",
     "uploadAudioErrorGeneric": "Erreur lors du téléchargement de l'audio.",
     "uploadScriptError": "Erreur lors du traitement du fichier.",
+    "fxUploadError": "Veuillez sélectionner un fichier GIF ou WebP animé.",
     "scrollProgress": "Progression du scroll",
     "newSectionTitle": "Nouvelle section",
     "newSectionDescription": "Choisissez le type de section",

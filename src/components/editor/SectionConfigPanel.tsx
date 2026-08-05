@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,7 +25,7 @@ import {
 } from "@/lib/image/process";
 import { isAnimatedImage } from "@/lib/image/animated";
 import type { SectionWithImages } from "@/lib/db/queries";
-import type { SectionType, ImageRecord } from "@/types/webtoon";
+import type { SectionType, ImageRecord, FxOverlayConfig } from "@/types/webtoon";
 
 interface SectionConfigPanelProps {
   section: SectionWithImages;
@@ -93,6 +94,7 @@ export function SectionConfigPanel({
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const animationInputRef = React.useRef<HTMLInputElement>(null);
   const audioInputRef = React.useRef<HTMLInputElement>(null);
+  const fxInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleTypeChange = (newType: string | null) => {
     if (!newType) return;
@@ -298,6 +300,115 @@ export function SectionConfigPanel({
   const isImageType =
     section.type === "image" || section.type === "long-y" || section.type === "pan-x";
   const isAnimationType = section.type === "animation";
+  const isFxType = section.type === "image" || section.type === "long-y";
+  const fxSectionConfig = isFxType
+    ? (section.config as Extract<SectionWithImages["config"], { type: "image" | "long-y" }>)
+    : null;
+  const fxPath = fxSectionConfig?.fxPath;
+  const fxConfig = fxSectionConfig?.fxConfig ?? {
+    position: { x: "center", y: "center" },
+    size: { mode: "percent", width: 100 },
+    opacity: 1,
+  };
+
+  const handleFxUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+
+    if (!["image/gif", "image/webp"].includes(file.type)) {
+      setError(t("fxUploadError"));
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const animated = await isAnimatedImage(file);
+      if (!animated) {
+        setError(t("fxUploadError"));
+        return;
+      }
+
+      const path = generateStoragePath(section.id, file.name);
+
+      const { createClient } = await import("@supabase/supabase-js");
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+      if (!supabaseUrl || !supabaseAnonKey)
+        throw new Error("Supabase URL or anon key not configured");
+      const supabase = createClient(supabaseUrl, supabaseAnonKey);
+      const { data: uploadData, error: uploadError } = await supabase
+        .storage
+        .from("webtoon-images")
+        .upload(path, file, { contentType: file.type, upsert: false });
+
+      if (uploadError) throw uploadError;
+
+       const fxSectionConfig = section.config as Extract<
+         SectionWithImages["config"],
+         { type: "image" | "long-y" }
+       >;
+       const updatedSection: SectionWithImages = {
+         ...section,
+         config: {
+           ...fxSectionConfig,
+           fxPath: uploadData.path,
+           fxConfig: {
+             position: { x: "center", y: "center" },
+             size: { mode: "percent", width: 100 },
+             opacity: 1,
+           },
+         },
+       } as SectionWithImages;
+       onSectionChange(updatedSection);
+    } catch (err) {
+      if (err instanceof ImageProcessingError) {
+        setError(err.message);
+      } else {
+        setError(t("uploadImageErrorGeneric"));
+      }
+    } finally {
+      setUploading(false);
+      if (fxInputRef.current) fxInputRef.current.value = "";
+    }
+  };
+
+  const handleFxDelete = () => {
+    setError(null);
+    const fxSectionConfig = section.config as Extract<
+      SectionWithImages["config"],
+      { type: "image" | "long-y" }
+    >;
+    const updatedSection: SectionWithImages = {
+      ...section,
+      config: {
+        ...fxSectionConfig,
+        fxPath: undefined,
+        fxConfig: undefined,
+      },
+    } as SectionWithImages;
+    onSectionChange(updatedSection);
+  };
+
+  const handleFxConfigChange = (updates: Partial<FxOverlayConfig>) => {
+    const currentFxConfig = (section.config as Extract<
+      SectionWithImages["config"],
+      { type: "image" | "long-y" }
+    >).fxConfig ?? {
+      position: { x: "center", y: "center" },
+      size: { mode: "percent", width: 100 },
+      opacity: 1,
+    };
+    const updatedFxConfig = { ...currentFxConfig, ...updates };
+    const updatedSection: SectionWithImages = {
+      ...section,
+      config: {
+        ...section.config,
+        fxConfig: updatedFxConfig,
+      },
+    } as SectionWithImages;
+    onSectionChange(updatedSection);
+  };
 
   return (
     <Card className="w-full max-w-md">
@@ -414,6 +525,170 @@ export function SectionConfigPanel({
             <Upload className="size-4 animate-pulse" />
             {t("uploading")}
           </div>
+        )}
+
+        {isFxType && (
+          <>
+            <Separator />
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle>{t("fxOverlay")}</CardTitle>
+                {fxPath && (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={handleFxDelete}
+                    aria-label={t("deleteAudio")}
+                    className="size-6 text-destructive hover:text-destructive"
+                  >
+                    <Trash2 className="size-3" />
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="fx-upload" className="text-sm font-medium text-foreground">
+                    {t("fxUpload")}
+                  </label>
+                  <Input
+                    id="fx-upload"
+                    ref={fxInputRef}
+                    type="file"
+                    accept="image/gif,image/webp"
+                    onChange={handleFxUpload}
+                    disabled={uploading}
+                    className="cursor-pointer"
+                  />
+                </div>
+
+                {fxPath && (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1 space-y-1">
+                        <label htmlFor="fx-position-x" className="text-xs text-muted-foreground">
+                          {t("fxPositionX")}
+                        </label>
+                        <Select
+                          value={fxConfig.position.x}
+                          onValueChange={(value) =>
+                            handleFxConfigChange({
+                              position: { ...fxConfig.position, x: value as "left" | "center" | "right" },
+                            })
+                          }
+                        >
+                          <SelectTrigger id="fx-position-x">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="left">{t("fxLeft")}</SelectItem>
+                            <SelectItem value="center">{t("fxCenter")}</SelectItem>
+                            <SelectItem value="right">{t("fxRight")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <label htmlFor="fx-position-y" className="text-xs text-muted-foreground">
+                          {t("fxPositionY")}
+                        </label>
+                        <Select
+                          value={fxConfig.position.y}
+                          onValueChange={(value) =>
+                            handleFxConfigChange({
+                              position: { ...fxConfig.position, y: value as "top" | "center" | "bottom" },
+                            })
+                          }
+                        >
+                          <SelectTrigger id="fx-position-y">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="top">{t("fxTop")}</SelectItem>
+                            <SelectItem value="center">{t("fxCenterY")}</SelectItem>
+                            <SelectItem value="bottom">{t("fxBottom")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      <div className="flex-1 space-y-1">
+                        <label htmlFor="fx-size-mode" className="text-xs text-muted-foreground">
+                          {t("fxSizeMode")}
+                        </label>
+                        <Select
+                          value={fxConfig.size.mode}
+                          onValueChange={(value) =>
+                            handleFxConfigChange({
+                              size: { ...fxConfig.size, mode: value as "px" | "percent" },
+                            })
+                          }
+                        >
+                          <SelectTrigger id="fx-size-mode">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="px">{t("fxPx")}</SelectItem>
+                            <SelectItem value="percent">{t("fxPercent")}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <label htmlFor="fx-width" className="text-xs text-muted-foreground">
+                          {t("fxSizeWidth")}
+                        </label>
+                        <Input
+                          id="fx-width"
+                          type="number"
+                          min={0}
+                          value={fxConfig.size.width ?? 100}
+                          onChange={(e) =>
+                            handleFxConfigChange({
+                              size: { ...fxConfig.size, width: Number(e.target.value) },
+                            })
+                          }
+                        />
+                      </div>
+                      {fxConfig.size.mode === "px" && (
+                        <div className="flex-1 space-y-1">
+                          <label htmlFor="fx-height" className="text-xs text-muted-foreground">
+                            {t("fxSizeHeight")}
+                          </label>
+                          <Input
+                            id="fx-height"
+                            type="number"
+                            min={0}
+                            value={fxConfig.size.height ?? 100}
+                            onChange={(e) =>
+                              handleFxConfigChange({
+                                size: { ...fxConfig.size, height: Number(e.target.value) },
+                              })
+                            }
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label htmlFor="fx-opacity" className="text-xs text-muted-foreground whitespace-nowrap">
+                        {t("fxOpacity")}
+                      </label>
+                      <Slider
+                        value={[Math.round(fxConfig.opacity * 100)]}
+                        onValueChange={(value) => handleFxConfigChange({ opacity: value[0] / 100 })}
+                        max={100}
+                        step={1}
+                        className="flex-1"
+                      />
+                      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
+                        {Math.round(fxConfig.opacity * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
         )}
 
         <Separator />

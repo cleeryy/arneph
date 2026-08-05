@@ -298,3 +298,110 @@ describe("SectionConfigPanel — T25", () => {
     expect(screen.getByText("1 image(s)")).toBeInTheDocument();
   });
 });
+
+describe("SectionConfigPanel — T13 FX section", () => {
+  test("rejects non-animated GIF for FX upload with error message", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(false);
+
+    const section = makeSection({ type: "image" });
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    const fileInput = screen.getByLabelText("Charger une image FX");
+    const file = new File(["gif-data"], "test.gif", { type: "image/gif" });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.getByText("Veuillez sélectionner un fichier GIF ou WebP animé.")).toBeInTheDocument();
+  });
+
+  test("animated GIF FX upload sets fxPath with contentType image/gif", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
+
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(true);
+
+    const section = makeSection({ type: "image" });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const fileInput = screen.getByLabelText("Charger une image FX");
+    const file = new File(["gif-data"], "test.gif", { type: "image/gif" });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(isAnimatedImage).toHaveBeenCalledWith(file);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          fxPath: "uploaded/path.webp",
+          fxConfig: expect.objectContaining({
+            position: { x: "center", y: "center" },
+            size: { mode: "percent", width: 100 },
+            opacity: 1,
+          }),
+        }),
+      }),
+    );
+  });
+
+  test("changing FX opacity calls onSectionChange with fxConfig.opacity = value/100", () => {
+    const section = makeSection({
+      type: "image",
+      config: {
+        type: "image",
+        imagePath: "test.webp",
+        width: 800,
+        height: 1200,
+        fxPath: "fx/test.gif",
+        fxConfig: {
+          position: { x: "center", y: "center" },
+          size: { mode: "percent", width: 100 },
+          opacity: 1,
+        },
+      },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const slider = screen.getByRole("slider");
+    fireEvent.change(slider, { target: { value: "50" } });
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        config: expect.objectContaining({
+          fxConfig: expect.objectContaining({
+            opacity: 0.5,
+          }),
+        }),
+      }),
+    );
+  });
+
+  test("FX controls are not rendered for pan-x and animation sections", () => {
+  const panXSection = makeSection({ type: "pan-x" });
+  render(wrap(<SectionConfigPanel section={panXSection} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+  expect(screen.queryByText("FX (animation superposée)")).not.toBeInTheDocument();
+
+  const animationSection = makeSection({
+    type: "animation",
+    config: {
+      type: "animation",
+      spritePath: "sprite.webp",
+      frameWidth: 100,
+      frameHeight: 100,
+      columns: 4,
+      rows: 3,
+      frameCount: 10,
+    },
+  });
+  cleanup();
+  render(wrap(<SectionConfigPanel section={animationSection} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+  expect(screen.queryByText("FX (animation superposée)")).not.toBeInTheDocument();
+});
+});
