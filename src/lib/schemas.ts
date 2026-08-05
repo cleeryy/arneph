@@ -5,12 +5,27 @@ import { z } from 'zod';
  * Miroir de src/types/webtoon.ts — source unique partagée lecteur/éditeur/BDD.
  */
 
+export const fxOverlayConfigSchema = z.object({
+  position: z.object({
+    x: z.enum(["left", "center", "right"]),
+    y: z.enum(["top", "center", "bottom"]),
+  }),
+  size: z.object({
+    mode: z.enum(["px", "percent"]),
+    width: z.number().positive().optional(),
+    height: z.number().positive().optional(),
+  }),
+  opacity: z.number().min(0).max(1),
+});
+
 export const imageSectionConfigSchema = z.object({
   type: z.literal('image'),
   imagePath: z.string().min(1),
   width: z.number().positive(),
   height: z.number().positive(),
   audioPath: z.string().optional(),
+  fxPath: z.string().optional(),
+  fxConfig: fxOverlayConfigSchema.optional(),
 });
 
 export const longYSectionConfigSchema = z.object({
@@ -19,6 +34,8 @@ export const longYSectionConfigSchema = z.object({
   width: z.number().positive(),
   height: z.number().positive(),
   audioPath: z.string().optional(),
+  fxPath: z.string().optional(),
+  fxConfig: fxOverlayConfigSchema.optional(),
 });
 
 export const panXSectionConfigSchema = z.object({
@@ -79,6 +96,7 @@ export const webtoonSchema = z.object({
   updatedAt: z.string().min(1),
 });
 
+export type FxOverlayConfig = z.infer<typeof fxOverlayConfigSchema>;
 export type ImageSectionConfig = z.infer<typeof imageSectionConfigSchema>;
 export type LongYSectionConfig = z.infer<typeof longYSectionConfigSchema>;
 export type PanXSectionConfig = z.infer<typeof panXSectionConfigSchema>;

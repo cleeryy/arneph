@@ -22,6 +22,7 @@ import {
   readImageDimensions,
   ImageProcessingError,
 } from "@/lib/image/process";
+import { isAnimatedImage } from "@/lib/image/animated";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { SectionType, ImageRecord } from "@/types/webtoon";
 
@@ -116,9 +117,24 @@ export function SectionConfigPanel({
 
     setUploading(true);
     try {
-      const resized = await resizeImage(file);
-      const webp = await toWebP(resized);
-      const dimensions = await readImageDimensions(webp);
+      const animated = await isAnimatedImage(file);
+
+      let uploadBlob: Blob;
+      let mimeType: string;
+      let dimensions: { width: number; height: number };
+
+      if (animated) {
+        uploadBlob = file;
+        mimeType = file.type;
+        dimensions = await readImageDimensions(file);
+      } else {
+        const resized = await resizeImage(file);
+        const webp = await toWebP(resized);
+        dimensions = await readImageDimensions(webp);
+        uploadBlob = webp;
+        mimeType = "image/webp";
+      }
+
       const path = generateStoragePath(section.id, file.name);
 
       const { createClient } = await import("@supabase/supabase-js");
@@ -130,7 +146,7 @@ export function SectionConfigPanel({
       const { data: uploadData, error: uploadError } = await supabase
         .storage
         .from("webtoon-images")
-        .upload(path, webp, { contentType: "image/webp", upsert: false });
+        .upload(path, uploadBlob, { contentType: mimeType, upsert: false });
 
       if (uploadError) throw uploadError;
 
@@ -142,7 +158,7 @@ export function SectionConfigPanel({
          storagePath: uploadData.path,
          width: dimensions.width,
          height: dimensions.height,
-         mimeType: "image/webp",
+         mimeType,
          position: section.images.length,
        };
 

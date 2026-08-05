@@ -8,8 +8,9 @@
  * `createBrowserFactory()` branche le vrai DOM en runtime navigateur.
  */
 
-export const DEFAULT_TARGET_WIDTH = 1600;
-export const DEFAULT_WEBP_QUALITY = 0.82;
+import { isAnimatedImage } from "./animated";
+
+export const DEFAULT_WEBP_QUALITY = 0.9;
 export const DEFAULT_MAX_COLUMNS = 10;
 export const MAX_CANVAS_DIMENSION = 16384;
 export const SUPPORTED_IMAGE_TYPES = [
@@ -80,7 +81,6 @@ export interface ProcessOptions {
 }
 
 export interface SpriteSheetOptions extends ProcessOptions {
-  maxWidth?: number;
   maxColumns?: number;
 }
 
@@ -140,17 +140,6 @@ function assertWithinLimit(
   }
 }
 
-function assertTargetWidth(targetWidth: number): number {
-  const target = Math.floor(targetWidth);
-  if (!Number.isFinite(target) || target < 1) {
-    throw new ImageProcessingError(
-      "INVALID_TARGET",
-      `Largeur cible invalide : ${targetWidth}.`,
-    );
-  }
-  return target;
-}
-
 function requireContext(canvas: CanvasLike): ImageContext2D {
   const context = canvas.getContext2D();
   if (!context) {
@@ -189,12 +178,11 @@ function toBlobAsync(
 function fitWithin(
   width: number,
   height: number,
-  maxWidth: number,
 ): { width: number; height: number } {
-  if (width <= maxWidth) return { width, height };
+  if (width <= MAX_CANVAS_DIMENSION) return { width, height };
   return {
-    width: maxWidth,
-    height: Math.max(1, Math.round((height * maxWidth) / width)),
+    width: MAX_CANVAS_DIMENSION,
+    height: Math.max(1, Math.round((height * MAX_CANVAS_DIMENSION) / width)),
   };
 }
 
@@ -210,31 +198,20 @@ export async function readImageDimensions(
   return { width: image.width, height: image.height };
 }
 
-/**
- * Redimensionne une image à `targetWidth` max (downscale seulement, ratio
- * conservé) et l'encode en WebP. Une image plus étroite reste inchangée.
- */
 export async function resizeImage(
   file: Blob,
-  targetWidth = DEFAULT_TARGET_WIDTH,
   options: ProcessOptions = {},
 ): Promise<Blob> {
   const canvasFactory = getFactory(options.factory);
-  const target = assertTargetWidth(targetWidth);
-  const maxDimension = options.maxDimension ?? MAX_CANVAS_DIMENSION;
   const supportedTypes = options.supportedTypes ?? SUPPORTED_IMAGE_TYPES;
 
   assertImageFile(file, supportedTypes);
   const image = await canvasFactory.decodeImage(file);
   assertValidDimensions(image.width, image.height);
-  assertWithinLimit(image.width, image.height, maxDimension);
 
-  let outWidth = image.width;
-  let outHeight = image.height;
-  if (outWidth > target) {
-    outHeight = Math.max(1, Math.round((outHeight * target) / outWidth));
-    outWidth = target;
-  }
+  const fitted = fitWithin(image.width, image.height);
+  const outWidth = fitted.width;
+  const outHeight = fitted.height;
 
   const canvas = canvasFactory.createCanvas(outWidth, outHeight);
   const context = requireContext(canvas);
@@ -274,7 +251,6 @@ export async function buildSpriteSheet(
   options: SpriteSheetOptions = {},
 ): Promise<SpriteSheet> {
   const canvasFactory = getFactory(options.factory);
-  const maxWidth = assertTargetWidth(options.maxWidth ?? DEFAULT_TARGET_WIDTH);
   const rawColumns = Math.floor(options.maxColumns ?? DEFAULT_MAX_COLUMNS);
   const maxColumns =
     Number.isFinite(rawColumns) && rawColumns >= 1 ? rawColumns : 1;
@@ -291,10 +267,15 @@ export async function buildSpriteSheet(
   const frames = await Promise.all(
     files.map(async (file) => {
       assertImageFile(file, supportedTypes);
+      if (await isAnimatedImage(file)) {
+        throw new ImageProcessingError(
+          "UNSUPPORTED_TYPE",
+          "le type animation attend des frames statiques, pas un fichier animé",
+        );
+      }
       const image = await canvasFactory.decodeImage(file);
       assertValidDimensions(image.width, image.height);
-      assertWithinLimit(image.width, image.height, maxDimension);
-      const fitted = fitWithin(image.width, image.height, maxWidth);
+      const fitted = fitWithin(image.width, image.height);
       return { image, fittedWidth: fitted.width, fittedHeight: fitted.height };
     }),
   );

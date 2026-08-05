@@ -48,6 +48,14 @@ vi.mock("@supabase/supabase-js", () => ({
   })),
 }));
 
+vi.mock("@/lib/image/animated", async () => {
+  const actual = await vi.importActual("@/lib/image/animated");
+  return {
+    ...actual,
+    isAnimatedImage: vi.fn(),
+  };
+});
+
 vi.mock("@/lib/image/process", async () => {
   const actual = await vi.importActual("@/lib/image/process");
   return {
@@ -65,6 +73,7 @@ vi.mock("@/lib/image/process", async () => {
   };
 });
 
+import { isAnimatedImage } from "@/lib/image/animated";
 import { resizeImage, toWebP } from "@/lib/image/process";
 
 afterEach(() => {
@@ -171,6 +180,25 @@ describe("SectionConfigPanel — T25", () => {
 
     expect(resizeImage).toHaveBeenCalledWith(file);
     expect(toWebP).toHaveBeenCalled();
+  });
+
+  test("animated GIF upload skips resizeImage/toWebP and uploads raw with file.type", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(true);
+
+    const section = makeSection({ type: "image" });
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    const fileInput = screen.getByLabelText("Uploader une image");
+    const file = new File(["gif-data"], "test.gif", { type: "image/gif" });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(isAnimatedImage).toHaveBeenCalledWith(file);
+    expect(resizeImage).not.toHaveBeenCalled();
+    expect(toWebP).not.toHaveBeenCalled();
   });
 
   test("audio upload updates section audioPath", async () => {

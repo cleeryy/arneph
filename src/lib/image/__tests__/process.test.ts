@@ -3,6 +3,8 @@ import { describe, expect, test, vi } from "vitest";
 import {
   buildSpriteSheet,
   createBrowserFactory,
+  DEFAULT_WEBP_QUALITY,
+  MAX_CANVAS_DIMENSION,
   readImageDimensions,
   resizeImage,
   toWebP,
@@ -11,6 +13,16 @@ import {
   type DecodedImage,
   type ImageContext2D,
 } from "@/lib/image/process";
+
+vi.mock("@/lib/image/animated", async () => {
+  const actual = await vi.importActual("@/lib/image/animated");
+  return {
+    ...actual,
+    isAnimatedImage: vi.fn(),
+  };
+});
+
+import { isAnimatedImage } from "@/lib/image/animated";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Mock canvas : jsdom n'implémente PAS le rendu 2D (getContext → null).
@@ -134,24 +146,24 @@ describe("readImageDimensions(file)", () => {
   });
 });
 
-describe("resizeImage(file, targetWidth=1600)", () => {
-  test("réduit 3200×2400 → canvas 1600×1200, ratio 4:3 conservé, sortie WebP", async () => {
-    const factory = mockFactory([img("big", 3200, 2400)]);
-    const blob = await resizeImage(factory.file("big"), 1600, { factory });
+describe("resizeImage(file)", () => {
+  test("conserve la taille native : 3000×2000 → canvas 3000×2000, pas de downscale", async () => {
+    const factory = mockFactory([img("full", 3000, 2000)]);
+    const blob = await resizeImage(factory.file("full"), { factory });
 
     expect(blob.type).toBe("image/webp");
     const canvas = factory.canvases[0];
-    expect(canvas.width).toBe(1600);
-    expect(canvas.height).toBe(1200);
+    expect(canvas.width).toBe(3000);
+    expect(canvas.height).toBe(2000);
     expect(canvas.draws).toEqual([
-      { image: expect.objectContaining({ width: 3200, height: 2400 }), dx: 0, dy: 0, dw: 1600, dh: 1200 },
+      { image: expect.objectContaining({ width: 3000, height: 2000 }), dx: 0, dy: 0, dw: 3000, dh: 2000 },
     ]);
-    expect(canvas.toBlobCalls).toEqual([{ type: "image/webp", quality: 0.82 }]);
+    expect(canvas.toBlobCalls).toEqual([{ type: "image/webp", quality: 0.9 }]);
   });
 
   test("ne fait PAS d'upscale : 800×600 → canvas 800×600 inchangé", async () => {
     const factory = mockFactory([img("small", 800, 600)]);
-    const blob = await resizeImage(factory.file("small"), 1600, { factory });
+    const blob = await resizeImage(factory.file("small"), { factory });
 
     expect(blob.type).toBe("image/webp");
     const canvas = factory.canvases[0];
@@ -162,40 +174,40 @@ describe("resizeImage(file, targetWidth=1600)", () => {
     );
   });
 
-  test("image déjà à la cible → dimensions conservées (pas de double resize)", async () => {
-    const factory = mockFactory([img("exact", 1600, 900)]);
-    await resizeImage(factory.file("exact"), 1600, { factory });
+  test("image déjà à la limite → dimensions conservées (pas de double resize)", async () => {
+    const factory = mockFactory([img("exact", 16384, 9000)]);
+    await resizeImage(factory.file("exact"), { factory });
     const canvas = factory.canvases[0];
-    expect(canvas.width).toBe(1600);
-    expect(canvas.height).toBe(900);
+    expect(canvas.width).toBe(16384);
+    expect(canvas.height).toBe(9000);
+  });
+
+  test("downscale uniquement au-delà de MAX_CANVAS_DIMENSION : 20000×2000 → 16384×1638", async () => {
+    const factory = mockFactory([img("huge", 20000, 2000)]);
+    const blob = await resizeImage(factory.file("huge"), { factory });
+
+    expect(blob.type).toBe("image/webp");
+    const canvas = factory.canvases[0];
+    expect(canvas.width).toBe(16384);
+    expect(canvas.height).toBe(1638);
+    expect(canvas.draws).toEqual([
+      { image: expect.objectContaining({ width: 20000, height: 2000 }), dx: 0, dy: 0, dw: 16384, dh: 1638 },
+    ]);
+    expect(canvas.toBlobCalls).toEqual([{ type: "image/webp", quality: 0.9 }]);
   });
 
   test("rejette un fichier non-image", async () => {
     const factory = mockFactory([]);
     await expect(
-      resizeImage(factory.file("x", "application/pdf"), 1600, { factory }),
+      resizeImage(factory.file("x", "application/pdf"), { factory }),
     ).rejects.toMatchObject({ code: "NOT_IMAGE" });
   });
 
   test("rejette un type d'image non supporté (image/tiff)", async () => {
     const factory = mockFactory([]);
     await expect(
-      resizeImage(factory.file("x", "image/tiff"), 1600, { factory }),
+      resizeImage(factory.file("x", "image/tiff"), { factory }),
     ).rejects.toMatchObject({ code: "UNSUPPORTED_TYPE" });
-  });
-
-  test("rejette une image aux dimensions démesurées (> 16384px)", async () => {
-    const factory = mockFactory([img("huge", 20000, 2000)]);
-    await expect(
-      resizeImage(factory.file("huge"), 1600, { factory }),
-    ).rejects.toMatchObject({ code: "IMAGE_TOO_LARGE" });
-  });
-
-  test("rejette un targetWidth invalide (≤ 0)", async () => {
-    const factory = mockFactory([img("a", 1000, 1000)]);
-    await expect(
-      resizeImage(factory.file("a"), 0, { factory }),
-    ).rejects.toMatchObject({ code: "INVALID_TARGET" });
   });
 
   test("lève CANVAS_UNAVAILABLE si le canvas n'expose pas de contexte 2D", async () => {
@@ -210,13 +222,13 @@ describe("resizeImage(file, targetWidth=1600)", () => {
       decodeImage: async () => img("c", 800, 600),
     };
     await expect(
-      resizeImage(new Blob(["c"], { type: "image/png" }), 1600, { factory }),
+      resizeImage(new Blob(["c"], { type: "image/png" }), { factory }),
     ).rejects.toMatchObject({ code: "CANVAS_UNAVAILABLE" });
   });
 });
 
-describe("toWebP(blob, quality=0.82)", () => {
-  test("encode en image/webp à la qualité par défaut 0.82", async () => {
+describe("toWebP(blob, quality=0.9)", () => {
+  test("encode en image/webp à la qualité par défaut 0.9", async () => {
     const factory = mockFactory([img("p", 100, 50)]);
     const blob = await toWebP(factory.file("p"), undefined, { factory });
 
@@ -224,7 +236,7 @@ describe("toWebP(blob, quality=0.82)", () => {
     const canvas = factory.canvases[0];
     expect(canvas.width).toBe(100);
     expect(canvas.height).toBe(50);
-    expect(canvas.toBlobCalls).toEqual([{ type: "image/webp", quality: 0.82 }]);
+    expect(canvas.toBlobCalls).toEqual([{ type: "image/webp", quality: 0.9 }]);
   });
 
   test("accepte une qualité explicite", async () => {
@@ -234,13 +246,13 @@ describe("toWebP(blob, quality=0.82)", () => {
   });
 });
 
-describe("buildSpriteSheet(files, {maxWidth=1600, maxColumns=10})", () => {
+describe("buildSpriteSheet(files, {maxColumns=10})", () => {
   test("25 images, maxColumns 10 → grille 10×3, frameCount 25, dims uniformes", async () => {
     const images = Array.from({ length: 25 }, (_, i) => img(`f${i}`, 1600, 900));
     const factory = mockFactory(images);
     const sheet = await buildSpriteSheet(
       images.map((i) => factory.file(i.id)),
-      { maxWidth: 1600, maxColumns: 10, factory },
+      { maxColumns: 10, factory },
     );
 
     expect(sheet).toMatchObject({
@@ -296,18 +308,15 @@ describe("buildSpriteSheet(files, {maxWidth=1600, maxColumns=10})", () => {
     });
   });
 
-  test("réduit les frames > maxWidth (3200×2400 → 1600×1200)", async () => {
-    const factory = mockFactory([img("wide", 3200, 2400)]);
-    const sheet = await buildSpriteSheet([factory.file("wide")], {
-      maxWidth: 1600,
-      factory,
-    });
+  test("downscale uniquement au-delà de MAX_CANVAS_DIMENSION : 20000×2000 → 16384×1638", async () => {
+    const factory = mockFactory([img("wide", 20000, 2000)]);
+    const sheet = await buildSpriteSheet([factory.file("wide")], { factory });
 
-    expect(sheet).toMatchObject({ frameWidth: 1600, frameHeight: 1200 });
+    expect(sheet).toMatchObject({ frameWidth: 16384, frameHeight: 1638 });
     const canvas = factory.canvases[0];
-    expect(canvas.width).toBe(1600);
-    expect(canvas.height).toBe(1200);
-    expect(canvas.draws[0]).toMatchObject({ dw: 1600, dh: 1200 });
+    expect(canvas.width).toBe(16384);
+    expect(canvas.height).toBe(1638);
+    expect(canvas.draws[0]).toMatchObject({ dw: 16384, dh: 1638 });
   });
 
   test("grille 100 frames 1600×1600, 10 colonnes → 16000×16000 (limite atteinte, accepté)", async () => {
@@ -346,6 +355,18 @@ describe("buildSpriteSheet(files, {maxWidth=1600, maxColumns=10})", () => {
     await expect(
       buildSpriteSheet([factory.file("a"), factory.file("junk", "text/html")], { factory }),
     ).rejects.toMatchObject({ code: "NOT_IMAGE" });
+  });
+
+  test("rejette une frame animée (GIF/WebP) avec erreur explicite", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(true);
+
+    const factory = mockFactory([img("static", 100, 100)]);
+    const animatedBlob = factory.file("static", "image/gif");
+
+    await expect(
+      buildSpriteSheet([animatedBlob], { factory }),
+    ).rejects.toThrow("le type animation attend des frames statiques, pas un fichier animé");
   });
 });
 
