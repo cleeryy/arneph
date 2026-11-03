@@ -36,6 +36,8 @@ vi.stubGlobal("ResizeObserver", class {
     resizeCallbacks.push(callback);
   }
   observe(_target: Element, _options?: ResizeObserverOptions) {
+    void _target;
+    void _options;
     mockObserve();
   }
   disconnect() {

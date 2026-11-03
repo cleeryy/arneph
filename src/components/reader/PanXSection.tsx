@@ -89,15 +89,18 @@ export default function PanXSection({ section }: { section: SectionWithImages })
         data-section-id={section.id}
         data-section-position={section.position}
         data-section-type={section.type}
-        className="mx-auto w-full overflow-hidden border-b border-border bg-muted/20"
+        className="mx-auto grid w-full place-items-center overflow-hidden border-b border-border bg-background"
       >
         {src && image ? (
           <img
             src={src}
             alt={label}
             data-testid="pan-x-image"
-            className="mx-auto block h-auto"
+            className="mx-auto block h-auto bg-muted/20 select-none"
             style={{ width: imageWidth, maxWidth: "100%", height: imageHeight }}
+            loading="lazy"
+            decoding="async"
+            draggable={false}
           />
         ) : null}
       </section>
@@ -113,13 +116,13 @@ export default function PanXSection({ section }: { section: SectionWithImages })
       data-section-id={section.id}
       data-section-position={section.position}
       data-section-type={section.type}
-      className="relative"
+      className="relative bg-background"
       style={{ height: `${distanceVh}vh` }}
     >
       <div
         ref={stickyRef}
         data-testid="pan-x-sticky"
-        className="sticky top-0 h-screen overflow-hidden"
+        className="sticky top-0 h-screen overflow-hidden supports-[height:100svh]:h-[100svh]"
       >
         <div className="flex h-full items-center">
           {/* will-change UNIQUEMENT sur l'élément animé (le motion.img) —
@@ -128,8 +131,11 @@ export default function PanXSection({ section }: { section: SectionWithImages })
             src={src}
             alt={label}
             data-testid="pan-x-image"
-            className="block shrink-0"
+            className="block shrink-0 bg-muted/20 select-none"
             style={{ width: imageWidth, height: imageHeight, x, willChange: "transform" }}
+            loading="lazy"
+            decoding="async"
+            draggable={false}
           />
         </div>
       </div>

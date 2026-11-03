@@ -32,6 +32,9 @@ export function FxOverlay({ fxPath, fxConfig, alt }: FxOverlayProps) {
     position: "absolute",
     opacity: config.opacity,
     pointerEvents: "none",
+    zIndex: 1,
+    maxWidth: "100%",
+    userSelect: "none",
   };
 
   if (size.mode === "percent") {

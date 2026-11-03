@@ -91,14 +91,17 @@ export function AnimationSection({ section }: AnimationSectionProps) {
       data-section-type={section.type}
       role="article"
       aria-label={t("animation")}
-      className="relative bg-background"
+      className="relative overflow-hidden bg-background"
       style={{ height: `${scrollHeightVh}vh` }}
     >
-      <div className="sticky top-0 h-screen overflow-hidden">
+      <div className="sticky top-0 grid h-screen place-items-center overflow-hidden bg-background supports-[height:100svh]:h-[100svh]">
         <motion.div
           data-testid="animation-frame"
-          className="h-full w-full"
+          aria-hidden="true"
+          className="m-auto shrink-0 bg-muted/20 select-none"
           style={{
+            width: config.frameWidth,
+            height: config.frameHeight,
             backgroundImage: `url("${backgroundImage}")`,
             backgroundSize,
             backgroundRepeat: "no-repeat",

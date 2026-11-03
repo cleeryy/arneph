@@ -44,10 +44,10 @@ export function LongYSection({ section, priority = false, blurDataURL }: LongYSe
       data-section={section.type}
       data-section-id={section.id}
       data-section-position={section.position}
-      className="w-full"
+      className="w-full overflow-hidden bg-background"
     >
       {fxPath ? (
-        <div className="relative">
+        <div className="relative mx-auto w-full overflow-hidden">
           {image}
           <FxOverlay fxPath={fxPath} fxConfig={fxConfig} />
         </div>

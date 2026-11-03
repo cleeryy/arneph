@@ -60,7 +60,8 @@ export function SectionImage({
         height={image.height}
         loading={priority ? "eager" : "lazy"}
         decoding="async"
-        className="mx-auto block h-auto w-full max-w-none"
+        draggable={false}
+        className="mx-auto block h-auto w-full max-w-none bg-muted/20 select-none"
       />
     );
   }
@@ -75,8 +76,9 @@ export function SectionImage({
       priority={priority}
       fetchPriority={priority ? "high" : "low"}
       loading={priority ? "eager" : "lazy"}
-      className="mx-auto block h-auto w-full max-w-none"
+      className="mx-auto block h-auto w-full max-w-none bg-muted/20 select-none"
       unoptimized
+      draggable={false}
       style={{ maxWidth: image.width > 0 ? image.width : undefined }}
       {...(blurDataURL ? { placeholder: "blur", blurDataURL } : undefined)}
     />
@@ -115,10 +117,10 @@ export function ImageSection({ section, priority = false, blurDataURL }: ImageSe
       data-section={section.type}
       data-section-id={section.id}
       data-section-position={section.position}
-      className="w-full"
+      className="w-full overflow-hidden bg-background"
     >
       {fxPath ? (
-        <div className="relative">
+        <div className="relative mx-auto w-full overflow-hidden">
           {image}
           <FxOverlay fxPath={fxPath} fxConfig={fxConfig} />
         </div>

@@ -4,8 +4,6 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
 import { FxOverlay } from "../FxOverlay";
-import type { FxOverlayConfig } from "@/types/webtoon";
-import type { SectionWithImages } from "@/lib/db/queries";
 import frMessages from "../../../../messages/fr.json";
 
 vi.mock("next/image", () => ({
@@ -42,12 +40,9 @@ const { mockUseReducedMotion } = vi.hoisted(() => ({
   mockUseReducedMotion: vi.fn(),
 }));
 
-vi.mock("motion/react", async () => {
-  const React = await import("react");
-  return {
-    useReducedMotion: mockUseReducedMotion,
-  };
-});
+vi.mock("motion/react", () => ({
+  useReducedMotion: mockUseReducedMotion,
+}));
 
 const BASE_URL = "http://127.0.0.1:54321";
 
@@ -62,43 +57,6 @@ function wrap(ui: ReactElement) {
       {ui}
     </NextIntlClientProvider>
   );
-}
-
-function makeSection(overrides: Partial<SectionWithImages> = {}): SectionWithImages {
-  return {
-    id: "sec-img",
-    webtoonId: "w1",
-    position: 1,
-    type: "image",
-    config: {
-      type: "image",
-      imagePath: "test/cover.webp",
-      width: 800,
-      height: 1200,
-      fxPath: "test/fx.gif",
-      fxConfig: {
-        position: { x: "center", y: "center" },
-        size: { mode: "percent", width: 50 },
-        opacity: 0.5,
-      },
-    },
-    audioPath: undefined,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    images: [
-      {
-        id: "img-1",
-        sectionId: "sec-img",
-        webtoonId: "w1",
-        storagePath: "test/cover.webp",
-        width: 800,
-        height: 1200,
-        mimeType: "image/webp",
-        position: 0,
-      },
-    ],
-    ...overrides,
-  };
 }
 
 describe("FxOverlay", () => {

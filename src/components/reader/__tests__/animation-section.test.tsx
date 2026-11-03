@@ -189,7 +189,7 @@ describe("AnimationSection — sprite sheet scroll-driven (T18)", () => {
   test("backgroundSize = columns*frameWidth x rows*frameHeight (cohérent avec les dimensions réelles du sprite sheet)", () => {
     mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
 
-    const { container } = render(wrap(<AnimationSection section={makeSection(baseConfig)} />));
+    render(wrap(<AnimationSection section={makeSection(baseConfig)} />));
 
     const frame = screen.getByTestId("animation-frame");
     expect(frame.style.backgroundSize).toBe("800px 450px");
