@@ -15,6 +15,7 @@ import type { WebtoonWithSections } from "@/lib/db/queries";
 import type { Webtoon } from "@/types/webtoon";
 import {
   createWebtoon,
+  deleteSection,
   deleteWebtoon,
   getWebtoon,
   createSection,
@@ -61,6 +62,7 @@ vi.mock("@/lib/db/queries", () => ({
   }),
   upsertSection: vi.fn().mockResolvedValue(undefined),
   reorderSections: vi.fn().mockResolvedValue(undefined),
+  deleteSection: vi.fn().mockResolvedValue(true),
   deleteWebtoon: vi.fn().mockResolvedValue(true),
   updateWebtoon: vi.fn().mockResolvedValue(null),
 }));
@@ -95,6 +97,10 @@ beforeEach(() => {
         remove: vi.fn().mockResolvedValue({ data: null, error: null }),
       }) as unknown as ReturnType<typeof supabase.storage.from>,
   );
+  // Compensating-delete mock is re-armed per test: a test that makes it throw
+  // must not leak that rejection into later tests.
+  vi.mocked(deleteSection).mockReset();
+  vi.mocked(deleteSection).mockResolvedValue(true);
 });
 
 describe("saveWebtoon — zod validation", () => {
@@ -1463,5 +1469,108 @@ describe("deleteWebtoonAction — storage cleanup resilience", () => {
     expect(deleteWebtoon).toHaveBeenCalledWith("w1");
     expect(revalidatePath).toHaveBeenCalledWith("/editor");
     expect(revalidatePath).toHaveBeenCalledWith("/read");
+  });
+});
+
+describe("saveWebtoon — compensating cleanup on failure", () => {
+  const baseTimestamps = {
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  function buildSection(id: string, position: number) {
+    return {
+      id,
+      webtoonId: "w1",
+      position,
+      type: "image" as const,
+      config: {
+        type: "image" as const,
+        imagePath: `${id}.webp`,
+        width: 800,
+        height: 1200,
+      },
+      audioPath: undefined,
+      ...baseTimestamps,
+      images: [],
+    };
+  }
+
+  test("deletes sections created before a later creation fails", async () => {
+    vi.mocked(createSection)
+      .mockResolvedValueOnce(buildSection("created-1", 0))
+      .mockRejectedValueOnce(new Error("createSection failed: boom"));
+
+    const result = await saveWebtoon("w1", [
+      buildSection("temp-1", 0),
+      buildSection("temp-2", 1),
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/createSection failed: boom/);
+    expect(deleteSection).toHaveBeenCalledTimes(1);
+    expect(deleteSection).toHaveBeenCalledWith("created-1");
+  });
+
+  test("never deletes pre-existing sections when a later step fails", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(
+      buildWebtoonWithSections([
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image",
+          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+          audioPath: undefined,
+          ...baseTimestamps,
+          images: [],
+        },
+      ]),
+    );
+    vi.mocked(createSection).mockResolvedValueOnce(buildSection("created-1", 1));
+    vi.mocked(reorderSections).mockRejectedValueOnce(new Error("reorder boom"));
+
+    const result = await saveWebtoon("w1", [
+      {
+        ...buildSection("s1", 0),
+        config: {
+          type: "image" as const,
+          imagePath: "kept.webp",
+          width: 800,
+          height: 1200,
+        },
+      },
+      buildSection("temp-1", 1),
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/reorder boom/);
+    expect(deleteSection).toHaveBeenCalledTimes(1);
+    expect(deleteSection).toHaveBeenCalledWith("created-1");
+    expect(deleteSection).not.toHaveBeenCalledWith("s1");
+  });
+
+  test("still returns the original error when the compensating delete fails", async () => {
+    vi.mocked(createSection)
+      .mockResolvedValueOnce(buildSection("created-1", 0))
+      .mockRejectedValueOnce(new Error("createSection failed: boom"));
+    vi.mocked(deleteSection).mockRejectedValueOnce(new Error("delete boom"));
+
+    const result = await saveWebtoon("w1", [
+      buildSection("temp-1", 0),
+      buildSection("temp-2", 1),
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/createSection failed: boom/);
+    expect(result.error).toMatch(/nettoyage partiel/i);
+  });
+
+  test("does not delete anything when the save succeeds", async () => {
+    const result = await saveWebtoon("w1", [buildSection("temp-1", 0)]);
+
+    expect(result.ok).toBe(true);
+    expect(result.sectionIds).toEqual({ "temp-1": "new-id" });
+    expect(deleteSection).not.toHaveBeenCalled();
   });
 });

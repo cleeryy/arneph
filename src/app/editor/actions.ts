@@ -11,6 +11,7 @@ import {
 import {
   createSection,
   createWebtoon,
+  deleteSection,
   deleteWebtoon,
   getWebtoon,
   reorderSections,
@@ -173,6 +174,38 @@ async function cleanupSectionStorage(sectionId: string, knownPaths: string[] = [
   }
 }
 
+/**
+ * Compense une sauvegarde qui a échoué après la création de sections :
+ * supprime (au mieux) les sections créées pendant la tentative. Sans ce
+ * rollback, un retry recréerait les sections déjà persistées et dupliquerait
+ * le webtoon. Les images liées partent via la cascade SQL
+ * (`images.section_id ... on delete cascade`). Les sections préexistantes ne
+ * sont jamais passées ici : seul l'appelant garde la liste des ids créés.
+ *
+ * Retourne le message d'échec de compensation, ou `null` si tout a été nettoyé.
+ */
+async function rollbackCreatedSections(
+  createdSectionIds: string[],
+): Promise<string | null> {
+  let failure: string | null = null;
+
+  // Ordre inverse de création : la dernière section persistée part en premier.
+  for (const sectionId of [...createdSectionIds].reverse()) {
+    try {
+      await deleteSection(sectionId);
+    } catch (cleanupError) {
+      const cleanupMessage = errorMessage(cleanupError);
+      failure ??= cleanupMessage;
+      console.warn(
+        `rollbackCreatedSections failed for ${sectionId}:`,
+        cleanupMessage,
+      );
+    }
+  }
+
+  return failure;
+}
+
 export async function createWebtoonAction(
   input?: { title?: string; description?: string },
 ): Promise<{ ok: boolean; error?: string; webtoonId?: string }> {
@@ -269,6 +302,8 @@ export async function saveWebtoon(
     };
   }
 
+  const createdSectionIds: string[] = [];
+
   try {
     const { webtoonId: wid, sections: incomingSections } = parse.data;
     const current = await getWebtoon(wid);
@@ -304,6 +339,7 @@ export async function saveWebtoon(
           position: section.position,
           audioPath: section.audioPath,
         });
+        createdSectionIds.push(created.id);
         persistedIds.set(section.id, created.id);
         await syncImages(wid, created.id, section.images);
       }
@@ -333,6 +369,21 @@ export async function saveWebtoon(
     return { ok: true, sectionIds: Object.fromEntries(persistedIds) };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
+
+    if (createdSectionIds.length === 0) {
+      return { ok: false, error: message };
+    }
+
+    // Best-effort rollback: the caller retries the whole save on failure, so
+    // sections persisted by this attempt must not survive to be duplicated.
+    const cleanupFailure = await rollbackCreatedSections(createdSectionIds);
+    if (cleanupFailure) {
+      return {
+        ok: false,
+        error: `${message} (nettoyage partiel : ${cleanupFailure})`,
+      };
+    }
+
     return { ok: false, error: message };
   }
 }
