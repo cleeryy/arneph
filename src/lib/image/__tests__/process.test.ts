@@ -3,8 +3,6 @@ import { describe, expect, test, vi } from "vitest";
 import {
   buildSpriteSheet,
   createBrowserFactory,
-  DEFAULT_WEBP_QUALITY,
-  MAX_CANVAS_DIMENSION,
   readImageDimensions,
   resizeImage,
   toWebP,
@@ -21,8 +19,6 @@ vi.mock("@/lib/image/animated", async () => {
     isAnimatedImage: vi.fn(),
   };
 });
-
-import { isAnimatedImage } from "@/lib/image/animated";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Mock canvas : jsdom n'implémente PAS le rendu 2D (getContext → null).

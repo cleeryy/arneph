@@ -44,6 +44,8 @@ function createQueryBuilder() {
 }
 
 export function createClient(_url?: string, _key?: string) {
+  void _url;
+  void _key;
   return {
     from: vi.fn(() => createQueryBuilder()),
     rpc: vi.fn().mockResolvedValue(OK),

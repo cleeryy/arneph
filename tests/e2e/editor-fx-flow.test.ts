@@ -1,23 +1,21 @@
 import { test, expect } from "@playwright/test";
-import path from "path";
-import fs from "fs";
 
 const BASE = "http://localhost:3000";
 const WEBTON_ID = crypto.randomUUID();
 
-const IMAGE_SVG = "/tmp/test-image.svg";
-const IMAGE_PNG = "/tmp/test-image.png";
-const SPRITE_PNG = "/tmp/test-sprite.png";
+// 1x1 opaque PNG (self-contained fixture, no /tmp dependency).
+const PNG_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+const IMAGE_PNG_FIXTURE = {
+  name: "test-image.png",
+  mimeType: "image/png",
+  buffer: PNG_BYTES,
+};
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith(".svg")) return "image/svg+xml";
-  if (filePath.endsWith(".png")) return "image/png";
-  if (filePath.endsWith(".wav")) return "audio/wav";
-  if (filePath.endsWith(".gif")) return "image/gif";
-  return "application/octet-stream";
-}
 
 async function apiRequest(method: string, url: string, body?: unknown) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -50,82 +48,7 @@ async function createWebtoon() {
   });
 }
 
-async function addSection(webtoonId: string, type: string, imagePath: string) {
-  const sectionRes = await apiRequest("POST", "/rest/v1/sections", {
-    webtoon_id: webtoonId,
-    type,
-    config: { type },
-    position: 1,
-  });
-  const sections = await sectionRes.json();
-  const section = Array.isArray(sections) ? sections[0] : sections;
-  const sectionId = section.id;
-
-  const fileBuffer = fs.readFileSync(imagePath);
-  const fileName = `webtoons/sections/${sectionId}/${Date.now()}-${path.basename(imagePath)}`;
-
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const uploadRes = await fetch(
-    `${SUPABASE_URL}/storage/v1/object/webtoon-images/${fileName}`,
-    {
-      method: "POST",
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": contentType(imagePath),
-      },
-      body: fileBuffer,
-    },
-  );
-
-  if (!uploadRes.ok) {
-    const text = await uploadRes.text();
-    throw new Error(`Upload failed: ${uploadRes.status} ${text}`);
-  }
-
-  const uploadData = await uploadRes.json();
-  const storagePath = uploadData.Key;
-
-  const width = type === "animation" ? 2400 : 800;
-  const height = type === "animation" ? 5120 : type === "long-y" ? 4000 : 1280;
-
-  await apiRequest("POST", "/rest/v1/images", {
-    id: crypto.randomUUID(),
-    section_id: sectionId,
-    webtoon_id: webtoonId,
-    storage_path: storagePath,
-    width,
-    height,
-    mime_type: contentType(imagePath),
-    position: 0,
-  });
-
-  const config =
-    type === "animation"
-      ? {
-          type: "animation",
-          spritePath: storagePath,
-          frameWidth: 800,
-          frameHeight: 1280,
-          columns: 3,
-          rows: 4,
-          frameCount: 12,
-          scrollHeight: 200,
-        }
-      : { type, imagePath: storagePath, width, height };
-
-  await apiRequest(
-    "PATCH",
-    `/rest/v1/sections?id=eq.${sectionId}`,
-    { config },
-  );
-
-  return { sectionId, storagePath };
-}
-
 async function deleteWebtoon(webtoonId: string) {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
   const { data: sections } = await apiRequest(
     "GET",
     `/rest/v1/sections?webtoon_id=eq.${webtoonId}`,
@@ -227,7 +150,7 @@ test.describe("E2E Editor FX Flow", () => {
     await page.waitForTimeout(500);
 
     const imageUpload = page.locator("#image-upload");
-    await imageUpload.setInputFiles(IMAGE_PNG);
+    await imageUpload.setInputFiles(IMAGE_PNG_FIXTURE);
     await page.waitForTimeout(1500);
 
     await page.getByRole("button", { name: "Fermer le panneau" }).click();

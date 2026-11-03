@@ -1,22 +1,34 @@
 import { test, expect } from "@playwright/test";
-import path from "path";
-import fs from "fs";
 
 const BASE = "http://localhost:3000";
 const WEBTON_ID = crypto.randomUUID();
 const DEMO_WEBTON_TITLE = "Démo";
 
-const IMAGE_SVG = "/tmp/test-image.svg";
-const SPRITE_PNG = "/tmp/test-sprite.png";
+const SVG_BYTES = Buffer.from(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1280"><rect width="100%" height="100%" fill="#e11d48"/><circle cx="400" cy="640" r="200" fill="#ffffff"/></svg>',
+  "utf-8",
+);
+// 1x1 opaque PNG (self-contained fixture, no /tmp dependency).
+const PNG_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+const IMAGE_SVG_FIXTURE = {
+  name: "test-image.svg",
+  mimeType: "image/svg+xml",
+  buffer: SVG_BYTES,
+};
+
+const SPRITE_PNG_FIXTURE = {
+  name: "test-sprite.png",
+  mimeType: "image/png",
+  buffer: PNG_BYTES,
+};
+
+type UploadFixture = typeof IMAGE_SVG_FIXTURE;
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
-
-function contentType(filePath: string): string {
-  if (filePath.endsWith(".svg")) return "image/svg+xml";
-  if (filePath.endsWith(".png")) return "image/png";
-  if (filePath.endsWith(".wav")) return "audio/wav";
-  return "application/octet-stream";
-}
 
 async function apiRequest(method: string, url: string, body?: unknown) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -49,7 +61,7 @@ async function createWebtoon() {
   });
 }
 
-async function addSection(webtoonId: string, type: string, imagePath: string) {
+async function addSection(webtoonId: string, type: string, fixture: UploadFixture) {
   const sectionRes = await apiRequest("POST", "/rest/v1/sections", {
     webtoon_id: webtoonId,
     type,
@@ -60,8 +72,7 @@ async function addSection(webtoonId: string, type: string, imagePath: string) {
   const section = Array.isArray(sections) ? sections[0] : sections;
   const sectionId = section.id;
 
-  const fileBuffer = fs.readFileSync(imagePath);
-  const fileName = `webtoons/sections/${sectionId}/${Date.now()}-${path.basename(imagePath)}`;
+  const fileName = `webtoons/sections/${sectionId}/${Date.now()}-${fixture.name}`;
 
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
   const uploadRes = await fetch(
@@ -71,9 +82,9 @@ async function addSection(webtoonId: string, type: string, imagePath: string) {
       headers: {
         apikey: serviceRoleKey,
         Authorization: `Bearer ${serviceRoleKey}`,
-        "Content-Type": contentType(imagePath),
+        "Content-Type": fixture.mimeType,
       },
-      body: fileBuffer,
+      body: fixture.buffer,
     },
   );
 
@@ -95,7 +106,7 @@ async function addSection(webtoonId: string, type: string, imagePath: string) {
     storage_path: storagePath,
     width,
     height,
-    mime_type: contentType(imagePath),
+    mime_type: fixture.mimeType,
     position: 0,
   });
 
@@ -121,8 +132,6 @@ async function addSection(webtoonId: string, type: string, imagePath: string) {
 }
 
 async function deleteWebtoon(webtoonId: string) {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-
   const { data: sections } = await apiRequest(
     "GET",
     `/rest/v1/sections?webtoon_id=eq.${webtoonId}`,
@@ -156,8 +165,8 @@ test.describe("E2E Full User Flow", () => {
     await page.getByRole("link", { name: "Éditer" }).first().click();
     await page.waitForURL(new RegExp(`/editor/${WEBTON_ID}`));
 
-    await addSection(WEBTON_ID, "image", IMAGE_SVG);
-    await addSection(WEBTON_ID, "animation", SPRITE_PNG);
+    await addSection(WEBTON_ID, "image", IMAGE_SVG_FIXTURE);
+    await addSection(WEBTON_ID, "animation", SPRITE_PNG_FIXTURE);
 
     await page.reload();
     await page.waitForURL(new RegExp(`/editor/${WEBTON_ID}`));

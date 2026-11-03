@@ -6,6 +6,7 @@ services:
       args:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_ASSET_VERSION: ${NEXT_PUBLIC_ASSET_VERSION:-}
     restart: unless-stopped
     ports:
       - "0.0.0.0:3000:3000"
