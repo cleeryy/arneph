@@ -20,6 +20,20 @@ npm run dev        # http://localhost:3000
 Les règles détaillées pour les agents et contributeurs sont dans
 [`AGENTS.md`](./AGENTS.md) et [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
+## Conventions du dépôt
+
+Le [`CONTRIBUTING.md`](./CONTRIBUTING.md) s'applique tel quel. Spécificités :
+
+- **Portées de commit** : `reader`, `editor`, `db`, `supabase`, `ui`, `deploy`,
+  `test`, `docs`.
+- **Fusion** : rebase fast-forward sur `main` quand la branche est propre (un
+  seul sujet), sinon squash. La branche est supprimée après fusion.
+- **Branche par défaut** : `main`, toujours verte (tests + lint + build).
+- **Vérification locale** : `npm test`, `npm run lint`, `npm run build`, puis
+  `npx playwright test` pour les parcours navigateur.
+- **Modèle de PR** : `.github/pull_request_template.md`.
+- **Sécurité** : voir [`SECURITY.md`](./SECURITY.md).
+
 ## Tests
 
 ```bash
