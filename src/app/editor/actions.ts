@@ -41,6 +41,34 @@ const publishWebtoonSchema = z.object({
   webtoonId: z.string().min(1),
 });
 
+function collectSectionStoragePaths(section: {
+  images: { storagePath: string }[];
+  audioPath?: string | null;
+  config: { imagePath?: unknown; spritePath?: unknown; fxPath?: unknown };
+}): string[] {
+  return [
+    ...section.images.map((image) => image.storagePath),
+    section.audioPath,
+    "imagePath" in section.config ? section.config.imagePath : undefined,
+    "spritePath" in section.config ? section.config.spritePath : undefined,
+    "fxPath" in section.config ? section.config.fxPath : undefined,
+  ].filter((path): path is string => typeof path === "string" && path.length > 0);
+}
+
+async function removeStoragePaths(paths: string[]): Promise<void> {
+  const uniquePaths = [...new Set(paths)];
+  if (uniquePaths.length === 0) return;
+
+  const { error: removeError } = await supabase
+    .storage
+    .from("webtoon-images")
+    .remove(uniquePaths);
+
+  if (removeError) {
+    console.warn("removeStoragePaths failed:", removeError.message);
+  }
+}
+
 async function cleanupSectionStorage(sectionId: string, knownPaths: string[] = []): Promise<void> {
   const prefix = `webtoons/sections/${sectionId}/`;
   const { data: files, error: listError } = await supabase
@@ -65,7 +93,7 @@ async function cleanupSectionStorage(sectionId: string, knownPaths: string[] = [
 export async function saveWebtoon(
   webtoonId: string,
   sections: SectionWithImages[],
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; sectionIds?: Record<string, string> }> {
   const parse = saveWebtoonSchema.safeParse({ webtoonId, sections });
   if (!parse.success) {
     return {
@@ -88,16 +116,14 @@ export async function saveWebtoon(
       (section) => !incomingSectionIds.has(section.id),
     );
     const removedIds = removedSections.map((section) => section.id);
-    const removedStorage = removedSections.map((section) => [
-      ...section.images.map((image) => image.storagePath),
-      section.audioPath,
-      "imagePath" in section.config ? section.config.imagePath : undefined,
-      "spritePath" in section.config ? section.config.spritePath : undefined,
-    ].filter((path): path is string => Boolean(path)));
-    await Promise.all(
-      removedIds.map((id, index) => cleanupSectionStorage(id, removedStorage[index])),
+    const removedStorage = removedSections.map((section) =>
+      collectSectionStoragePaths(section),
     );
-
+    const retainedSections = new Map(
+      (current?.sections ?? [])
+        .filter((section) => incomingSectionIds.has(section.id))
+        .map((section) => [section.id, section] as const),
+    );
     const persistedIds = new Map<string, string>();
     for (const section of incomingSections) {
       if (existingSectionIds.has(section.id)) {
@@ -122,10 +148,22 @@ export async function saveWebtoon(
       .filter((id): id is string => Boolean(id));
     await reorderSections(wid, orderedIds);
 
+    const incomingPaths = new Set(
+      incomingSections.flatMap((section) => collectSectionStoragePaths(section)),
+    );
+    const replacedPaths = [...retainedSections.values()].flatMap((previous) =>
+      collectSectionStoragePaths(previous).filter((path) => !incomingPaths.has(path)),
+    );
+    await removeStoragePaths(replacedPaths);
+
+    await Promise.all(
+      removedIds.map((id, index) => cleanupSectionStorage(id, removedStorage[index])),
+    );
+
     revalidatePath(`/editor/${wid}`);
     revalidatePath("/read");
 
-    return { ok: true };
+    return { ok: true, sectionIds: Object.fromEntries(persistedIds) };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return { ok: false, error: message };
@@ -153,7 +191,9 @@ async function syncImages(
   sectionId: string,
   images: ImageRecord[],
 ): Promise<void> {
-  await supabase.from("images").delete().eq("section_id", sectionId);
+  const { error: deleteError } = await supabase.from("images").delete().eq("section_id", sectionId);
+
+  if (deleteError) throw new Error(`syncImages failed: ${deleteError.message}`);
 
   if (images.length === 0) return;
 
@@ -250,6 +290,7 @@ export async function deleteWebtoonAction(
             section.audioPath,
             "imagePath" in section.config ? section.config.imagePath : undefined,
             "spritePath" in section.config ? section.config.spritePath : undefined,
+            "fxPath" in section.config ? section.config.fxPath : undefined,
           ].filter((path): path is string => Boolean(path))),
         ),
       );
