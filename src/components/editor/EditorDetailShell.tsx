@@ -25,9 +25,12 @@ interface ActionResult {
 export function EditorDetailLayoutContent({
   children,
   webtoonId,
+  initialCoverPath = null,
 }: {
   children: React.ReactNode;
   webtoonId: string;
+  /** Couverture persistée, hydratée par la route serveur. */
+  initialCoverPath?: string | null;
 }) {
   const t = useTranslations("editor");
   const {
@@ -46,6 +49,23 @@ export function EditorDetailLayoutContent({
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<ActionResult | null>(null);
+
+  // Garde-fou fermeture d'onglet / rechargement : uniquement tant que des
+  // modifications ne sont pas enregistrées.
+  React.useEffect(() => {
+    if (!isDirty) return;
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      // Requis par les navigateurs historiques pour afficher la confirmation.
+      event.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isDirty]);
 
   async function performSave(): Promise<boolean> {
     setSaveResult(null);
@@ -274,7 +294,10 @@ export function EditorDetailLayoutContent({
           </div>
         </div>
       )}
-      <WebtoonMetadataForm webtoonId={webtoonId} />
+      <WebtoonMetadataForm
+        webtoonId={webtoonId}
+        initialCoverPath={initialCoverPath}
+      />
       <main className="flex-1">{children}</main>
     </div>
   );

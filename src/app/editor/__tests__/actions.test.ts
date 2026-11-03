@@ -1170,6 +1170,83 @@ describe("updateWebtoonMetadataAction", () => {
   });
 });
 
+describe("updateWebtoonMetadataAction — coverPath", () => {
+  const COVER_PATH = "webtoons/covers/w1/1700000000000-cover.webp";
+
+  test("persists a cover path and revalidates /read", async () => {
+    vi.mocked(updateWebtoon).mockResolvedValueOnce(
+      buildWebtoon({ id: "w1", coverPath: COVER_PATH }),
+    );
+
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      description: "Desc",
+      coverPath: COVER_PATH,
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(updateWebtoon).toHaveBeenCalledWith("w1", {
+      title: "Titre",
+      description: "Desc",
+      coverPath: COVER_PATH,
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/read");
+  });
+
+  test("clears the cover when coverPath is an empty string", async () => {
+    vi.mocked(updateWebtoon).mockResolvedValueOnce(buildWebtoon({ id: "w1" }));
+
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      coverPath: "",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(updateWebtoon).toHaveBeenCalledWith(
+      "w1",
+      expect.objectContaining({ title: "Titre", coverPath: null }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith("/read");
+  });
+
+  test("leaves the cover untouched when coverPath is omitted", async () => {
+    vi.mocked(updateWebtoon).mockResolvedValueOnce(buildWebtoon({ id: "w1" }));
+
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      description: "Desc",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(vi.mocked(updateWebtoon).mock.calls[0][1]).not.toHaveProperty(
+      "coverPath",
+    );
+  });
+
+  test("rejects a cover path longer than 512 characters", async () => {
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      coverPath: `webtoons/covers/w1/${"a".repeat(513)}.webp`,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(updateWebtoon).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  test("rejects a whitespace-only cover path", async () => {
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      coverPath: "   ",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(updateWebtoon).not.toHaveBeenCalled();
+  });
+});
+
 describe("saveWebtoon — defensive webtoonId", () => {
   const baseSection = {
     id: "s-new",

@@ -65,6 +65,14 @@ const updateWebtoonMetadataSchema = z.object({
     .string()
     .max(2000, "La description ne doit pas dépasser 2000 caractères")
     .optional(),
+  // `undefined` = couverture inchangée ; `""` = suppression (voir l'action).
+  coverPath: z
+    .string()
+    .max(512, "Le chemin de la couverture ne doit pas dépasser 512 caractères")
+    .refine((path) => path === "" || path.trim().length > 0, {
+      message: "Le chemin de la couverture est invalide",
+    })
+    .optional(),
 });
 
 const DEFAULT_WEBTOON_TITLE = "Nouveau webtoon";
@@ -193,7 +201,12 @@ export async function createWebtoonAction(
 
 export async function updateWebtoonMetadataAction(
   webtoonId: string,
-  metadata: { title: string; description?: string | null },
+  metadata: {
+    title: string;
+    description?: string | null;
+    /** `undefined` = inchangée ; `""` (ou `null`) = suppression. */
+    coverPath?: string | null;
+  },
 ): Promise<{ ok: boolean; error?: string }> {
   const idParse = publishWebtoonSchema.safeParse({ webtoonId });
   if (!idParse.success) {
@@ -206,6 +219,7 @@ export async function updateWebtoonMetadataAction(
   const parse = updateWebtoonMetadataSchema.safeParse({
     title: metadata?.title,
     description: metadata?.description ?? undefined,
+    coverPath: metadata?.coverPath === null ? "" : metadata?.coverPath,
   });
   if (!parse.success) {
     return {
@@ -215,10 +229,18 @@ export async function updateWebtoonMetadataAction(
   }
 
   try {
-    const updated = await updateWebtoon(webtoonId, {
+    const patch: Parameters<typeof updateWebtoon>[1] = {
       title: parse.data.title,
       description: parse.data.description,
-    });
+    };
+    if (parse.data.coverPath !== undefined) {
+      // `webtoons.cover_path` est nullable : `null` efface la couverture.
+      // `UpdateWebtoonData` n'expose pas encore `null` pour ce champ.
+      (patch as { coverPath?: string | null }).coverPath =
+        parse.data.coverPath === "" ? null : parse.data.coverPath;
+    }
+
+    const updated = await updateWebtoon(webtoonId, patch);
     if (!updated) {
       return { ok: false, error: "Webtoon introuvable." };
     }

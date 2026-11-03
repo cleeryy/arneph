@@ -22,7 +22,10 @@ export default async function EditorDetailLayout({
       initialDescription={webtoon?.description ?? null}
       initialVisibility={webtoon?.visibility ?? null}
     >
-      <EditorDetailLayoutContent webtoonId={webtoonId}>
+      <EditorDetailLayoutContent
+        webtoonId={webtoonId}
+        initialCoverPath={webtoon?.coverPath ?? null}
+      >
         {children}
       </EditorDetailLayoutContent>
     </EditorStateProvider>

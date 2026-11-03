@@ -49,6 +49,19 @@ import {
   unpublishWebtoon,
   updateWebtoonMetadataAction,
 } from "@/app/editor/actions";
+import { resizeImage, readImageDimensions } from "@/lib/image/process";
+import { uploadSectionAsset } from "@/lib/supabase/upload";
+
+vi.mock("@/lib/image/process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/image/process")>();
+  return { ...actual, resizeImage: vi.fn(), readImageDimensions: vi.fn() };
+});
+
+vi.mock("@/lib/supabase/upload", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/supabase/upload")>();
+  return { ...actual, uploadSectionAsset: vi.fn() };
+});
+
 vi.mock("@/app/editor/actions", () => ({
   createWebtoonAction: vi.fn(),
   updateWebtoonMetadataAction: vi.fn(),
@@ -78,6 +91,9 @@ afterEach(() => {
   vi.mocked(publishWebtoon).mockReset();
   vi.mocked(unpublishWebtoon).mockReset();
   vi.mocked(updateWebtoonMetadataAction).mockReset();
+  vi.mocked(resizeImage).mockReset();
+  vi.mocked(readImageDimensions).mockReset();
+  vi.mocked(uploadSectionAsset).mockReset();
 });
 
 // ---------------------------------------------------------------------------
@@ -619,6 +635,251 @@ describe("Editor detail — metadata form", () => {
     await waitFor(() => {
       expect(saveButton).toBeEnabled();
     });
+  });
+});
+
+describe("Editor detail — cover upload", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  async function renderShell(opts: { initialCoverPath?: string | null } = {}) {
+    const shellModule = await import("@/components/editor/EditorDetailShell");
+    const stateModule = await import("@/components/editor/EditorStateContext");
+    const { EditorDetailLayoutContent } = shellModule;
+    const { EditorStateProvider } = stateModule;
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider
+          initialTitle="Titre"
+          initialDescription="Desc"
+          initialVisibility="draft"
+        >
+          <EditorDetailLayoutContent
+            webtoonId={WEBTOON_ID}
+            initialCoverPath={opts.initialCoverPath ?? null}
+          >
+            <div data-testid="cover-child" />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    await screen.findByTestId("metadata-cover-input");
+  }
+
+  test("a webtoon without a cover keeps the read-only placeholder", async () => {
+    await renderShell();
+
+    expect(screen.getByTestId("metadata-cover-placeholder")).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("metadata-cover-preview"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("metadata-cover-remove"),
+    ).not.toBeInTheDocument();
+  });
+
+  test("uploading downscales, uploads under webtoons/covers/<id>/ then persists coverPath", async () => {
+    vi.mocked(resizeImage).mockResolvedValueOnce(
+      new Blob(["webp"], { type: "image/webp" }),
+    );
+    vi.mocked(readImageDimensions).mockResolvedValueOnce({
+      width: 800,
+      height: 450,
+    });
+    vi.mocked(uploadSectionAsset).mockImplementationOnce(async (path) => path);
+    vi.mocked(updateWebtoonMetadataAction).mockResolvedValueOnce({ ok: true });
+
+    await renderShell();
+
+    const file = new File(["png"], "cover photo.png", { type: "image/png" });
+    fireEvent.change(screen.getByTestId("metadata-cover-input"), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(vi.mocked(uploadSectionAsset)).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(resizeImage)).toHaveBeenCalledWith(file);
+
+    const [path, blob, contentType] =
+      vi.mocked(uploadSectionAsset).mock.calls[0];
+    expect(path).toMatch(
+      new RegExp(`^webtoons/covers/${WEBTOON_ID}/\\d+-cover_photo\\.png$`),
+    );
+    expect(blob).toBeInstanceOf(Blob);
+    expect(contentType).toBe("image/webp");
+
+    await waitFor(() => {
+      expect(vi.mocked(updateWebtoonMetadataAction)).toHaveBeenCalledWith(
+        WEBTOON_ID,
+        { title: "Titre", description: "Desc", coverPath: path },
+      );
+    });
+
+    const preview = await screen.findByTestId("metadata-cover-preview");
+    expect(preview.getAttribute("src")).toContain(path);
+    expect(preview.getAttribute("src")).toContain(
+      "/storage/v1/object/public/webtoon-images/",
+    );
+    expect(preview).toHaveAttribute("alt", "Titre");
+  });
+
+  test("a non-image file is rejected inline and never uploaded", async () => {
+    await renderShell();
+
+    const file = new File(["pdf"], "doc.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByTestId("metadata-cover-input"), {
+      target: { files: [file] },
+    });
+
+    const error = await screen.findByTestId("metadata-error");
+    expect(error.textContent?.toLowerCase()).toMatch(/image/);
+    expect(vi.mocked(uploadSectionAsset)).not.toHaveBeenCalled();
+    expect(vi.mocked(updateWebtoonMetadataAction)).not.toHaveBeenCalled();
+  });
+
+  test("an upload failure is surfaced inline", async () => {
+    vi.mocked(resizeImage).mockRejectedValueOnce(new Error("canvas boom"));
+
+    await renderShell();
+
+    fireEvent.change(screen.getByTestId("metadata-cover-input"), {
+      target: {
+        files: [new File(["png"], "cover.png", { type: "image/png" })],
+      },
+    });
+
+    const error = await screen.findByTestId("metadata-error");
+    expect(error.textContent?.toLowerCase()).toMatch(/image/);
+    expect(vi.mocked(updateWebtoonMetadataAction)).not.toHaveBeenCalled();
+  });
+
+  test("removing an existing cover clears coverPath through the action", async () => {
+    vi.mocked(updateWebtoonMetadataAction).mockResolvedValueOnce({ ok: true });
+
+    await renderShell({
+      initialCoverPath: "webtoons/covers/w1/1700000000000-cover.webp",
+    });
+
+    expect(screen.getByTestId("metadata-cover-preview")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("metadata-cover-remove"));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateWebtoonMetadataAction)).toHaveBeenCalledWith(
+        WEBTOON_ID,
+        { title: "Titre", description: "Desc", coverPath: "" },
+      );
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("metadata-cover-preview"),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByTestId("metadata-cover-placeholder")).toBeInTheDocument();
+  });
+});
+
+describe("Editor detail — unsaved changes guard", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function DirtyToggle() {
+    const { setIsDirty } = useEditorState();
+    return (
+      <>
+        <button
+          type="button"
+          data-testid="make-dirty"
+          onClick={() => setIsDirty(true)}
+        >
+          dirty
+        </button>
+        <button
+          type="button"
+          data-testid="make-clean"
+          onClick={() => setIsDirty(false)}
+        >
+          clean
+        </button>
+      </>
+    );
+  }
+
+  async function renderShell() {
+    const { EditorDetailLayoutContent } = await import(
+      "@/components/editor/EditorDetailShell"
+    );
+    const { EditorStateProvider } = await import(
+      "@/components/editor/EditorStateContext"
+    );
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider initialTitle="Titre" initialVisibility="draft">
+          <EditorDetailLayoutContent webtoonId={WEBTOON_ID}>
+            <DirtyToggle />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    await screen.findByTestId("make-dirty");
+  }
+
+  test("registers the beforeunload warning only while dirty", async () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+    const beforeUnload = (calls: unknown[][]) =>
+      calls.filter((call) => call[0] === "beforeunload");
+
+    await renderShell();
+
+    expect(beforeUnload(addSpy.mock.calls)).toHaveLength(0);
+
+    const cleanEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(cleanEvent);
+    expect(cleanEvent.defaultPrevented).toBe(false);
+
+    fireEvent.click(screen.getByTestId("make-dirty"));
+    await waitFor(() => {
+      expect(beforeUnload(addSpy.mock.calls)).toHaveLength(1);
+    });
+
+    const dirtyEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(dirtyEvent);
+    expect(dirtyEvent.defaultPrevented).toBe(true);
+
+    fireEvent.click(screen.getByTestId("make-clean"));
+    await waitFor(() => {
+      expect(beforeUnload(removeSpy.mock.calls)).toHaveLength(1);
+    });
+
+    const cleanedEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(cleanedEvent);
+    expect(cleanedEvent.defaultPrevented).toBe(false);
+  });
+
+  test("removes the listener on unmount while dirty", async () => {
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+
+    await renderShell();
+    fireEvent.click(screen.getByTestId("make-dirty"));
+    await waitFor(() => {
+      expect(
+        removeSpy.mock.calls.filter((call) => call[0] === "beforeunload"),
+      ).toHaveLength(0);
+    });
+
+    cleanup();
+
+    expect(
+      removeSpy.mock.calls.filter((call) => call[0] === "beforeunload"),
+    ).toHaveLength(1);
   });
 });
 
