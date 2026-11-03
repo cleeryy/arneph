@@ -96,8 +96,17 @@ export interface WebtoonWithSections extends Webtoon {
   sections: SectionWithImages[];
 }
 
-function throwDbError(operation: string, error: { message?: string }): never {
-  throw new Error(`db.${operation} failed: ${error.message ?? "unknown error"}`);
+function throwDbError(
+  operation: string,
+  error: { message?: string; code?: string },
+): never {
+  const wrapped = new Error(
+    `db.${operation} failed: ${error.message ?? "unknown error"}`,
+  ) as Error & { code?: string };
+  // Conserve le code Postgres (ex. 23505) pour que les Server Actions
+  // distinguent une collision de titre d'une vraie panne base.
+  if (error.code) wrapped.code = error.code;
+  throw wrapped;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,18 +1,25 @@
 import { describe, expect, test, vi, beforeEach } from "vitest";
 
 import {
+  createWebtoonAction,
+  updateWebtoonMetadataAction,
   saveWebtoon,
   publishWebtoon,
   unpublishWebtoon,
   deleteWebtoonAction,
 } from "@/app/editor/actions";
 
+import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/db/server";
 import type { WebtoonWithSections } from "@/lib/db/queries";
+import type { Webtoon } from "@/types/webtoon";
 import {
+  createWebtoon,
+  deleteWebtoon,
   getWebtoon,
   createSection,
   reorderSections,
+  updateWebtoon,
 } from "@/lib/db/queries";
 
 vi.mock("@/lib/db/server", () => ({
@@ -26,7 +33,7 @@ vi.mock("@/lib/db/server", () => ({
       single: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn().mockReturnThis(),
       then: vi.fn((resolve: (v: unknown) => unknown) =>
-        resolve({ data: null, error: null }),
+        resolve({ data: [{ id: "s1" }], error: null }),
       ),
     })),
     storage: {
@@ -44,6 +51,7 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/lib/db/queries", () => ({
   getWebtoon: vi.fn().mockResolvedValue(null),
+  createWebtoon: vi.fn(),
   createSection: vi.fn().mockResolvedValue({
     id: "new-id",
     type: "image",
@@ -59,6 +67,34 @@ vi.mock("@/lib/db/queries", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Query chains are re-created per test: one-off implementations must not
+  // leak into later tests (Vitest does not clear them via clearAllMocks).
+  vi.mocked(supabase.from).mockReset();
+  vi.mocked(supabase.from).mockImplementation(
+    () =>
+      ({
+        select: vi.fn().mockReturnThis(),
+        insert: vi.fn().mockReturnThis(),
+        update: vi.fn().mockReturnThis(),
+        delete: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        single: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockReturnThis(),
+        then: vi.fn((resolve: (v: unknown) => unknown) =>
+          resolve({ data: [{ id: "s1" }], error: null }),
+        ),
+      }) as never,
+  );
+  // Storage mocks are re-created per test: some tests set persistent
+  // `mockReturnValue` implementations that must not leak into later tests.
+  vi.mocked(supabase.storage.from).mockReset();
+  vi.mocked(supabase.storage.from).mockImplementation(
+    () =>
+      ({
+        list: vi.fn().mockResolvedValue({ data: [], error: null }),
+        remove: vi.fn().mockResolvedValue({ data: null, error: null }),
+      }) as unknown as ReturnType<typeof supabase.storage.from>,
+  );
 });
 
 describe("saveWebtoon — zod validation", () => {
@@ -455,8 +491,9 @@ describe("saveWebtoon — image-row delete failure", () => {
     const sectionsChain = {
       update: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
       then: vi.fn((resolve: (v: unknown) => unknown) =>
-        resolve({ data: null, error: null }),
+        resolve({ data: [{ id: "s1" }], error: null }),
       ),
     };
     const imagesChain = {
@@ -977,5 +1014,377 @@ describe("fxPath storage cleanup", () => {
     expect(removeMock).toHaveBeenCalledWith(
       expect.arrayContaining(["fx/overlay.gif"]),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T12 — création, métadonnées, intégrité des ids, publication et resilience
+// ---------------------------------------------------------------------------
+
+function buildWebtoon(overrides: Partial<Webtoon> = {}): Webtoon {
+  return {
+    id: "w-new",
+    title: "Nouveau webtoon",
+    description: undefined,
+    coverPath: undefined,
+    visibility: "draft",
+    settings: {},
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function buildWebtoonWithSections(
+  sections: WebtoonWithSections["sections"],
+): WebtoonWithSections {
+  return { ...buildWebtoon({ id: "w1" }), sections };
+}
+
+const duplicateTitleError = () =>
+  new Error(
+    'db.createWebtoon failed: duplicate key value violates unique constraint "unique_webtoons_title"',
+  );
+
+describe("createWebtoonAction", () => {
+  test("creates a draft with the localized default title", async () => {
+    vi.mocked(createWebtoon).mockResolvedValueOnce(buildWebtoon());
+
+    const result = await createWebtoonAction();
+
+    expect(result).toEqual({ ok: true, webtoonId: "w-new" });
+    expect(createWebtoon).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Nouveau webtoon",
+        visibility: "draft",
+      }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith("/editor");
+  });
+
+  test("retries with a numeric suffix when the title already exists", async () => {
+    vi.mocked(createWebtoon)
+      .mockRejectedValueOnce(duplicateTitleError())
+      .mockRejectedValueOnce(duplicateTitleError())
+      .mockResolvedValueOnce(buildWebtoon({ id: "w-retried", title: "Nouveau webtoon (3)" }));
+
+    const result = await createWebtoonAction();
+
+    expect(result).toEqual({ ok: true, webtoonId: "w-retried" });
+    const titles = vi.mocked(createWebtoon).mock.calls.map((call) => call[0].title);
+    expect(titles).toEqual([
+      "Nouveau webtoon",
+      "Nouveau webtoon (2)",
+      "Nouveau webtoon (3)",
+    ]);
+  });
+
+  test("does not mask non-duplicate database errors", async () => {
+    vi.mocked(createWebtoon).mockRejectedValueOnce(
+      new Error("db.createWebtoon failed: connection refused"),
+    );
+
+    const result = await createWebtoonAction();
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/connection refused/);
+    expect(createWebtoon).toHaveBeenCalledTimes(1);
+  });
+
+  test("honours a caller-provided title", async () => {
+    vi.mocked(createWebtoon).mockResolvedValueOnce(buildWebtoon({ title: "Mon webtoon" }));
+
+    await createWebtoonAction({ title: "Mon webtoon" });
+
+    expect(createWebtoon).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Mon webtoon" }),
+    );
+  });
+});
+
+describe("updateWebtoonMetadataAction", () => {
+  test("rejects an empty title without touching the database", async () => {
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "  ",
+      description: "desc",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(updateWebtoon).not.toHaveBeenCalled();
+  });
+
+  test("rejects a description longer than 2000 characters", async () => {
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      description: "a".repeat(2001),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(updateWebtoon).not.toHaveBeenCalled();
+  });
+
+  test("updates metadata and revalidates /editor and /read", async () => {
+    vi.mocked(updateWebtoon).mockResolvedValueOnce(buildWebtoon({ id: "w1" }));
+
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre renommé",
+      description: "Nouvelle description",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(updateWebtoon).toHaveBeenCalledWith("w1", {
+      title: "Titre renommé",
+      description: "Nouvelle description",
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/editor");
+    expect(revalidatePath).toHaveBeenCalledWith("/read");
+  });
+
+  test("surfaces a duplicate title as a friendly error instead of throwing", async () => {
+    vi.mocked(updateWebtoon).mockRejectedValueOnce(
+      new Error(
+        'db.updateWebtoon failed: duplicate key value violates unique constraint "unique_webtoons_title"',
+      ),
+    );
+
+    await expect(
+      updateWebtoonMetadataAction("w1", { title: "Doublon" }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        ok: false,
+        error: expect.stringMatching(/déjà ce titre/),
+      }),
+    );
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  test("returns ok:false when the webtoon does not exist", async () => {
+    vi.mocked(updateWebtoon).mockResolvedValueOnce(null);
+
+    const result = await updateWebtoonMetadataAction("w1", { title: "Titre" });
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+  });
+});
+
+describe("saveWebtoon — defensive webtoonId", () => {
+  const baseSection = {
+    id: "s-new",
+    webtoonId: "attacker-webtoon",
+    position: 0,
+    type: "image" as const,
+    config: {
+      type: "image" as const,
+      imagePath: "test.webp",
+      width: 800,
+      height: 1200,
+    },
+    audioPath: undefined,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    images: [
+      {
+        id: "img-1",
+        sectionId: "s-new",
+        webtoonId: "attacker-webtoon",
+        storagePath: "webtoons/sections/s-new/1.webp",
+        width: 800,
+        height: 1200,
+        mimeType: "image/webp",
+        position: 0,
+      },
+    ],
+  };
+
+  test("creates sections and images under the validated webtoonId", async () => {
+    const result = await saveWebtoon("w1", [baseSection]);
+
+    expect(result.ok).toBe(true);
+    expect(createSection).toHaveBeenCalledWith(
+      expect.objectContaining({ webtoonId: "w1" }),
+    );
+
+    const fromCalls = vi.mocked(supabase.from).mock.calls;
+    const imagesIndex = fromCalls.map((call) => call[0]).lastIndexOf("images");
+    const chain = vi.mocked(supabase.from).mock.results[imagesIndex].value;
+    expect(chain.insert).toHaveBeenCalledWith([
+      expect.objectContaining({ webtoon_id: "w1", section_id: "new-id" }),
+    ]);
+  });
+
+  test("scopes existing-section updates to the validated webtoonId", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(
+      buildWebtoonWithSections([
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image",
+          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+          audioPath: undefined,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          images: [],
+        },
+      ]),
+    );
+
+    const select = vi.fn().mockResolvedValue({ data: [{ id: "s1" }], error: null });
+    const eqWebtoon = vi.fn(() => ({ select }));
+    const eqId = vi.fn(() => ({ eq: eqWebtoon }));
+    const update = vi.fn(() => ({ eq: eqId }));
+    vi.mocked(supabase.from).mockImplementationOnce(() => ({ update }) as never);
+
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "attacker-webtoon",
+        position: 0,
+        type: "image",
+        config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+        audioPath: undefined,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        images: [],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(eqWebtoon).toHaveBeenCalledWith("webtoon_id", "w1");
+  });
+
+  test("fails when the section update affects zero rows", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(
+      buildWebtoonWithSections([
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image",
+          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+          audioPath: undefined,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          images: [],
+        },
+      ]),
+    );
+
+    const select = vi.fn().mockResolvedValue({ data: [], error: null });
+    const eqWebtoon = vi.fn(() => ({ select }));
+    const eqId = vi.fn(() => ({ eq: eqWebtoon }));
+    const update = vi.fn(() => ({ eq: eqId }));
+    vi.mocked(supabase.from).mockImplementationOnce(() => ({ update }) as never);
+
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+        audioPath: undefined,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        images: [],
+      },
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/introuvable|aucune section/i);
+    expect(reorderSections).not.toHaveBeenCalled();
+  });
+});
+
+describe("publishWebtoon — publication guards", () => {
+  test("refuses to publish a webtoon with zero sections", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(buildWebtoonWithSections([]));
+
+    const result = await publishWebtoon("w1");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(updateWebtoon).not.toHaveBeenCalled();
+  });
+
+  test("refuses to publish a missing webtoon", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(null);
+
+    const result = await publishWebtoon("w1");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBeDefined();
+    expect(updateWebtoon).not.toHaveBeenCalled();
+  });
+
+  test("publishes and revalidates the reader and editor routes", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(
+      buildWebtoonWithSections([
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image",
+          config: { type: "image", imagePath: "a.webp", width: 800, height: 1200 },
+          audioPath: undefined,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          images: [],
+        },
+      ]),
+    );
+    vi.mocked(updateWebtoon).mockResolvedValueOnce(buildWebtoon({ id: "w1" }));
+
+    const result = await publishWebtoon("w1");
+
+    expect(result).toEqual({ ok: true });
+    expect(updateWebtoon).toHaveBeenCalledWith("w1", { visibility: "published" });
+    expect(revalidatePath).toHaveBeenCalledWith("/read");
+    expect(revalidatePath).toHaveBeenCalledWith("/read/w1");
+    expect(revalidatePath).toHaveBeenCalledWith("/editor/w1");
+  });
+});
+
+describe("deleteWebtoonAction — storage cleanup resilience", () => {
+  test("still deletes the database row and returns ok when Storage cleanup throws", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(
+      buildWebtoonWithSections([
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image",
+          config: { type: "image", imagePath: "cover.webp", width: 800, height: 1200 },
+          audioPath: undefined,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          images: [
+            {
+              id: "img-1",
+              sectionId: "s1",
+              webtoonId: "w1",
+              storagePath: "webtoons/sections/s1/1.webp",
+              width: 800,
+              height: 1200,
+              mimeType: "image/webp",
+              position: 0,
+            },
+          ],
+        },
+      ]),
+    );
+    vi.mocked(supabase.storage.from).mockImplementationOnce(() => {
+      throw new Error("storage down");
+    });
+
+    const result = await deleteWebtoonAction("w1");
+
+    expect(result).toEqual({ ok: true });
+    expect(deleteWebtoon).toHaveBeenCalledWith("w1");
+    expect(revalidatePath).toHaveBeenCalledWith("/editor");
+    expect(revalidatePath).toHaveBeenCalledWith("/read");
   });
 });

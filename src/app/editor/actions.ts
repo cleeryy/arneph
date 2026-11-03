@@ -10,6 +10,7 @@ import {
 } from "@/lib/db/queries";
 import {
   createSection,
+  createWebtoon,
   deleteWebtoon,
   getWebtoon,
   reorderSections,
@@ -40,6 +41,80 @@ const saveWebtoonSchema = z.object({
 const publishWebtoonSchema = z.object({
   webtoonId: z.string().min(1),
 });
+
+const createWebtoonSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Le titre est requis")
+    .max(120, "Le titre ne doit pas dépasser 120 caractères")
+    .optional(),
+  description: z
+    .string()
+    .max(2000, "La description ne doit pas dépasser 2000 caractères")
+    .optional(),
+});
+
+const updateWebtoonMetadataSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Le titre est requis")
+    .max(120, "Le titre ne doit pas dépasser 120 caractères"),
+  description: z
+    .string()
+    .max(2000, "La description ne doit pas dépasser 2000 caractères")
+    .optional(),
+});
+
+const DEFAULT_WEBTOON_TITLE = "Nouveau webtoon";
+const MAX_UNIQUE_TITLE_ATTEMPTS = 50;
+
+const DUPLICATE_TITLE_ERROR =
+  "Un webtoon porte déjà ce titre. Choisissez un autre titre.";
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
+/** Détecte une violation de la contrainte unique `unique_webtoons_title`. */
+function isDuplicateTitleError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  if (code === "23505") return true;
+  const message = errorMessage(error);
+  return /duplicate key|unique constraint|unique_webtoons_title/i.test(message);
+}
+
+function titleWithSuffix(title: string, attempt: number): string {
+  return attempt <= 1 ? title : `${title} (${attempt})`;
+}
+
+/**
+ * Crée un webtoon en évitant la collision de titre unique.
+ * Réessaie avec un suffixe numérique (`Titre (2)`, `Titre (3)`, …) au lieu
+ * de propager une erreur duplicate-key à l'UI.
+ */
+async function createWebtoonWithUniqueTitle(
+  title: string,
+  description?: string,
+) {
+  for (let attempt = 1; attempt <= MAX_UNIQUE_TITLE_ATTEMPTS; attempt += 1) {
+    try {
+      return await createWebtoon({
+        title: titleWithSuffix(title, attempt),
+        description,
+        visibility: "draft",
+      });
+    } catch (error) {
+      if (attempt === MAX_UNIQUE_TITLE_ATTEMPTS || !isDuplicateTitleError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("createWebtoonWithUniqueTitle: épuisement des tentatives");
+}
 
 function collectSectionStoragePaths(section: {
   images: { storagePath: string }[];
@@ -90,6 +165,76 @@ async function cleanupSectionStorage(sectionId: string, knownPaths: string[] = [
   }
 }
 
+export async function createWebtoonAction(
+  input?: { title?: string; description?: string },
+): Promise<{ ok: boolean; error?: string; webtoonId?: string }> {
+  const parse = createWebtoonSchema.safeParse(input ?? {});
+  if (!parse.success) {
+    return {
+      ok: false,
+      error: parse.error.issues.map((i) => i.message).join("; "),
+    };
+  }
+
+  try {
+    const webtoon = await createWebtoonWithUniqueTitle(
+      parse.data.title ?? DEFAULT_WEBTOON_TITLE,
+      parse.data.description,
+    );
+
+    revalidatePath("/editor");
+    revalidatePath("/read");
+
+    return { ok: true, webtoonId: webtoon.id };
+  } catch (error) {
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
+export async function updateWebtoonMetadataAction(
+  webtoonId: string,
+  metadata: { title: string; description?: string | null },
+): Promise<{ ok: boolean; error?: string }> {
+  const idParse = publishWebtoonSchema.safeParse({ webtoonId });
+  if (!idParse.success) {
+    return {
+      ok: false,
+      error: idParse.error.issues.map((i) => i.message).join("; "),
+    };
+  }
+
+  const parse = updateWebtoonMetadataSchema.safeParse({
+    title: metadata?.title,
+    description: metadata?.description ?? undefined,
+  });
+  if (!parse.success) {
+    return {
+      ok: false,
+      error: parse.error.issues.map((i) => i.message).join("; "),
+    };
+  }
+
+  try {
+    const updated = await updateWebtoon(webtoonId, {
+      title: parse.data.title,
+      description: parse.data.description,
+    });
+    if (!updated) {
+      return { ok: false, error: "Webtoon introuvable." };
+    }
+
+    revalidatePath("/editor");
+    revalidatePath("/read");
+
+    return { ok: true };
+  } catch (error) {
+    if (isDuplicateTitleError(error)) {
+      return { ok: false, error: DUPLICATE_TITLE_ERROR };
+    }
+    return { ok: false, error: errorMessage(error) };
+  }
+}
+
 export async function saveWebtoon(
   webtoonId: string,
   sections: SectionWithImages[],
@@ -127,18 +272,18 @@ export async function saveWebtoon(
     const persistedIds = new Map<string, string>();
     for (const section of incomingSections) {
       if (existingSectionIds.has(section.id)) {
-        await upsertSection(section);
+        await upsertSection(wid, section);
         persistedIds.set(section.id, section.id);
       } else {
         const created = await createSection({
-          webtoonId: section.webtoonId,
+          webtoonId: wid,
           type: section.type,
           config: section.config,
           position: section.position,
           audioPath: section.audioPath,
         });
         persistedIds.set(section.id, created.id);
-        await syncImages(created.id, section.images);
+        await syncImages(wid, created.id, section.images);
       }
     }
 
@@ -170,8 +315,11 @@ export async function saveWebtoon(
   }
 }
 
-async function upsertSection(section: SectionWithImages): Promise<void> {
-  const { error } = await supabase
+async function upsertSection(
+  webtoonId: string,
+  section: SectionWithImages,
+): Promise<void> {
+  const { data: rows, error } = await supabase
     .from("sections")
     .update({
       type: section.type,
@@ -181,13 +329,20 @@ async function upsertSection(section: SectionWithImages): Promise<void> {
       updated_at: new Date().toISOString(),
     })
     .eq("id", section.id)
-    .eq("webtoon_id", section.webtoonId);
+    .eq("webtoon_id", webtoonId)
+    .select("id");
 
   if (error) throw new Error(`updateSection failed: ${error.message}`);
-  await syncImages(section.id, section.images);
+  if (!rows || rows.length === 0) {
+    throw new Error(
+      `updateSection failed: section ${section.id} introuvable pour le webtoon ${webtoonId}`,
+    );
+  }
+  await syncImages(webtoonId, section.id, section.images);
 }
 
 async function syncImages(
+  webtoonId: string,
   sectionId: string,
   images: ImageRecord[],
 ): Promise<void> {
@@ -203,7 +358,7 @@ async function syncImages(
       images.map((img) => ({
         id: img.id,
         section_id: sectionId,
-        webtoon_id: img.webtoonId,
+        webtoon_id: webtoonId,
         storage_path: img.storagePath,
         width: img.width,
         height: img.height,
@@ -227,13 +382,27 @@ export async function publishWebtoon(
   }
 
   try {
+    const current = await getWebtoon(webtoonId);
+    if (!current) {
+      return { ok: false, error: "Webtoon introuvable." };
+    }
+    if (current.sections.length === 0) {
+      return {
+        ok: false,
+        error: "Impossible de publier un webtoon sans section.",
+      };
+    }
+
     const result = await updateWebtoon(webtoonId, {
       visibility: "published",
     });
-    if (!result) throw new Error("Webtoon not found");
+    if (!result) {
+      return { ok: false, error: "Webtoon introuvable." };
+    }
 
     revalidatePath(`/editor/${webtoonId}`);
     revalidatePath("/read");
+    revalidatePath(`/read/${webtoonId}`);
 
     return { ok: true };
   } catch (err) {
@@ -281,18 +450,27 @@ export async function deleteWebtoonAction(
   }
 
   try {
-    const current = await getWebtoon(webtoonId);
-    if (current?.sections) {
-      await Promise.all(
-        current.sections.map((section) =>
-          cleanupSectionStorage(section.id, [
-            ...section.images.map((image) => image.storagePath),
-            section.audioPath,
-            "imagePath" in section.config ? section.config.imagePath : undefined,
-            "spritePath" in section.config ? section.config.spritePath : undefined,
-            "fxPath" in section.config ? section.config.fxPath : undefined,
-          ].filter((path): path is string => Boolean(path))),
-        ),
+    // Storage cleanup is best-effort: an outage must never block deleting
+    // the database row (orphan objects can be swept later).
+    try {
+      const current = await getWebtoon(webtoonId);
+      if (current?.sections) {
+        await Promise.all(
+          current.sections.map((section) =>
+            cleanupSectionStorage(section.id, [
+              ...section.images.map((image) => image.storagePath),
+              section.audioPath,
+              "imagePath" in section.config ? section.config.imagePath : undefined,
+              "spritePath" in section.config ? section.config.spritePath : undefined,
+              "fxPath" in section.config ? section.config.fxPath : undefined,
+            ].filter((path): path is string => Boolean(path))),
+          ),
+        );
+      }
+    } catch (cleanupError) {
+      console.warn(
+        `deleteWebtoonAction storage cleanup failed for ${webtoonId}:`,
+        errorMessage(cleanupError),
       );
     }
 
