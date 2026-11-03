@@ -175,7 +175,7 @@ test.describe("E2E Full User Flow", () => {
 
     // Attente que les sections ajoutées via l'API soient chargées puis rendues.
     const sortableSections = page.locator(
-      "[data-testid='editor-canvas'] [data-testid^='sortable-section-']",
+      "[data-testid='editor-canvas-shell'] [data-testid^='sortable-section-']",
     );
     await expect(sortableSections.first()).toBeVisible();
     const sectionCount = await sortableSections.count();
@@ -188,7 +188,7 @@ test.describe("E2E Full User Flow", () => {
     await firstSection.getByRole("button", { name: "Descendre" }).click();
     await page.waitForTimeout(500);
 
-    await page.getByRole("button", { name: "Enregistrer" }).click();
+    await page.getByTestId("save-button").click();
     await page.waitForTimeout(1000);
 
     await page.getByRole("button", { name: "Publier", exact: true }).click();

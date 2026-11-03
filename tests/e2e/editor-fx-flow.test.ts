@@ -111,7 +111,7 @@ test.describe("E2E Editor FX Flow", () => {
     await page.waitForURL(new RegExp(`/editor/${WEBTON_ID}`));
 
     await expect(page.locator("[data-testid='editor-sidebar']")).toBeVisible();
-    await expect(page.locator("[data-testid='editor-canvas']")).toBeVisible();
+    await expect(page.locator("[data-testid='editor-canvas-shell']")).toBeVisible();
 
     const sortableSections = page.locator("[data-testid^='sortable-section-']");
     const countBeforeDialog = await sortableSections.count();
@@ -138,7 +138,7 @@ test.describe("E2E Editor FX Flow", () => {
     await page.waitForTimeout(500);
 
     const canvasSortables = page.locator(
-      "[data-testid='editor-canvas'] [data-testid^='sortable-section-']",
+      "[data-testid='editor-canvas-shell'] [data-testid^='sortable-section-']",
     );
     await expect(canvasSortables.first()).toBeVisible();
 
@@ -156,7 +156,7 @@ test.describe("E2E Editor FX Flow", () => {
     await page.getByRole("button", { name: "Fermer le panneau" }).click();
     await page.waitForTimeout(300);
 
-    await page.getByRole("button", { name: "Enregistrer" }).click();
+    await page.getByTestId("save-button").click();
     await page.waitForTimeout(1000);
 
     await page.reload();
@@ -222,13 +222,13 @@ test.describe("E2E Editor FX Flow", () => {
 
     // Deux sections existent désormais : on teste le réordonnancement.
     const canvasSections = page.locator(
-      "[data-testid='editor-canvas'] [data-testid^='sortable-section-']",
+      "[data-testid='editor-canvas-shell'] [data-testid^='sortable-section-']",
     );
     await expect(canvasSections).toHaveCount(2);
     await canvasSections.first().getByRole("button", { name: "Descendre" }).click();
     await page.waitForTimeout(500);
 
-    await page.getByRole("button", { name: "Enregistrer" }).click();
+    await page.getByTestId("save-button").click();
     await page.waitForTimeout(1000);
 
     await page.reload();
