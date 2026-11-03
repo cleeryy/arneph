@@ -29,12 +29,17 @@ function pngChunk(type: string, data: Buffer): Buffer {
   return Buffer.concat([len, typeBuf, data, crc]);
 }
 
-function encodePng(pixels: Buffer, width: number, height: number): Buffer {
+export function encodePng(pixels: Buffer, width: number, height: number): Buffer {
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0) {
+    throw new Error(`encodePng: dimensions invalides ${width}x${height}`);
+  }
   const stride = width * 4;
   const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 1);
+  // IHDR : width à l'offset 0, height à l'offset 4 (offsets relatifs aux données
+  // du chunk). Un offset erroné produisait des PNG 5x0 non décodables.
+  ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
   ihdr[10] = 0;
@@ -86,26 +91,6 @@ function createStripedPng(width: number, height: number, baseHue: number, stripe
     for (let x = 0; x < width; x++) {
       const stripe = Math.floor(x / stripeWidth);
       const h = baseHue + (stripe % 2 === 0 ? 0 : 30);
-      const [r, g, b] = hslToRgb(h);
-      const idx = (y * width + x) * 4;
-      pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
-    }
-  }
-  return encodePng(pixels, width, height);
-}
-
-function createCirclePatternPng(width: number, height: number, baseHue: number): Buffer {
-  const pixels = Buffer.alloc(width * height * 4);
-  const cx = width / 2;
-  const cy = height / 2;
-  const maxR = Math.min(cx, cy);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const dx = x - cx;
-      const dy = y - cy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      const t = dist / maxR;
-      const h = baseHue + t * 120;
       const [r, g, b] = hslToRgb(h);
       const idx = (y * width + x) * 4;
       pixels[idx] = r; pixels[idx + 1] = g; pixels[idx + 2] = b; pixels[idx + 3] = 255;
@@ -291,6 +276,30 @@ const WEBTOONS: WebtoonDef[] = [
   },
 ];
 
+function buildSectionAsset(sectionDef: SectionDef): Blob {
+  switch (sectionDef.type) {
+    case "image":
+      return new Blob([new Uint8Array(createGradientPng(sectionDef.width, sectionDef.height, 240, 280))], { type: "image/png" });
+    case "long-y":
+      return new Blob([new Uint8Array(createGradientPng(sectionDef.width, sectionDef.height, 180, 220))], { type: "image/png" });
+    case "pan-x":
+      return new Blob([new Uint8Array(createStripedPng(sectionDef.width, sectionDef.height, 30, 8))], { type: "image/png" });
+    case "animation":
+      return createSpriteSheet();
+    default:
+      throw new Error(`Unknown section type: ${sectionDef.type}`);
+  }
+}
+
+function buildSectionConfig(sectionDef: SectionDef, storagePath: string, audioPath: string): Record<string, unknown> {
+  const config = { ...sectionDef.config, imagePath: storagePath, audioPath } as Record<string, unknown>;
+  if (sectionDef.type === "animation") {
+    config.spritePath = storagePath;
+    delete config.imagePath;
+  }
+  return config;
+}
+
 export async function seedDemo(force: boolean = false): Promise<{ webtoonId: string; created: boolean }> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -315,14 +324,24 @@ export async function seedDemo(force: boolean = false): Promise<{ webtoonId: str
 
   for (const webtoonDef of WEBTOONS) {
     const existingId = await getExistingWebtoonId(supabase, webtoonDef.title);
+    const slug = webtoonDef.title.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+    // Les assets sont TOUJOURS régénérés (upsert) : un seed existant peut
+    // contenir des fichiers corrompus, et `upsert: true` les répare sans
+    // toucher aux lignes en base ni dupliquer le webtoon.
+    const audioPath = await uploadAsset(supabase, `webtoons/seed/${slug}/audio.wav`, createWavBlob(440, 1), "audio/wav");
+    const uploadedPaths: string[] = [];
+    for (const sectionDef of webtoonDef.sections) {
+      const asset = buildSectionAsset(sectionDef);
+      const storagePath = await uploadAsset(supabase, sectionDef.storagePath, asset, sectionDef.mimeType);
+      uploadedPaths.push(storagePath);
+    }
 
     if (existingId) {
-      console.log(`[seed-demo] "${webtoonDef.title}" already exists (id=${existingId}). Skipping.`);
+      console.log(`[seed-demo] "${webtoonDef.title}" already exists (id=${existingId}). Assets refreshed.`);
       if (!firstWebtoonId) firstWebtoonId = existingId;
       continue;
     }
-
-    const audioPath = await uploadAsset(supabase, `webtoons/seed/${webtoonDef.title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}/audio.wav`, createWavBlob(440, 1), "audio/wav");
 
     const { data: webtoonRow, error: webtoonError } = await supabase
       .from("webtoons")
@@ -335,32 +354,8 @@ export async function seedDemo(force: boolean = false): Promise<{ webtoonId: str
 
     for (let i = 0; i < webtoonDef.sections.length; i++) {
       const sectionDef = webtoonDef.sections[i];
-
-      let imageBlob: Blob;
-      switch (sectionDef.type) {
-        case "image":
-          imageBlob = new Blob([new Uint8Array(createGradientPng(sectionDef.width, sectionDef.height, 240, 280))], { type: "image/png" });
-          break;
-        case "long-y":
-          imageBlob = new Blob([new Uint8Array(createGradientPng(sectionDef.width, sectionDef.height, 180, 220))], { type: "image/png" });
-          break;
-        case "pan-x":
-          imageBlob = new Blob([new Uint8Array(createStripedPng(sectionDef.width, sectionDef.height, 30, 8))], { type: "image/png" });
-          break;
-        case "animation":
-          imageBlob = createSpriteSheet();
-          break;
-        default:
-          throw new Error(`Unknown section type: ${sectionDef.type}`);
-      }
-
-      const storagePath = await uploadAsset(supabase, sectionDef.storagePath, imageBlob, sectionDef.mimeType);
-
-      const config = { ...sectionDef.config, imagePath: storagePath, audioPath } as Record<string, unknown>;
-      if (sectionDef.type === "animation") {
-        config.spritePath = storagePath;
-        delete config.imagePath;
-      }
+      const storagePath = uploadedPaths[i];
+      const config = buildSectionConfig(sectionDef, storagePath, audioPath);
 
       await createSectionWithImage(supabase, webtoonId, i + 1, sectionDef.type, config, storagePath, sectionDef.width, sectionDef.height, sectionDef.mimeType, audioPath);
     }

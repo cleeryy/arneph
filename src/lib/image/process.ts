@@ -127,19 +127,6 @@ function assertValidDimensions(width: number, height: number): void {
   }
 }
 
-function assertWithinLimit(
-  width: number,
-  height: number,
-  maxDimension: number,
-): void {
-  if (width > maxDimension || height > maxDimension) {
-    throw new ImageProcessingError(
-      "IMAGE_TOO_LARGE",
-      `Dimensions ${width}×${height} dépassent la limite de ${maxDimension}px.`,
-    );
-  }
-}
-
 function requireContext(canvas: CanvasLike): ImageContext2D {
   const context = canvas.getContext2D();
   if (!context) {

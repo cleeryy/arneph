@@ -23,8 +23,6 @@ export function isAnimatedMime(mimeType: string): boolean {
  */
 
 const GIF_HEADER = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]); // GIF89a
-const GIF_EXTENSION_INTRODUCER = 0x21;
-const GIF_APPLICATION_EXTENSION = 0xff;
 const GIF_IMAGE_DESCRIPTOR = 0x2c;
 
 const RIFF_HEADER = new Uint8Array([0x52, 0x49, 0x46, 0x46]); // RIFF
