@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { Image, FileText, ArrowLeftRight, Play } from "lucide-react";
+import { Image, FileText, ArrowLeftRight, Play, CopyPlus } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -17,7 +17,10 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import { SectionSortableItem } from "./SectionSortableItem";
-import { EditorStateContext } from "./EditorStateContext";
+import {
+  EditorStateContext,
+  insertDuplicateSection,
+} from "./EditorStateContext";
 import { useSectionDnd } from "@/lib/editor/useSectionDnd";
 import { sectionTypeLabel } from "@/lib/editor/section-labels";
 import type { SectionWithImages } from "@/lib/db/queries";
@@ -57,13 +60,34 @@ export function SectionLayersPanel({
     () => editorState?.setIsDirty ?? noopSetIsDirty,
     [editorState],
   );
-
-  const handleReorder = React.useCallback(
+  const contextCommitSections = editorState?.commitSections;
+  const applySections = React.useCallback(
     (next: SectionWithImages[]) => {
+      if (contextCommitSections) {
+        contextCommitSections(next);
+        return;
+      }
       onSectionsChange(next);
       setIsDirty(true);
     },
-    [onSectionsChange, setIsDirty],
+    [contextCommitSections, onSectionsChange, setIsDirty],
+  );
+
+  const handleReorder = React.useCallback(
+    (next: SectionWithImages[]) => {
+      applySections(next);
+    },
+    [applySections],
+  );
+
+  const handleDuplicate = React.useCallback(
+    (id: string) => {
+      const { sections: next, duplicated } = insertDuplicateSection(sections, id);
+      if (!duplicated) return;
+      applySections(next);
+      onSelect(duplicated.id);
+    },
+    [sections, applySections, onSelect],
   );
 
   const { sorted, sortedIds, sensors, handleDragEnd } = useSectionDnd(
@@ -119,6 +143,18 @@ export function SectionLayersPanel({
                     <span className="flex-1 truncate font-medium capitalize">
                       {typeLabel}
                     </span>
+                    <button
+                      type="button"
+                      aria-label={t("duplicateSection")}
+                      title={t("duplicateSection")}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDuplicate(section.id);
+                      }}
+                      className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <CopyPlus className="size-3.5" />
+                    </button>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                       #{section.position}
                     </span>

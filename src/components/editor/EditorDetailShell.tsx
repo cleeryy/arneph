@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Save, Globe, Lock, AlertCircle } from "lucide-react";
+import { Save, Globe, Lock, AlertCircle, Undo2, Redo2 } from "lucide-react";
 
 import { useEditorState, remapSectionIds } from "@/components/editor/EditorStateContext";
 import { WebtoonMetadataForm } from "@/components/editor/WebtoonMetadataForm";
@@ -35,6 +35,10 @@ export function EditorDetailLayoutContent({
     setSections,
     isDirty,
     setIsDirty,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
     webtoonTitle,
     visibility,
     setVisibility,
@@ -208,6 +212,28 @@ export function EditorDetailLayoutContent({
                 <span aria-hidden="true">…</span>
               )}
             </span>
+            <button
+              type="button"
+              onClick={undo}
+              disabled={!canUndo}
+              className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-background text-foreground shadow transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={t("undo")}
+              title={t("undo")}
+              data-testid="undo-button"
+            >
+              <Undo2 className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={redo}
+              disabled={!canRedo}
+              className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-background text-foreground shadow transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-label={t("redo")}
+              title={t("redo")}
+              data-testid="redo-button"
+            >
+              <Redo2 className="size-4" />
+            </button>
             <button
               type="button"
               onClick={handlePublish}

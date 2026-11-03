@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
+import { ArrowUp, ArrowDown, CopyPlus, Trash2, Plus } from "lucide-react";
 import { DndContext, closestCenter } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -15,7 +15,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Edit3 } from "lucide-react";
 import { SectionPreview } from "./SectionPreview";
 import { SectionSortableItem } from "./SectionSortableItem";
-import { EditorStateContext } from "./EditorStateContext";
+import {
+  EditorStateContext,
+  insertDuplicateSection,
+} from "./EditorStateContext";
 import { SectionConfigPanel, createDefaultConfig } from "./SectionConfigPanel";
 import { NewSectionDialog } from "./NewSectionDialog";
 import { useSectionDnd } from "@/lib/editor/useSectionDnd";
@@ -54,6 +57,21 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
   const [newSectionOpen, setNewSectionOpen] = React.useState(false);
   const [scrollTargetId, setScrollTargetId] = React.useState<string | null>(null);
 
+  // Inside the editor provider every user edit goes through the history-aware
+  // commit. Isolated canvases (tests, stories) keep the prop-driven fallback.
+  const contextCommitSections = editorState?.commitSections;
+  const applySections = React.useCallback(
+    (next: SectionWithImages[]) => {
+      if (contextCommitSections) {
+        contextCommitSections(next);
+        return;
+      }
+      onSectionsChange(next);
+      setIsDirty(true);
+    },
+    [contextCommitSections, onSectionsChange, setIsDirty],
+  );
+
   React.useEffect(() => {
     if (!scrollTargetId) return;
     const raf = requestAnimationFrame(() => {
@@ -89,21 +107,19 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
         createdAt: now,
         updatedAt: now,
       } satisfies SectionWithImages;
-      onSectionsChange([...sections, newSection]);
-      setIsDirty(true);
+      applySections([...sections, newSection]);
       setNewSectionOpen(false);
       setSelectedId(newId);
       setScrollTargetId(newId);
     },
-    [sections, onSectionsChange, setIsDirty, setSelectedId, webtoonId],
+    [sections, applySections, setSelectedId, webtoonId],
   );
 
   const handleReorder = React.useCallback(
     (next: SectionWithImages[]) => {
-      onSectionsChange(next);
-      setIsDirty(true);
+      applySections(next);
     },
-    [onSectionsChange, setIsDirty],
+    [applySections],
   );
 
   const { sorted, sortedIds, sensors, handleDragEnd } = useSectionDnd(
@@ -119,44 +135,47 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
   );
 
   const handleConfigSectionChange = React.useCallback((section: SectionWithImages) => {
-    onSectionsChange(sections.map((current) => (current.id === section.id ? section : current)));
+    applySections(sections.map((current) => (current.id === section.id ? section : current)));
     setConfigPanelSection(section);
-    setIsDirty(true);
-  }, [sections, onSectionsChange, setIsDirty]);
+  }, [sections, applySections]);
 
   const handleDelete = React.useCallback(
     (id: string) => {
-      onSectionsChange(
+      applySections(
         renumberSections(sections.filter((section) => section.id !== id)),
       );
-      setIsDirty(true);
       if (selectedId === id) setSelectedId(null);
     },
-    [sections, onSectionsChange, setIsDirty, selectedId, setSelectedId],
+    [sections, applySections, selectedId, setSelectedId],
   );
 
   const handleMoveUp = React.useCallback(
     (id: string) => {
       const idx = sections.findIndex((s) => s.id === id);
       if (idx <= 0) return;
-      onSectionsChange(
-        renumberSections(arrayMove(sections, idx, idx - 1)),
-      );
-      setIsDirty(true);
+      applySections(renumberSections(arrayMove(sections, idx, idx - 1)));
     },
-    [sections, onSectionsChange, setIsDirty],
+    [sections, applySections],
   );
 
   const handleMoveDown = React.useCallback(
     (id: string) => {
       const idx = sections.findIndex((s) => s.id === id);
       if (idx < 0 || idx >= sections.length - 1) return;
-      onSectionsChange(
-        renumberSections(arrayMove(sections, idx, idx + 1)),
-      );
-      setIsDirty(true);
+      applySections(renumberSections(arrayMove(sections, idx, idx + 1)));
     },
-    [sections, onSectionsChange, setIsDirty],
+    [sections, applySections],
+  );
+
+  const handleDuplicate = React.useCallback(
+    (id: string) => {
+      const { sections: next, duplicated } = insertDuplicateSection(sections, id);
+      if (!duplicated) return;
+      applySections(next);
+      setSelectedId(duplicated.id);
+      setScrollTargetId(duplicated.id);
+    },
+    [sections, applySections, setSelectedId],
   );
 
   if (sorted.length === 0) {
@@ -264,6 +283,19 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
                         className="size-7"
                       >
                         <ArrowDown className="size-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={t("duplicateSection")}
+                        title={t("duplicateSection")}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicate(section.id);
+                        }}
+                        className="size-7"
+                      >
+                        <CopyPlus className="size-3.5" />
                       </Button>
                       <Button
                         variant="ghost"

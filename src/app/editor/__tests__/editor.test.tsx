@@ -1,5 +1,12 @@
 import * as React from "react";
-import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -852,6 +859,94 @@ describe("Editor sidebar — selection is shared with the canvas", () => {
     });
     expect(screen.getByTestId("layer-section-sec-2")).not.toHaveAttribute(
       "data-selected",
+    );
+  });
+});
+
+describe("Editor detail — undo/redo header controls", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  function makeHeaderSection(id: string, position: number): SectionWithImages {
+    return {
+      id,
+      webtoonId: WEBTOON_ID,
+      position,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
+  test("localized undo/redo buttons are disabled without history and drive the section history", async () => {
+    const { EditorDetailLayoutContent } = await import(
+      "@/components/editor/EditorDetailShell"
+    );
+    const { EditorStateProvider, useEditorState } = await import(
+      "@/components/editor/EditorStateContext"
+    );
+    const api: {
+      current: ReturnType<typeof useEditorState> | null;
+    } = { current: null };
+
+    function Seeder() {
+      const { setSections } = useEditorState();
+      React.useEffect(() => {
+        setSections([makeHeaderSection("sec-1", 1)]);
+      }, [setSections]);
+      return null;
+    }
+
+    function Probe() {
+      api.current = useEditorState();
+      return (
+        <div
+          data-testid="history-probe"
+          data-ids={JSON.stringify(
+            api.current.sections.map((section) => section.id),
+          )}
+        />
+      );
+    }
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider>
+          <EditorDetailLayoutContent webtoonId={WEBTOON_ID}>
+            <Seeder />
+            <Probe />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    const undoButton = await screen.findByRole("button", { name: "Annuler" });
+    const redoButton = screen.getByRole("button", { name: "Rétablir" });
+    expect(undoButton).toBeDisabled();
+    expect(redoButton).toBeDisabled();
+
+    act(() => {
+      api.current!.commitSections([
+        makeHeaderSection("sec-1", 1),
+        makeHeaderSection("sec-2", 2),
+      ]);
+    });
+    expect(undoButton).toBeEnabled();
+    expect(screen.getByTestId("dirty-indicator")).toBeInTheDocument();
+
+    fireEvent.click(undoButton);
+    expect(screen.getByTestId("history-probe")).toHaveAttribute(
+      "data-ids",
+      JSON.stringify(["sec-1"]),
+    );
+    expect(redoButton).toBeEnabled();
+
+    fireEvent.click(redoButton);
+    expect(screen.getByTestId("history-probe")).toHaveAttribute(
+      "data-ids",
+      JSON.stringify(["sec-1", "sec-2"]),
     );
   });
 });
