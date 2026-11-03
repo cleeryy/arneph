@@ -59,7 +59,9 @@ describe("seed-demo — PNG encoder", () => {
   });
 });
 
-describe("seedDemo idempotence", () => {
+// La génération des assets de démo encode plusieurs PNG en JS : sous charge
+// parallèle (plusieurs lanes/CI), 5 s est trop court et produit un flake.
+describe("seedDemo idempotence", { timeout: 30_000 }, () => {
   test("returns created:false when all webtoons already exist", async () => {
     mockMaybeSingle.mockResolvedValue({
       data: { id: "existing-demo-id" },

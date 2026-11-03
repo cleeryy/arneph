@@ -34,11 +34,40 @@ Le [`CONTRIBUTING.md`](./CONTRIBUTING.md) s'applique tel quel. Spécificités :
 - **Modèle de PR** : `.github/pull_request_template.md`.
 - **Sécurité** : voir [`SECURITY.md`](./SECURITY.md).
 
+## Fonctionnalités
+
+**Lecteur**
+
+- 4 types de sections : `image`, `long-y`, `pan-x` (panoramique au scroll) et
+  `animation` (sprite sheet pilotée par le scroll).
+- Barre de progression de lecture, reprise à la position sauvegardée
+  (`localStorage`), navigation clavier (flèches, PageUp/PageDown, Home).
+- Audio par section avec une seule piste à la fois, déverrouillage au premier
+  geste et bouton de coupure.
+- Overlays FX (GIF/WebP animés) positionnés sur les sections image et long-y.
+- Mouvement réduit respecté (`prefers-reduced-motion`).
+
+**Bibliothèque**
+
+- Recherche accent-insensible sur le titre et la description.
+- Tri par date ou par titre, état « aucun résultat » explicite.
+
+**Éditeur**
+
+- Création, renommage, description et image de couverture.
+- Ajout, duplication, réordonnancement (drag ou boutons) et suppression de
+  sections.
+- Annuler/rétablir borné à 50 instantanés, raccourcis clavier.
+- Configuration par type (dimensions, `panSpeed`, `scrollHeight`, FX, audio).
+- Enregistrement validé (Zod côté serveur), garde avant fermeture d'onglet si
+  des modifications sont en attente, publication refusée sans section.
+
 ## Tests
 
 ```bash
 npm test           # vitest run (headless)
 npm run test:watch # vitest watch
+npx playwright test # parcours navigateur (Supabase local)
 ```
 
 ## Supabase (local)
