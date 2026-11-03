@@ -10,14 +10,6 @@ import type { FxOverlayConfig } from "@/types/webtoon";
 import { FxOverlay } from "./FxOverlay";
 
 /**
- * URL publique d'une image du bucket storage `webtoon-images`.
- * (même pattern que `coverUrl` T14).
- */
-export function sectionImageUrl(storagePath: string): string {
-  return getSupabasePublicObjectUrl(storagePath);
-}
-
-/**
  * Rendu commun des sections à flux NATIF (image simple + long-y).
  *
  * Une section de ce type contient UNE image (position 0) — c'est la première
@@ -45,7 +37,7 @@ export function SectionImage({
   // Section sans image → aucun contenu à rendre (défensif, cas éditeur vide).
   if (!image) return null;
 
-  const src = sectionImageUrl(image.storagePath);
+  const src = getSupabasePublicObjectUrl(image.storagePath);
   const animated =
     isAnimatedMime(image.mimeType) || image.storagePath.endsWith(".gif");
 

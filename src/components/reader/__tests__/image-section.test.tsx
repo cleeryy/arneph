@@ -3,8 +3,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
-import { ImageSection, sectionImageUrl } from "../ImageSection";
+import { ImageSection } from "../ImageSection";
 import { LongYSection } from "../LongYSection";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { SectionWithImages } from "@/lib/db/queries";
 import frMessages from "../../../../messages/fr.json";
 
@@ -317,7 +318,7 @@ describe("LongYSection (T16) — image longue axe Y", () => {
 describe("sectionImageUrl (helper URL storage)", () => {
   test("construit l'URL publique depuis NEXT_PUBLIC_SUPABASE_URL", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://proj.supabase.co");
-    expect(sectionImageUrl("a/b.webp")).toBe(
+    expect(getSupabasePublicObjectUrl("a/b.webp")).toBe(
       "https://proj.supabase.co/storage/v1/object/public/webtoon-images/a/b.webp",
     );
   });

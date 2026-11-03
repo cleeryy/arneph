@@ -24,6 +24,8 @@ import {
 } from "@/lib/image/process";
 import { isAnimatedImage } from "@/lib/image/animated";
 import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
+import { uploadSectionAsset } from "@/lib/supabase/upload";
+import { sectionTypeLabel } from "@/lib/editor/section-labels";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type {
   SectionType,
@@ -37,19 +39,6 @@ interface SectionConfigPanelProps {
   section: SectionWithImages;
   onSectionChange: (section: SectionWithImages) => void;
   onClose: () => void;
-}
-
-function getSectionTypeLabel(t: ReturnType<typeof useTranslations>, type: SectionType): string {
-  switch (type) {
-    case "image":
-      return t("sectionTypeImage");
-    case "long-y":
-      return t("sectionTypeLongY");
-    case "pan-x":
-      return t("sectionTypePanX");
-    case "animation":
-      return t("sectionTypeAnimation");
-  }
 }
 
 const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/webm", "audio/ogg"];
@@ -222,42 +211,30 @@ export function SectionConfigPanel({
       }
 
       const path = generateStoragePath(section.id, file.name);
+      const storagePath = await uploadSectionAsset(path, uploadBlob, mimeType);
 
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!supabaseUrl || !supabaseAnonKey)
-        throw new Error("Supabase URL or anon key not configured");
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-      const { data: uploadData, error: uploadError } = await supabase
-        .storage
-        .from("webtoon-images")
-        .upload(path, uploadBlob, { contentType: mimeType, upsert: false });
+      const imageConfig = section.config as Extract<SectionWithImages["config"], { type: "image" | "long-y" | "pan-x" }>;
+      const imageRecord: ImageRecord = {
+        id: crypto.randomUUID(),
+        sectionId: section.id,
+        webtoonId: section.webtoonId,
+        storagePath,
+        width: dimensions.width,
+        height: dimensions.height,
+        mimeType,
+        position: 0,
+      };
 
-      if (uploadError) throw uploadError;
-
-       const imageConfig = section.config as Extract<SectionWithImages["config"], { type: "image" | "long-y" | "pan-x" }>;
-        const imageRecord: ImageRecord = {
-          id: crypto.randomUUID(),
-          sectionId: section.id,
-          webtoonId: section.webtoonId,
-          storagePath: uploadData.path,
+      const updatedSection: SectionWithImages = {
+        ...section,
+        images: [imageRecord],
+        config: {
+          ...imageConfig,
+          imagePath: storagePath,
           width: dimensions.width,
           height: dimensions.height,
-          mimeType,
-          position: 0,
-        };
-
-        const updatedSection: SectionWithImages = {
-          ...section,
-          images: [imageRecord],
-         config: {
-           ...imageConfig,
-           imagePath: uploadData.path,
-           width: dimensions.width,
-           height: dimensions.height,
-         },
-       };
+        },
+      };
       onSectionChange(updatedSection);
     } catch (err) {
       if (err instanceof ImageProcessingError) {
@@ -287,25 +264,13 @@ export function SectionConfigPanel({
     try {
       const spriteSheet = await buildSpriteSheet(fileArray);
       const path = generateStoragePath(section.id, `sprite-${Date.now()}.webp`);
-
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!supabaseUrl || !supabaseAnonKey)
-        throw new Error("Supabase URL or anon key not configured");
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-      const { data: uploadData, error: uploadError } = await supabase
-        .storage
-        .from("webtoon-images")
-        .upload(path, spriteSheet.spriteBlob, { contentType: "image/webp", upsert: false });
-
-      if (uploadError) throw uploadError;
+      const storagePath = await uploadSectionAsset(path, spriteSheet.spriteBlob, "image/webp");
 
       const spriteRecord: ImageRecord = {
         id: crypto.randomUUID(),
         sectionId: section.id,
         webtoonId: section.webtoonId,
-        storagePath: uploadData.path,
+        storagePath,
         width: spriteSheet.frameWidth * spriteSheet.columns,
         height: spriteSheet.frameHeight * spriteSheet.rows,
         mimeType: "image/webp",
@@ -317,7 +282,7 @@ export function SectionConfigPanel({
         images: [spriteRecord],
         config: {
           type: "animation",
-          spritePath: uploadData.path,
+          spritePath: storagePath,
           frameWidth: spriteSheet.frameWidth,
           frameHeight: spriteSheet.frameHeight,
           columns: spriteSheet.columns,
@@ -351,23 +316,11 @@ export function SectionConfigPanel({
     setUploading(true);
     try {
       const path = generateStoragePath(section.id, file.name);
-
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!supabaseUrl || !supabaseAnonKey)
-        throw new Error("Supabase URL or anon key not configured");
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-      const { data: uploadData, error: uploadError } = await supabase
-        .storage
-        .from("webtoon-images")
-        .upload(path, file, { contentType: file.type, upsert: false });
-
-      if (uploadError) throw uploadError;
+      const storagePath = await uploadSectionAsset(path, file, file.type);
 
       const updatedSection: SectionWithImages = {
         ...section,
-        audioPath: uploadData.path,
+        audioPath: storagePath,
       };
       onSectionChange(updatedSection);
     } catch (err) {
@@ -426,37 +379,25 @@ export function SectionConfigPanel({
       }
 
       const path = generateStoragePath(section.id, file.name);
+      const storagePath = await uploadSectionAsset(path, file, file.type);
 
-      const { createClient } = await import("@supabase/supabase-js");
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-      if (!supabaseUrl || !supabaseAnonKey)
-        throw new Error("Supabase URL or anon key not configured");
-      const supabase = createClient(supabaseUrl, supabaseAnonKey);
-      const { data: uploadData, error: uploadError } = await supabase
-        .storage
-        .from("webtoon-images")
-        .upload(path, file, { contentType: file.type, upsert: false });
-
-      if (uploadError) throw uploadError;
-
-       const fxSectionConfig = section.config as Extract<
-         SectionWithImages["config"],
-         { type: "image" | "long-y" }
-       >;
-       const updatedSection: SectionWithImages = {
-         ...section,
-         config: {
-           ...fxSectionConfig,
-           fxPath: uploadData.path,
-           fxConfig: {
-             position: { x: "center", y: "center" },
-             size: { mode: "percent", width: 100 },
-             opacity: 1,
-           },
-         },
-       } as SectionWithImages;
-       onSectionChange(updatedSection);
+      const fxSectionConfig = section.config as Extract<
+        SectionWithImages["config"],
+        { type: "image" | "long-y" }
+      >;
+      const updatedSection: SectionWithImages = {
+        ...section,
+        config: {
+          ...fxSectionConfig,
+          fxPath: storagePath,
+          fxConfig: {
+            position: { x: "center", y: "center" },
+            size: { mode: "percent", width: 100 },
+            opacity: 1,
+          },
+        },
+      } as SectionWithImages;
+      onSectionChange(updatedSection);
     } catch (err) {
       if (err instanceof ImageProcessingError) {
         setError(err.message);
@@ -549,7 +490,7 @@ export function SectionConfigPanel({
             <SelectContent>
               {(["image", "long-y", "pan-x", "animation"] as SectionType[]).map((type) => (
                 <SelectItem key={type} value={type}>
-                  {getSectionTypeLabel(t, type)}
+                  {sectionTypeLabel(t, type)}
                 </SelectItem>
               ))}
             </SelectContent>

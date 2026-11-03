@@ -6,16 +6,9 @@ import { Image, FileText, ArrowLeftRight, Play } from "lucide-react";
 import {
   DndContext,
   closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
@@ -25,6 +18,8 @@ import {
 } from "@/components/ui/sidebar";
 import { SectionSortableItem } from "./SectionSortableItem";
 import { EditorStateContext } from "./EditorStateContext";
+import { useSectionDnd } from "@/lib/editor/useSectionDnd";
+import { sectionTypeLabel } from "@/lib/editor/section-labels";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { SectionType } from "@/types/webtoon";
 
@@ -37,13 +32,6 @@ interface SectionLayersPanelProps {
 
 function noopSetIsDirty(): void {}
 
-function renumberSections(sections: SectionWithImages[]): SectionWithImages[] {
-  return sections.map((section, index) => ({
-    ...section,
-    position: index + 1,
-  }));
-}
-
 function getSectionTypeIcon(type: SectionType) {
   switch (type) {
     case "image":
@@ -54,22 +42,6 @@ function getSectionTypeIcon(type: SectionType) {
       return ArrowLeftRight;
     case "animation":
       return Play;
-  }
-}
-
-function getSectionTypeLabel(
-  t: ReturnType<typeof useTranslations>,
-  type: SectionType,
-) {
-  switch (type) {
-    case "image":
-      return t("sectionTypeImage");
-    case "long-y":
-      return t("sectionTypeLongY");
-    case "pan-x":
-      return t("sectionTypePanX");
-    case "animation":
-      return t("sectionTypeAnimation");
   }
 }
 
@@ -86,37 +58,17 @@ export function SectionLayersPanel({
     [editorState],
   );
 
-  const sorted = React.useMemo(
-    () => [...sections].sort((a, b) => a.position - b.position),
-    [sections],
-  );
-
-  const sortedIds = React.useMemo(
-    () => sorted.map((s) => s.id),
-    [sorted],
-  );
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
-
-  const handleDragEnd = React.useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (active.id !== over?.id) {
-        const oldIndex = sortedIds.indexOf(active.id as string);
-        const newIndex = sortedIds.indexOf(over?.id as string);
-        if (oldIndex < 0 || newIndex < 0) return;
-        onSectionsChange(renumberSections(arrayMove(sorted, oldIndex, newIndex)));
-        setIsDirty(true);
-      }
+  const handleReorder = React.useCallback(
+    (next: SectionWithImages[]) => {
+      onSectionsChange(next);
+      setIsDirty(true);
     },
-    [sorted, sortedIds, onSectionsChange, setIsDirty],
+    [onSectionsChange, setIsDirty],
+  );
+
+  const { sorted, sortedIds, sensors, handleDragEnd } = useSectionDnd(
+    sections,
+    handleReorder,
   );
 
   if (sorted.length === 0) {
@@ -134,7 +86,7 @@ export function SectionLayersPanel({
           {sorted.map((section) => {
             const isSelected = selectedId === section.id;
             const TypeIcon = getSectionTypeIcon(section.type);
-            const typeLabel = getSectionTypeLabel(t, section.type);
+            const typeLabel = sectionTypeLabel(t, section.type);
 
             return (
               <SidebarMenuItem key={section.id}>

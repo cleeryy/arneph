@@ -9,6 +9,8 @@ import { useEditorState, remapSectionIds } from "@/components/editor/EditorState
 import { WebtoonMetadataForm } from "@/components/editor/WebtoonMetadataForm";
 import { saveWebtoon, publishWebtoon, unpublishWebtoon } from "@/app/editor/actions";
 import { sectionConfigSchema } from "@/lib/schemas";
+import { isSectionType } from "@/lib/editor/sections";
+import { sectionTypeLabel } from "@/lib/editor/section-labels";
 
 interface ActionResult {
   ok: boolean;
@@ -52,14 +54,11 @@ export function EditorDetailLayoutContent({
       const configType =
         (invalid.config as { type?: string } | undefined)?.type ?? invalid.type;
       const isAnimation = configType === "animation";
-      const typeLabel =
-        configType === "image"
-          ? t("sectionTypeImage")
-          : configType === "long-y"
-            ? t("sectionTypeLongY")
-            : configType === "pan-x"
-              ? t("sectionTypePanX")
-              : t("sectionTypeAnimation");
+      // Type inconnu (config corrompue) → libellé animation, comme avant.
+      const typeLabel = sectionTypeLabel(
+        t,
+        isSectionType(configType) ? configType : "animation",
+      );
       // Section positions are 1-based in the UI: never add an offset.
       const position =
         typeof invalid.position === "number"

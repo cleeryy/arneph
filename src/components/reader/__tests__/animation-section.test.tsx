@@ -3,7 +3,8 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
-import { AnimationSection, spriteUrl } from "../AnimationSection";
+import { AnimationSection } from "../AnimationSection";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { AnimationSectionConfig } from "@/types/webtoon";
@@ -105,7 +106,7 @@ describe("AnimationSection — sprite sheet scroll-driven (T18)", () => {
     const frame = screen.getByTestId("animation-frame");
     // URL du sprite depuis l'image de la section (pas de <img> : background CSS)
     expect(frame.style.backgroundImage).toBe(
-      `url("${spriteUrl("sprite.webp")}")`,
+      `url("${getSupabasePublicObjectUrl("sprite.webp")}")`,
     );
     // Grille complète à l'échelle 1:1 : columns×frameWidth / rows×frameHeight
     expect(frame.style.backgroundSize).toBe("800px 450px");
@@ -204,7 +205,7 @@ describe("AnimationSection — sprite sheet scroll-driven (T18)", () => {
     render(wrap(<AnimationSection section={section} />));
 
     expect(screen.getByTestId("animation-frame").style.backgroundImage).toBe(
-      `url("${spriteUrl("sprite.webp")}")`,
+      `url("${getSupabasePublicObjectUrl("sprite.webp")}")`,
     );
   });
 });

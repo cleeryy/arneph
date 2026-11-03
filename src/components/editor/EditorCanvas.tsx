@@ -3,19 +3,10 @@
 import * as React from "react";
 import { useTranslations } from "next-intl";
 import { ArrowUp, ArrowDown, Trash2, Plus } from "lucide-react";
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
+import { DndContext, closestCenter } from "@dnd-kit/core";
 import {
   arrayMove,
   SortableContext,
-  sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 
@@ -27,6 +18,8 @@ import { SectionSortableItem } from "./SectionSortableItem";
 import { EditorStateContext } from "./EditorStateContext";
 import { SectionConfigPanel, createDefaultConfig } from "./SectionConfigPanel";
 import { NewSectionDialog } from "./NewSectionDialog";
+import { useSectionDnd } from "@/lib/editor/useSectionDnd";
+import { renumberSections } from "@/lib/editor/sections";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { SectionType } from "@/types/webtoon";
 
@@ -37,13 +30,6 @@ interface EditorCanvasProps {
 }
 
 const noop = () => {};
-
-function renumberSections(sections: SectionWithImages[]): SectionWithImages[] {
-  return sections.map((section, index) => ({
-    ...section,
-    position: index + 1,
-  }));
-}
 
 export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCanvasProps) {
   const t = useTranslations("editor");
@@ -112,23 +98,17 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
     [sections, onSectionsChange, setIsDirty, setSelectedId, webtoonId],
   );
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
+  const handleReorder = React.useCallback(
+    (next: SectionWithImages[]) => {
+      onSectionsChange(next);
+      setIsDirty(true);
+    },
+    [onSectionsChange, setIsDirty],
   );
 
-  const sorted = React.useMemo(
-    () => [...sections].sort((a, b) => a.position - b.position),
-    [sections],
-  );
-
-  const sortedIds = React.useMemo(
-    () => sorted.map((s) => s.id),
-    [sorted],
+  const { sorted, sortedIds, sensors, handleDragEnd } = useSectionDnd(
+    sections,
+    handleReorder,
   );
 
   const handleSelect = React.useCallback(
@@ -177,20 +157,6 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
       setIsDirty(true);
     },
     [sections, onSectionsChange, setIsDirty],
-  );
-
-  const handleDragEnd = React.useCallback(
-    (event: DragEndEvent) => {
-      const { active, over } = event;
-      if (active.id !== over?.id) {
-        const oldIndex = sortedIds.indexOf(active.id as string);
-        const newIndex = sortedIds.indexOf(over?.id as string);
-        if (oldIndex < 0 || newIndex < 0) return;
-        onSectionsChange(renumberSections(arrayMove(sorted, oldIndex, newIndex)));
-        setIsDirty(true);
-      }
-    },
-    [sorted, sortedIds, onSectionsChange, setIsDirty],
   );
 
   if (sorted.length === 0) {

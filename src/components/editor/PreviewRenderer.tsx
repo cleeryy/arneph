@@ -35,9 +35,9 @@ function PanXPreview({ section, progress }: { section: SectionWithImages; progre
   const imageWidth = config.width ?? image?.width ?? 0;
   const imageHeight = config.height ?? image?.height ?? 0;
   const src = image?.storagePath
-    ? sectionImageUrl(image.storagePath)
+    ? getSupabasePublicObjectUrl(image.storagePath)
     : config.imagePath
-      ? sectionImageUrl(config.imagePath)
+      ? getSupabasePublicObjectUrl(config.imagePath)
       : undefined;
 
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -95,7 +95,7 @@ function AnimationPreview({ section, progress }: { section: SectionWithImages; p
   );
 
   const spritePath = section.images[0]?.storagePath ?? config.spritePath;
-  const backgroundImage = spriteUrl(spritePath);
+  const backgroundImage = getSupabasePublicObjectUrl(spritePath);
   const backgroundSize = `${columns * config.frameWidth}px ${rows * config.frameHeight}px`;
 
   return (
@@ -120,12 +120,4 @@ function AnimationPreview({ section, progress }: { section: SectionWithImages; p
       />
     </div>
   );
-}
-
-function sectionImageUrl(storagePath: string): string {
-  return getSupabasePublicObjectUrl(storagePath);
-}
-
-function spriteUrl(storagePath: string): string {
-  return getSupabasePublicObjectUrl(storagePath);
 }

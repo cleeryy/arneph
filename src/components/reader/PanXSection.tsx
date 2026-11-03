@@ -10,11 +10,6 @@ import type { SectionWithImages } from "@/lib/db/queries";
 import type { PanXSectionConfig } from "@/types/webtoon";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
-/** URL publique d'un objet du bucket storage `webtoon-images`. */
-function storageUrl(path: string): string {
-  return getSupabasePublicObjectUrl(path);
-}
-
 /** Premier chemin non vide (les chaînes blanches comptent comme absentes). */
 function firstNonBlank(...candidates: Array<string | undefined | null>): string {
   for (const candidate of candidates) {
@@ -49,7 +44,7 @@ export default function PanXSection({ section }: { section: SectionWithImages })
   const imageWidth = config.width ?? image?.width ?? 0;
   const imageHeight = config.height ?? image?.height ?? 0;
   const storagePath = firstNonBlank(image?.storagePath, config.imagePath);
-  const src = storagePath ? storageUrl(storagePath) : undefined;
+  const src = storagePath ? getSupabasePublicObjectUrl(storagePath) : undefined;
 
   const sectionRef = React.useRef<HTMLElement>(null);
   const stickyRef = React.useRef<HTMLDivElement>(null);

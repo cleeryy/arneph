@@ -13,10 +13,6 @@ import type { SectionWithImages } from "@/lib/db/queries";
 import type { AnimationSectionConfig } from "@/types/webtoon";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
-export function spriteUrl(storagePath: string): string {
-  return getSupabasePublicObjectUrl(storagePath);
-}
-
 /**
  * Entier ≥ 1. Toute config corrompue (NaN, 0, négatif, chaîne, Infinity) est
  * ramenée au repli : aucune valeur non finie ne doit atteindre le style CSS.
@@ -137,7 +133,7 @@ export function AnimationSection({ section }: AnimationSectionProps) {
     );
   }
 
-  const backgroundImage = spriteUrl(spritePath);
+  const backgroundImage = getSupabasePublicObjectUrl(spritePath);
   const backgroundSize = `${columns * frameWidth}px ${rows * frameHeight}px`;
 
   return (
