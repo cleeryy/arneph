@@ -102,7 +102,8 @@
     "fxCenterY": "Center",
     "fxBottom": "Bottom",
     "fxPx": "Pixels",
-    "fxPercent": "Percent"
+    "fxPercent": "Percent",
+    "incompleteSection": "Section {position} ({type}) is incomplete: {action} before saving."
   },
   "errors": {
     "notFound": "Page not found",

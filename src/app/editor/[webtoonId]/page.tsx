@@ -35,7 +35,7 @@ export default async function EditorWebtoonPage({
           data-testid="editor-canvas"
           className="flex-1 overflow-y-auto p-6"
         >
-          <EditorCanvasClient initialSections={webtoon.sections} webtoonId={webtoonId} />
+          <EditorCanvasClient initialSections={webtoon.sections} webtoonId={webtoonId} initialTitle={webtoon.title} initialVisibility={webtoon.visibility} />
         </section>
       </div>
     </main>

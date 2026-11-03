@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
@@ -62,6 +62,7 @@ vi.mock("@/lib/image/process", async () => {
     ...actual,
     resizeImage: vi.fn().mockResolvedValue(new Blob(["resized"], { type: "image/webp" })),
     toWebP: vi.fn().mockResolvedValue(new Blob(["webp"], { type: "image/webp" })),
+    readImageDimensions: vi.fn().mockResolvedValue({ width: 800, height: 600 }),
     buildSpriteSheet: vi.fn().mockResolvedValue({
       spriteBlob: new Blob(["sprite"], { type: "image/webp" }),
       frameWidth: 100,
@@ -73,8 +74,7 @@ vi.mock("@/lib/image/process", async () => {
   };
 });
 
-import { isAnimatedImage } from "@/lib/image/animated";
-import { resizeImage, toWebP } from "@/lib/image/process";
+import { resizeImage, toWebP, readImageDimensions, buildSpriteSheet } from "@/lib/image/process";
 
 afterEach(() => {
   cleanup();
@@ -292,6 +292,145 @@ describe("SectionConfigPanel — T25", () => {
     render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
 
     expect(screen.getByText("1 image(s)")).toBeInTheDocument();
+  });
+});
+
+describe("SectionConfigPanel — media replacement", () => {
+  test("replacing an image keeps only the new media as first/only record", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(false);
+    vi.mocked(readImageDimensions).mockResolvedValue({ width: 800, height: 600 });
+
+    const section = makeSection({
+      type: "image",
+      config: { type: "image", imagePath: "old/path.webp", width: 100, height: 100 },
+      images: [
+        {
+          id: "img-old",
+          sectionId: "sec-1",
+          webtoonId: "w1",
+          storagePath: "old/path.webp",
+          width: 100,
+          height: 100,
+          mimeType: "image/webp",
+          position: 0,
+        },
+      ],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const fileInput = screen.getByLabelText("Uploader une image");
+    const file = new File(["new-image"], "new.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as SectionWithImages;
+    expect(updated.images).toHaveLength(1);
+    expect(updated.images[0].storagePath).toBe("uploaded/path.webp");
+    expect(updated.config).toMatchObject({
+      imagePath: "uploaded/path.webp",
+      width: 800,
+      height: 600,
+    });
+  });
+
+  test("replacing image media with an animation sprite matches record path and dimensions", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
+    vi.mocked(buildSpriteSheet).mockResolvedValue({
+      spriteBlob: new Blob(["sprite"], { type: "image/webp" }),
+      frameWidth: 100,
+      frameHeight: 100,
+      columns: 4,
+      rows: 3,
+      frameCount: 10,
+    });
+
+    const section = makeSection({
+      type: "animation",
+      config: {
+        type: "animation",
+        spritePath: "old/sprite.webp",
+        frameWidth: 50,
+        frameHeight: 50,
+        columns: 2,
+        rows: 2,
+        frameCount: 4,
+      },
+      images: [
+        {
+          id: "img-old",
+          sectionId: "sec-1",
+          webtoonId: "w1",
+          storagePath: "old/sprite.webp",
+          width: 100,
+          height: 100,
+          mimeType: "image/webp",
+          position: 0,
+        },
+      ],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const fileInput = screen.getByLabelText("Uploader les frames d'animation");
+    const file = new File(["frame"], "frame.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as SectionWithImages;
+    expect(updated.config).toMatchObject({
+      type: "animation",
+      spritePath: "uploaded/path.webp",
+    });
+    expect(updated.images).toHaveLength(1);
+    expect(updated.images[0].storagePath).toBe("uploaded/path.webp");
+    expect(updated.images[0].width).toBe(100 * 4);
+    expect(updated.images[0].height).toBe(100 * 3);
+  });
+
+  test("switching between compatible image/long-y/pan-x preserves imagePath/dimensions/images", async () => {
+    const section = makeSection({
+      type: "image",
+      config: { type: "image", imagePath: "uploaded/path.webp", width: 800, height: 600 },
+      images: [
+        {
+          id: "img-1",
+          sectionId: "sec-1",
+          webtoonId: "w1",
+          storagePath: "uploaded/path.webp",
+          width: 800,
+          height: 600,
+          mimeType: "image/webp",
+          position: 0,
+        },
+      ],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const trigger = screen.getByRole("combobox", { name: "Type de section" });
+    await userEvent.click(trigger);
+    const longYOption = screen.getByRole("option", { name: "Défilement long" });
+    await userEvent.click(longYOption);
+
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "long-y",
+        config: expect.objectContaining({
+          type: "long-y",
+          imagePath: "uploaded/path.webp",
+          width: 800,
+          height: 600,
+        }),
+        images: expect.arrayContaining([
+          expect.objectContaining({ storagePath: "uploaded/path.webp" }),
+        ]),
+      }),
+    );
   });
 });
 

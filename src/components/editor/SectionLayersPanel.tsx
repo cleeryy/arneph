@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { GripVertical, Image, FileText, ArrowLeftRight, Play } from "lucide-react";
+import { Image, FileText, ArrowLeftRight, Play } from "lucide-react";
 import {
   DndContext,
   closestCenter,
@@ -34,6 +34,8 @@ interface SectionLayersPanelProps {
   onSelect: (id: string) => void;
   onSectionsChange: (sections: SectionWithImages[]) => void;
 }
+
+function noopSetIsDirty(): void {}
 
 function renumberSections(sections: SectionWithImages[]): SectionWithImages[] {
   return sections.map((section, index) => ({
@@ -79,7 +81,10 @@ export function SectionLayersPanel({
 }: SectionLayersPanelProps) {
   const t = useTranslations("editor");
   const editorState = React.useContext(EditorStateContext);
-  const setIsDirty = editorState?.setIsDirty ?? (() => {});
+  const setIsDirty = React.useMemo(
+    () => editorState?.setIsDirty ?? noopSetIsDirty,
+    [editorState],
+  );
 
   const sorted = React.useMemo(
     () => [...sections].sort((a, b) => a.position - b.position),
@@ -92,7 +97,9 @@ export function SectionLayersPanel({
   );
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
@@ -136,8 +143,19 @@ export function SectionLayersPanel({
                     data-testid={`layer-section-${section.id}`}
                     data-section-id={section.id}
                     data-selected={isSelected ? "true" : undefined}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
+                    aria-label={`${typeLabel} #${section.position}`}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(section.id);
+                      }
+                    }}
                     className={
-                      "relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors group " +
+                      "relative flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 " +
                       (isSelected
                         ? "border border-primary ring-2 ring-primary/20 bg-primary/5"
                         : "border border-transparent hover:bg-muted/50"

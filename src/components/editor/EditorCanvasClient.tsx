@@ -8,14 +8,24 @@ import type { SectionWithImages } from "@/lib/db/queries";
 interface EditorCanvasClientProps {
   initialSections: SectionWithImages[];
   webtoonId: string;
+  initialTitle?: string;
+  initialVisibility?: "draft" | "published";
 }
 
-export function EditorCanvasClient({ initialSections, webtoonId }: EditorCanvasClientProps) {
-  const { sections, setSections, setIsDirty } = useEditorState();
+export function EditorCanvasClient({ initialSections, webtoonId, initialTitle, initialVisibility }: EditorCanvasClientProps) {
+  const { sections, setSections, setIsDirty, setWebtoonTitle, setVisibility } = useEditorState();
 
   React.useEffect(() => {
     setSections(initialSections);
   }, [initialSections, setSections]);
+
+  React.useEffect(() => {
+    if (initialTitle !== undefined) setWebtoonTitle(initialTitle);
+  }, [initialTitle, setWebtoonTitle]);
+
+  React.useEffect(() => {
+    if (initialVisibility !== undefined) setVisibility(initialVisibility);
+  }, [initialVisibility, setVisibility]);
 
   const handleSectionsChange = React.useCallback(
     (next: SectionWithImages[]) => {

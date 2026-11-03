@@ -99,10 +99,28 @@ export function SectionConfigPanel({
   const handleTypeChange = (newType: string | null) => {
     if (!newType) return;
     setError(null);
+    const nextType = newType as SectionType;
+    const staticTypes: SectionType[] = ["image", "long-y", "pan-x"];
+    const isCompatibleSwitch =
+      staticTypes.includes(section.type) && staticTypes.includes(nextType);
+    const nextConfig = createDefaultConfig(nextType);
+    if (isCompatibleSwitch) {
+      const current = section.config as Extract<
+        SectionWithImages["config"],
+        { type: "image" | "long-y" | "pan-x" }
+      >;
+      const target = nextConfig as Extract<
+        SectionWithImages["config"],
+        { type: "image" | "long-y" | "pan-x" }
+      >;
+      target.imagePath = current.imagePath;
+      target.width = current.width;
+      target.height = current.height;
+    }
     const updated: SectionWithImages = {
       ...section,
-      type: newType as SectionType,
-      config: createDefaultConfig(newType as SectionType),
+      type: nextType,
+      config: nextConfig,
     };
     onSectionChange(updated);
   };
@@ -153,20 +171,20 @@ export function SectionConfigPanel({
       if (uploadError) throw uploadError;
 
        const imageConfig = section.config as Extract<SectionWithImages["config"], { type: "image" | "long-y" | "pan-x" }>;
-       const imageRecord: ImageRecord = {
-         id: crypto.randomUUID(),
-         sectionId: section.id,
-         webtoonId: section.webtoonId,
-         storagePath: uploadData.path,
-         width: dimensions.width,
-         height: dimensions.height,
-         mimeType,
-         position: section.images.length,
-       };
+        const imageRecord: ImageRecord = {
+          id: crypto.randomUUID(),
+          sectionId: section.id,
+          webtoonId: section.webtoonId,
+          storagePath: uploadData.path,
+          width: dimensions.width,
+          height: dimensions.height,
+          mimeType,
+          position: 0,
+        };
 
-       const updatedSection: SectionWithImages = {
-         ...section,
-         images: [...section.images, imageRecord],
+        const updatedSection: SectionWithImages = {
+          ...section,
+          images: [imageRecord],
          config: {
            ...imageConfig,
            imagePath: uploadData.path,
@@ -217,8 +235,20 @@ export function SectionConfigPanel({
 
       if (uploadError) throw uploadError;
 
+      const spriteRecord: ImageRecord = {
+        id: crypto.randomUUID(),
+        sectionId: section.id,
+        webtoonId: section.webtoonId,
+        storagePath: uploadData.path,
+        width: spriteSheet.frameWidth * spriteSheet.columns,
+        height: spriteSheet.frameHeight * spriteSheet.rows,
+        mimeType: "image/webp",
+        position: 0,
+      };
+
       const updatedSection: SectionWithImages = {
         ...section,
+        images: [spriteRecord],
         config: {
           type: "animation",
           spritePath: uploadData.path,
@@ -411,8 +441,8 @@ export function SectionConfigPanel({
   };
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="flex flex-row items-center justify-between">
+    <Card className="mx-auto w-full max-w-full sm:max-w-md">
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>{t("configPanelTitle")}</CardTitle>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("closePanel")}>
           <X className="size-4" />
@@ -425,7 +455,7 @@ export function SectionConfigPanel({
             {t("sectionType")}
           </label>
           <Select value={section.type} onValueChange={handleTypeChange}>
-            <SelectTrigger id="section-type">
+            <SelectTrigger id="section-type" className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -453,7 +483,7 @@ export function SectionConfigPanel({
               className="cursor-pointer"
             />
             {section.images.length > 0 && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground" role="status">
                 {t("imageCount", { count: section.images.length })}
               </p>
             )}
@@ -474,7 +504,7 @@ export function SectionConfigPanel({
               className="cursor-pointer"
             />
             {section.config.type === "animation" && section.config.frameCount > 0 && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground" role="status">
                 {t("frameCount", { count: section.config.frameCount })}
               </p>
             )}
@@ -495,9 +525,9 @@ export function SectionConfigPanel({
             className="cursor-pointer"
           />
           {section.audioPath && (
-            <div className="flex items-center gap-2">
-              <FileAudio className="size-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground truncate">
+            <div className="flex min-w-0 items-center gap-2">
+              <FileAudio className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
                 {section.audioPath.split("/").pop()}
               </span>
               <Button
@@ -514,15 +544,15 @@ export function SectionConfigPanel({
         </div>
 
         {error && (
-          <div className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            <AlertCircle className="size-4 shrink-0" />
+          <div role="alert" className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
             {error}
           </div>
         )}
 
         {uploading && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Upload className="size-4 animate-pulse" />
+          <div role="status" aria-live="polite" className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Upload className="size-4 animate-pulse" aria-hidden="true" />
             {t("uploading")}
           </div>
         )}
@@ -532,7 +562,7 @@ export function SectionConfigPanel({
             <Separator />
 
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
+              <CardHeader className="flex flex-row items-center justify-between gap-2">
                 <CardTitle>{t("fxOverlay")}</CardTitle>
                 {fxPath && (
                   <Button
@@ -540,7 +570,8 @@ export function SectionConfigPanel({
                     size="icon-xs"
                     onClick={handleFxDelete}
                     aria-label={t("deleteAudio")}
-                    className="size-6 text-destructive hover:text-destructive"
+                    title={t("deleteAudio")}
+                    className="size-6 shrink-0 text-destructive hover:text-destructive"
                   >
                     <Trash2 className="size-3" />
                   </Button>
@@ -564,8 +595,8 @@ export function SectionConfigPanel({
 
                 {fxPath && (
                   <div className="space-y-4 pt-2">
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 space-y-1">
+                    <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4">
+                      <div className="min-w-0 space-y-1">
                         <label htmlFor="fx-position-x" className="text-xs text-muted-foreground">
                           {t("fxPositionX")}
                         </label>
@@ -587,7 +618,7 @@ export function SectionConfigPanel({
                           </SelectContent>
                         </Select>
                       </div>
-                      <div className="flex-1 space-y-1">
+                      <div className="min-w-0 space-y-1">
                         <label htmlFor="fx-position-y" className="text-xs text-muted-foreground">
                           {t("fxPositionY")}
                         </label>
@@ -611,8 +642,8 @@ export function SectionConfigPanel({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                      <div className="flex-1 space-y-1">
+                    <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 sm:gap-4">
+                      <div className="min-w-0 space-y-1">
                         <label htmlFor="fx-size-mode" className="text-xs text-muted-foreground">
                           {t("fxSizeMode")}
                         </label>

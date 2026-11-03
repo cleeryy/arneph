@@ -97,7 +97,9 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
   );
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
@@ -175,8 +177,8 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
   if (sorted.length === 0) {
     return (
       <>
-        <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground gap-4 p-4">
-          <p>{t("canvasEmpty")}</p>
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center text-muted-foreground sm:p-8">
+          <p className="max-w-sm text-sm">{t("canvasEmpty")}</p>
           <Button onClick={handleAddSection}>
             <Plus className="mr-2 h-4 w-4" />
             {t("addSection")}
@@ -193,8 +195,13 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="flex items-center justify-between mb-4 px-4">
-        <h3 className="font-heading text-sm font-semibold text-foreground">{t("sections")}</h3>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4">
+        <h3 className="font-heading text-sm font-semibold text-foreground">
+          {t("sections")}
+          <span className="ml-2 font-body text-xs font-normal text-muted-foreground tabular-nums">
+            {sorted.length}
+          </span>
+        </h3>
         <Button size="sm" onClick={handleAddSection}>
           <Plus className="mr-2 h-4 w-4" />
           {t("addSection")}
@@ -206,7 +213,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
         onDragEnd={handleDragEnd}
       >
         <SortableContext items={sortedIds} strategy={verticalListSortingStrategy}>
-          <div data-testid="editor-canvas" className="flex flex-1 flex-col gap-4 p-4">
+          <div data-testid="editor-canvas" className="flex flex-1 flex-col gap-3 p-3 sm:gap-4 sm:p-4">
             {sorted.map((section) => {
               const isSelected = selectedId === section.id;
               const isFirst = section.position === 1;
@@ -221,7 +228,17 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
                     data-testid={`editor-section-${section.id}`}
                     data-section-id={section.id}
                     data-selected={isSelected ? "true" : undefined}
-                    className={"relative rounded-lg border transition-colors group " +
+                    role="group"
+                    aria-label={`Section #${section.position}`}
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleSelect(section.id);
+                      }
+                    }}
+                    className={"relative cursor-pointer rounded-lg border transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 " +
                       (isSelected
                         ? "border-primary ring-2 ring-primary/20"
                         : "border-border hover:border-muted-foreground/30"
@@ -234,7 +251,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
                       </div>
                     )}
                     <SectionPreview section={section} />
-                    <div className="flex items-center gap-1 border-t border-border bg-muted/30 px-2 py-1.5">
+                    <div className="flex flex-wrap items-center gap-1 border-t border-border bg-muted/30 px-2 py-1.5">
                       <Button
                         variant="ghost"
                         size="icon"
@@ -308,7 +325,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
              if (!open) setConfigPanelSection(null);
            }}
          >
-           <DialogContent className="sm:max-w-lg">
+           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
              <DialogHeader>
                <DialogTitle>{t("configPanelTitle")}</DialogTitle>
              </DialogHeader>

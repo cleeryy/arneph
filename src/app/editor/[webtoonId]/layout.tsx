@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { Save, Globe, Lock, AlertCircle } from "lucide-react";
 
-import { EditorStateProvider, useEditorState } from "@/components/editor/EditorStateContext";
+import { EditorStateProvider, useEditorState, remapSectionIds } from "@/components/editor/EditorStateContext";
 import { saveWebtoon, publishWebtoon, unpublishWebtoon } from "@/app/editor/actions";
+import { sectionConfigSchema } from "@/lib/schemas";
 
 export default function EditorDetailLayout({
   children,
@@ -31,20 +32,66 @@ function EditorDetailLayoutInner({
   children: React.ReactNode;
   params: Promise<{ webtoonId: string }>;
 }) {
-  const t = useTranslations("editor");
   const { webtoonId } = React.use(params);
-  const { sections, isDirty, setIsDirty } = useEditorState();
-  const [visibility, setVisibility] = React.useState<"draft" | "published">("draft");
+  return (
+    <EditorDetailLayoutContent webtoonId={webtoonId}>
+      {children}
+    </EditorDetailLayoutContent>
+  );
+}
+
+export function EditorDetailLayoutContent({
+  children,
+  webtoonId,
+}: {
+  children: React.ReactNode;
+  webtoonId: string;
+}) {
+  const t = useTranslations("editor");
+  const { sections, setSections, isDirty, setIsDirty, webtoonTitle, visibility, setVisibility } = useEditorState();
   const [saving, setSaving] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<{ ok: boolean; error?: string } | null>(null);
 
   async function handleSave() {
-    setSaving(true);
     setSaveResult(null);
+    const invalidIndex = sections.findIndex(
+      (s) => !sectionConfigSchema.safeParse(s.config).success,
+    );
+    if (invalidIndex !== -1) {
+      const invalid = sections[invalidIndex];
+      const configType =
+        (invalid.config as { type?: string } | undefined)?.type ?? invalid.type;
+      const isAnimation = configType === "animation";
+      const typeLabel =
+        configType === "image"
+          ? t("sectionTypeImage")
+          : configType === "long-y"
+            ? t("sectionTypeLongY")
+            : configType === "pan-x"
+              ? t("sectionTypePanX")
+              : t("sectionTypeAnimation");
+      const position =
+        typeof invalid.position === "number"
+          ? invalid.position + 1
+          : invalidIndex + 1;
+      setSaveResult({
+        ok: false,
+        error: t("incompleteSection", {
+          position,
+          type: typeLabel,
+          action: isAnimation ? t("animationUpload") : t("imageUpload"),
+        }),
+      });
+      return;
+    }
+    setSaving(true);
     const result = await saveWebtoon(webtoonId, sections);
     setSaveResult(result);
     setSaving(false);
     if (result.ok) {
+      if (result.sectionIds) {
+        setSections(remapSectionIds(sections, result.sectionIds));
+      }
       setIsDirty(false);
     }
   }
@@ -75,8 +122,12 @@ function EditorDetailLayoutInner({
               ← {t("backToEditor")}
             </Link>
           </div>
-          <h1 className="font-heading text-lg font-semibold tracking-tight text-foreground truncate max-w-[400px]">
-            {webtoonId}
+          <h1
+            className="font-heading text-lg font-semibold tracking-tight text-foreground truncate max-w-[400px]"
+            data-testid="editor-title"
+            data-loaded={webtoonTitle !== null ? "true" : "false"}
+          >
+            {webtoonTitle ?? "…"}
           </h1>
           <div className="flex items-center gap-2">
             <Link
@@ -98,23 +149,26 @@ function EditorDetailLayoutInner({
                   : "bg-muted text-muted-foreground"
               }`}
               data-testid="visibility-badge"
+              data-loaded={visibility !== null ? "true" : "false"}
             >
               {visibility === "published" ? (
                 <>
                   <Globe className="size-3.5" />
                   {t("published")}
                 </>
-              ) : (
+              ) : visibility === "draft" ? (
                 <>
                   <Lock className="size-3.5" />
                   {t("draft")}
                 </>
+              ) : (
+                <span aria-hidden="true">…</span>
               )}
             </span>
             <button
               type="button"
               onClick={handlePublish}
-              disabled={visibility === "published"}
+              disabled={visibility !== "draft"}
               className="inline-flex h-9 items-center justify-center rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white shadow transition-colors hover:bg-green-700 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label={t("publish")}
             >
@@ -123,7 +177,7 @@ function EditorDetailLayoutInner({
             <button
               type="button"
               onClick={handleUnpublish}
-              disabled={visibility === "draft"}
+              disabled={visibility !== "published"}
               className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm font-medium text-foreground shadow transition-colors hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
               aria-label={t("unpublish")}
             >

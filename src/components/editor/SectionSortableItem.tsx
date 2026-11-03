@@ -24,6 +24,7 @@ export function SectionSortableItem({
     setActivatorNodeRef,
     transform,
     transition,
+    isDragging,
   } = useSortable({ id: section.id });
 
   const style = {
@@ -37,16 +38,22 @@ export function SectionSortableItem({
       style={style}
       data-testid={`sortable-section-${section.id}`}
       data-section-id={section.id}
-      className="relative"
+      data-dragging={isDragging ? "true" : undefined}
+      className={
+        "group relative rounded-lg transition-shadow " +
+        (isDragging ? "z-20 shadow-lg ring-2 ring-primary/30" : "")
+      }
     >
       <div
         ref={setActivatorNodeRef}
         {...attributes}
         {...listeners}
+        tabIndex={0}
         onClick={(e) => e.stopPropagation()}
-        className="absolute left-2 top-2 z-10 cursor-grab rounded bg-muted/80 p-1 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        className="absolute left-2 top-2 z-10 flex size-8 cursor-grab touch-none items-center justify-center rounded-md bg-background/90 text-muted-foreground opacity-100 shadow-sm ring-1 ring-border backdrop-blur transition-all hover:text-foreground hover:ring-muted-foreground/30 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
         role="button"
         aria-label={t("dragHandle")}
+        title={t("dragHandle")}
       >
         <GripVertical className="size-4" />
       </div>

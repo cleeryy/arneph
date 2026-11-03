@@ -44,7 +44,8 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllEnvs();
-  delete (Element.prototype as any).scrollIntoView;
+  delete (Element.prototype as Partial<Pick<Element, "scrollIntoView">>)
+    .scrollIntoView;
 });
 
 function wrap(ui: ReactElement) {
@@ -185,7 +186,7 @@ describe("EditorCanvas — T7: Scroll-to-new-section + sticky header/sidebar", (
   test("after creating a section, scrollIntoView is called on the new section element", () => {
     vi.useFakeTimers();
     const mockScrollIntoView = vi.fn();
-    (Element.prototype as any).scrollIntoView = mockScrollIntoView;
+    Element.prototype.scrollIntoView = mockScrollIntoView;
 
     const initialSections = [makeSection("sec-1", 1, "image")];
     const onChange = vi.fn();
@@ -213,7 +214,8 @@ describe("EditorCanvas — T7: Scroll-to-new-section + sticky header/sidebar", (
     expect(newSectionEl).toBeTruthy();
     expect(mockScrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "center" });
 
-    delete (Element.prototype as any).scrollIntoView;
+  delete (Element.prototype as Partial<Pick<Element, "scrollIntoView">>)
+    .scrollIntoView;
     vi.useRealTimers();
   });
 
