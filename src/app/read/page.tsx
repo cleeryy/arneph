@@ -1,23 +1,28 @@
-import Link from "next/link";
-import Image from "next/image";
 import { getTranslations } from "next-intl/server";
-import { BookOpen } from "lucide-react";
 
 import { listPublishedWebtoons } from "@/lib/db/queries";
-import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
-import {
-  Card,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import LibraryClient, {
+  type LibraryWebtoon,
+} from "@/components/reader/LibraryClient";
 
 export const dynamic = "force-dynamic";
 
-/** Bibliothèque lecteur : webtoons publiés uniquement (fetch serveur T10, drafts jamais exposés). */
+/**
+ * Bibliothèque lecteur : webtoons publiés uniquement (fetch serveur T10, drafts
+ * jamais exposés). La liste complète est rendue côté serveur (SEO / sans JS) ;
+ * la recherche et le tri sont des améliorations client par-dessus cette liste.
+ */
 export default async function ReadPage() {
   const t = await getTranslations("reader");
   const webtoons = await listPublishedWebtoons();
+
+  const libraryWebtoons: LibraryWebtoon[] = webtoons.map((webtoon) => ({
+    id: webtoon.id,
+    title: webtoon.title,
+    description: webtoon.description,
+    coverPath: webtoon.coverPath,
+    createdAt: webtoon.createdAt,
+  }));
 
   return (
     <main className="flex flex-1 flex-col bg-background px-6 py-12">
@@ -27,7 +32,7 @@ export default async function ReadPage() {
         </h1>
       </div>
 
-      {webtoons.length === 0 ? (
+      {libraryWebtoons.length === 0 ? (
         <p
           data-testid="reader-empty"
           className="mx-auto mt-24 text-center text-base text-muted-foreground"
@@ -35,42 +40,7 @@ export default async function ReadPage() {
           {t("empty")}
         </p>
       ) : (
-        <ul className="mx-auto mt-8 grid w-full max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
-          {webtoons.map((webtoon) => (
-            <li key={webtoon.id}>
-              <Link
-                href={`/read/${webtoon.id}`}
-                className="block h-full rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-              >
-                <Card className="h-full transition-colors hover:bg-accent/50">
-                  {webtoon.coverPath ? (
-                    <Image
-                      src={getSupabasePublicObjectUrl(webtoon.coverPath)}
-                      alt={webtoon.title}
-                      width={800}
-                      height={450}
-                      sizes="(min-width:640px) 50vw, 100vw"
-                      className="aspect-video w-full object-cover"
-                      unoptimized
-                    />
-                  ) : (
-                    <div className="flex aspect-video w-full items-center justify-center bg-muted/50 text-muted-foreground">
-                      <BookOpen aria-hidden="true" className="size-10" />
-                    </div>
-                  )}
-                  <CardHeader>
-                    <CardTitle>{webtoon.title}</CardTitle>
-                    {webtoon.description ? (
-                      <CardDescription className="line-clamp-2">
-                        {webtoon.description}
-                      </CardDescription>
-                    ) : null}
-                  </CardHeader>
-                </Card>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <LibraryClient webtoons={libraryWebtoons} />
       )}
     </main>
   );
