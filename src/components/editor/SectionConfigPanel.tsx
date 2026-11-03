@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { X, Upload, Trash2, FileAudio, AlertCircle } from "lucide-react";
 import {
   Select,
@@ -18,14 +18,20 @@ import { Separator } from "@/components/ui/separator";
 import { SectionPreview } from "./SectionPreview";
 import {
   resizeImage,
-  toWebP,
   buildSpriteSheet,
   readImageDimensions,
   ImageProcessingError,
 } from "@/lib/image/process";
 import { isAnimatedImage } from "@/lib/image/animated";
+import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
 import type { SectionWithImages } from "@/lib/db/queries";
-import type { SectionType, ImageRecord, FxOverlayConfig } from "@/types/webtoon";
+import type {
+  SectionType,
+  ImageRecord,
+  FxOverlayConfig,
+  PanXSectionConfig,
+  AnimationSectionConfig,
+} from "@/types/webtoon";
 
 interface SectionConfigPanelProps {
   section: SectionWithImages;
@@ -48,6 +54,42 @@ function getSectionTypeLabel(t: ReturnType<typeof useTranslations>, type: Sectio
 
 const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/webm", "audio/ogg"];
 
+type StaticSectionConfig = Extract<
+  SectionWithImages["config"],
+  { type: "image" | "long-y" | "pan-x" }
+>;
+type FxSectionConfig = Extract<SectionWithImages["config"], { type: "image" | "long-y" }>;
+
+function isStaticSectionType(type: SectionType): boolean {
+  return type === "image" || type === "long-y" || type === "pan-x";
+}
+
+/**
+ * Modèle média d'une section : `animation` consomme une sprite sheet unique,
+ * tous les autres types une image de page. Changer de modèle invalide
+ * `section.images` (aperçu et lecteur lisent `images[0]` en priorité), donc le
+ * média est réinitialisé au lieu de rester en place et de s'afficher à tort.
+ */
+function mediaModelOf(type: SectionType): "page" | "sprite" {
+  return type === "animation" ? "sprite" : "page";
+}
+
+/**
+ * Les réglages de scroll n'ont pas encore de clés i18n dédiées dans
+ * `messages/*.json` : libellés localisés inline en attendant.
+ */
+const SCROLL_SETTING_LABELS = {
+  fr: { panSpeed: "Durée du panoramique (vh)", scrollHeight: "Hauteur du défilement (vh)" },
+  en: { panSpeed: "Pan duration (vh)", scrollHeight: "Scroll height (vh)" },
+} as const;
+
+/** `panSpeed`/`scrollHeight` sont `positive()` dans le schéma Zod : jamais 0/NaN. */
+function parsePositiveNumber(value: string): number | null {
+  const next = Number(value);
+  if (!Number.isFinite(next) || next <= 0) return null;
+  return next;
+}
+
 export function createDefaultConfig(type: SectionType): SectionWithImages["config"] {
   switch (type) {
     case "image":
@@ -55,7 +97,13 @@ export function createDefaultConfig(type: SectionType): SectionWithImages["confi
     case "long-y":
       return { type: "long-y", imagePath: "", width: 0, height: 0 };
     case "pan-x":
-      return { type: "pan-x", imagePath: "", width: 0, height: 0 };
+      return {
+        type: "pan-x",
+        imagePath: "",
+        width: 0,
+        height: 0,
+        panSpeed: SCROLL_DISTANCES["pan-x"],
+      };
     case "animation":
       return {
         type: "animation",
@@ -65,6 +113,7 @@ export function createDefaultConfig(type: SectionType): SectionWithImages["confi
         columns: 0,
         rows: 0,
         frameCount: 0,
+        scrollHeight: SCROLL_DISTANCES.animation,
       };
   }
 }
@@ -89,6 +138,8 @@ export function SectionConfigPanel({
   onClose,
 }: SectionConfigPanelProps) {
   const t = useTranslations("editor");
+  const locale = useLocale();
+  const scrollLabels = SCROLL_SETTING_LABELS[locale.startsWith("fr") ? "fr" : "en"];
   const [error, setError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -100,27 +151,41 @@ export function SectionConfigPanel({
     if (!newType) return;
     setError(null);
     const nextType = newType as SectionType;
-    const staticTypes: SectionType[] = ["image", "long-y", "pan-x"];
-    const isCompatibleSwitch =
-      staticTypes.includes(section.type) && staticTypes.includes(nextType);
+    const currentConfig = section.config;
     const nextConfig = createDefaultConfig(nextType);
-    if (isCompatibleSwitch) {
-      const current = section.config as Extract<
-        SectionWithImages["config"],
-        { type: "image" | "long-y" | "pan-x" }
-      >;
-      const target = nextConfig as Extract<
-        SectionWithImages["config"],
-        { type: "image" | "long-y" | "pan-x" }
-      >;
+
+    // `config.audioPath` est indépendant du type de média : toujours préservé.
+    if (currentConfig.audioPath !== undefined) {
+      nextConfig.audioPath = currentConfig.audioPath;
+    }
+
+    if (isStaticSectionType(section.type) && isStaticSectionType(nextType)) {
+      const current = currentConfig as StaticSectionConfig;
+      const target = nextConfig as StaticSectionConfig;
       target.imagePath = current.imagePath;
       target.width = current.width;
       target.height = current.height;
+
+      // L'overlay FX n'existe que sur image/long-y : un passage par pan-x (ou
+      // vers animation) le supprime explicitement au lieu de le laisser traîner.
+      const keepsFx = nextType === "image" || nextType === "long-y";
+      if (keepsFx && (section.type === "image" || section.type === "long-y")) {
+        const currentFx = current as FxSectionConfig;
+        const targetFx = nextConfig as FxSectionConfig;
+        if (currentFx.fxPath !== undefined) targetFx.fxPath = currentFx.fxPath;
+        if (currentFx.fxConfig !== undefined) targetFx.fxConfig = currentFx.fxConfig;
+      }
     }
+
+    const mediaModelChanged = mediaModelOf(section.type) !== mediaModelOf(nextType);
+
     const updated: SectionWithImages = {
       ...section,
       type: nextType,
       config: nextConfig,
+      // Un sprite et une image de page ne sont pas interchangeables : ne jamais
+      // laisser l'ancien média alimenter l'aperçu du nouveau type.
+      images: mediaModelChanged ? [] : section.images,
     };
     onSectionChange(updated);
   };
@@ -148,10 +213,11 @@ export function SectionConfigPanel({
         mimeType = file.type;
         dimensions = await readImageDimensions(file);
       } else {
+        // `resizeImage()` encode déjà en WebP : le repasser dans `toWebP()`
+        // serait un double encodage (perte de qualité + CPU inutile).
         const resized = await resizeImage(file);
-        const webp = await toWebP(resized);
-        dimensions = await readImageDimensions(webp);
-        uploadBlob = webp;
+        dimensions = await readImageDimensions(resized);
+        uploadBlob = resized;
         mimeType = "image/webp";
       }
 
@@ -440,6 +506,28 @@ export function SectionConfigPanel({
     onSectionChange(updatedSection);
   };
 
+  const panXConfig = section.config.type === "pan-x" ? (section.config as PanXSectionConfig) : null;
+  const animationConfig =
+    section.config.type === "animation" ? (section.config as AnimationSectionConfig) : null;
+
+  const handlePanSpeedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const panSpeed = parsePositiveNumber(e.target.value);
+    if (panSpeed === null || section.config.type !== "pan-x") return;
+    onSectionChange({
+      ...section,
+      config: { ...section.config, panSpeed },
+    });
+  };
+
+  const handleScrollHeightChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const scrollHeight = parsePositiveNumber(e.target.value);
+    if (scrollHeight === null || section.config.type !== "animation") return;
+    onSectionChange({
+      ...section,
+      config: { ...section.config, scrollHeight },
+    });
+  };
+
   return (
     <Card className="mx-auto w-full max-w-full sm:max-w-md">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
@@ -511,6 +599,40 @@ export function SectionConfigPanel({
           </div>
         )}
 
+        {section.type === "pan-x" && (
+          <div className="space-y-2">
+            <label htmlFor="pan-speed" className="text-sm font-medium text-foreground">
+              {scrollLabels.panSpeed}
+            </label>
+            <Input
+              id="pan-speed"
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              value={panXConfig?.panSpeed ?? SCROLL_DISTANCES["pan-x"]}
+              onChange={handlePanSpeedChange}
+            />
+          </div>
+        )}
+
+        {isAnimationType && (
+          <div className="space-y-2">
+            <label htmlFor="animation-scroll-height" className="text-sm font-medium text-foreground">
+              {scrollLabels.scrollHeight}
+            </label>
+            <Input
+              id="animation-scroll-height"
+              type="number"
+              min={1}
+              step={1}
+              inputMode="numeric"
+              value={animationConfig?.scrollHeight ?? SCROLL_DISTANCES.animation}
+              onChange={handleScrollHeightChange}
+            />
+          </div>
+        )}
+
         <Separator />
 
         <div className="space-y-2">
@@ -569,8 +691,8 @@ export function SectionConfigPanel({
                     variant="ghost"
                     size="icon-xs"
                     onClick={handleFxDelete}
-                    aria-label={t("deleteAudio")}
-                    title={t("deleteAudio")}
+                    aria-label={t("deleteFx")}
+                    title={t("deleteFx")}
                     className="size-6 shrink-0 text-destructive hover:text-destructive"
                   >
                     <Trash2 className="size-3" />

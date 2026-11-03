@@ -38,15 +38,20 @@ vi.mock("next/image", () => ({
   },
 }));
 
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(() => ({
-    storage: {
-      from: vi.fn(() => ({
-        upload: vi.fn().mockResolvedValue({ data: { path: "uploaded/path.webp" }, error: null }),
-      })),
-    },
-  })),
-}));
+const { uploadSpy } = vi.hoisted(() => ({ uploadSpy: vi.fn() }));
+
+vi.mock("@supabase/supabase-js", () => {
+  uploadSpy.mockResolvedValue({ data: { path: "uploaded/path.webp" }, error: null });
+  return {
+    createClient: vi.fn(() => ({
+      storage: {
+        from: vi.fn(() => ({
+          upload: uploadSpy,
+        })),
+      },
+    })),
+  };
+});
 
 vi.mock("@/lib/image/animated", async () => {
   const actual = await vi.importActual("@/lib/image/animated");
@@ -104,6 +109,36 @@ function makeSection(overrides: Partial<SectionWithImages> = {}): SectionWithIma
     ...overrides,
   };
 }
+
+async function selectSectionType(label: string) {
+  const trigger = screen.getByRole("combobox", { name: "Type de section" });
+  await userEvent.click(trigger);
+  await userEvent.click(await screen.findByRole("option", { name: label }));
+}
+
+function lastCall(onChange: ReturnType<typeof vi.fn>): SectionWithImages {
+  return onChange.mock.calls[onChange.mock.calls.length - 1][0] as SectionWithImages;
+}
+
+function pageImageRecord(): SectionWithImages["images"][number] {
+  return {
+    id: "img-page",
+    sectionId: "sec-1",
+    webtoonId: "w1",
+    storagePath: "uploaded/page.webp",
+    width: 800,
+    height: 1200,
+    mimeType: "image/webp",
+    position: 0,
+  };
+}
+
+const FX_CONFIG = {
+  position: { x: "left", y: "top" },
+  size: { mode: "percent", width: 50 },
+  opacity: 0.4,
+} as const;
+
 
 describe("SectionConfigPanel — T25", () => {
   test("renders with section type selector and close button", () => {
@@ -167,19 +202,39 @@ describe("SectionConfigPanel — T25", () => {
     );
   });
 
-  test("image upload flow calls resizeImage and toWebP", async () => {
+  test("static image upload uploads resizeImage output directly (no toWebP re-encode)", async () => {
+    const resized = new Blob(["resized-webp-payload"], { type: "image/webp" });
+    vi.mocked(resizeImage).mockResolvedValue(resized);
+
     const section = makeSection({ type: "image" });
-    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
 
     const fileInput = screen.getByLabelText("Uploader une image");
     const file = new File(["image-data"], "test.png", { type: "image/png" });
 
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => expect(uploadSpy).toHaveBeenCalledTimes(1));
 
     expect(resizeImage).toHaveBeenCalledWith(file);
-    expect(toWebP).toHaveBeenCalled();
+    expect(toWebP).not.toHaveBeenCalled();
+    expect(readImageDimensions).toHaveBeenCalledWith(resized);
+
+    const [path, uploadedBlob, options] = uploadSpy.mock.calls[0] as [
+      string,
+      Blob,
+      { contentType: string; upsert: boolean },
+    ];
+    expect(path).toMatch(/^webtoons\/sections\/sec-1\/\d+-test\.png$/);
+    expect(uploadedBlob).toBe(resized);
+    expect(uploadedBlob.type).toBe("image/webp");
+    expect(uploadedBlob.size).toBe(resized.size);
+    expect(options).toEqual({ contentType: "image/webp", upsert: false });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1][0] as SectionWithImages;
+    expect(updated.images[0].mimeType).toBe("image/webp");
   });
 
   test("animated GIF upload skips resizeImage/toWebP and uploads raw with file.type", async () => {
@@ -537,4 +592,300 @@ describe("SectionConfigPanel — T13 FX section", () => {
   render(wrap(<SectionConfigPanel section={animationSection} onSectionChange={vi.fn()} onClose={vi.fn()} />));
   expect(screen.queryByText("FX (animation superposée)")).not.toBeInTheDocument();
 });
+});
+
+describe("SectionConfigPanel — FX delete label", () => {
+  test("FX delete button uses editor.deleteFx, not the audio key", () => {
+    const section = makeSection({
+      type: "image",
+      audioPath: "audio/sec-1.mp3",
+      config: {
+        type: "image",
+        imagePath: "test.webp",
+        width: 800,
+        height: 1200,
+        fxPath: "fx/test.gif",
+        fxConfig: {
+          position: { x: "center", y: "center" },
+          size: { mode: "percent", width: 100 },
+          opacity: 1,
+        },
+      },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const fxDelete = screen.getByRole("button", { name: "Supprimer l'effet FX" });
+    const audioDelete = screen.getByRole("button", { name: "Supprimer l'audio" });
+    expect(fxDelete).not.toBe(audioDelete);
+
+    fireEvent.click(fxDelete);
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({ fxPath: undefined, fxConfig: undefined });
+    // Le bouton FX ne doit pas toucher au chemin audio.
+    expect(updated.audioPath).toBe("audio/sec-1.mp3");
+  });
+});
+
+describe("SectionConfigPanel — type switching keeps media model consistent", () => {
+  test("switching image → long-y preserves FX config and config-level audioPath", async () => {
+    const section = makeSection({
+      type: "image",
+      audioPath: "audio/section.mp3",
+      config: {
+        type: "image",
+        imagePath: "uploaded/page.webp",
+        width: 800,
+        height: 1200,
+        audioPath: "audio/config.mp3",
+        fxPath: "fx/overlay.gif",
+        fxConfig: { ...FX_CONFIG, position: { ...FX_CONFIG.position }, size: { ...FX_CONFIG.size } },
+      },
+      images: [pageImageRecord()],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    await selectSectionType("Défilement long");
+
+    const updated = lastCall(onChange);
+    expect(updated.type).toBe("long-y");
+    expect(updated.audioPath).toBe("audio/section.mp3");
+    expect(updated.config).toEqual({
+      type: "long-y",
+      imagePath: "uploaded/page.webp",
+      width: 800,
+      height: 1200,
+      audioPath: "audio/config.mp3",
+      fxPath: "fx/overlay.gif",
+      fxConfig: FX_CONFIG,
+    });
+    expect(updated.images).toHaveLength(1);
+  });
+
+  test("switching long-y → image preserves FX config and config-level audioPath", async () => {
+    const section = makeSection({
+      type: "long-y",
+      config: {
+        type: "long-y",
+        imagePath: "uploaded/page.webp",
+        width: 800,
+        height: 2400,
+        audioPath: "audio/config.mp3",
+        fxPath: "fx/overlay.webp",
+        fxConfig: { ...FX_CONFIG, position: { ...FX_CONFIG.position }, size: { ...FX_CONFIG.size } },
+      },
+      images: [pageImageRecord()],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    await selectSectionType("Image");
+
+    const updated = lastCall(onChange);
+    expect(updated.type).toBe("image");
+    expect(updated.config).toMatchObject({
+      type: "image",
+      imagePath: "uploaded/page.webp",
+      width: 800,
+      height: 2400,
+      audioPath: "audio/config.mp3",
+      fxPath: "fx/overlay.webp",
+      fxConfig: FX_CONFIG,
+    });
+    expect(updated.images).toHaveLength(1);
+  });
+
+  test("switching image → pan-x drops FX explicitly but keeps the page image", async () => {
+    const section = makeSection({
+      type: "image",
+      config: {
+        type: "image",
+        imagePath: "uploaded/page.webp",
+        width: 1600,
+        height: 600,
+        audioPath: "audio/config.mp3",
+        fxPath: "fx/overlay.gif",
+        fxConfig: { ...FX_CONFIG, position: { ...FX_CONFIG.position }, size: { ...FX_CONFIG.size } },
+      },
+      images: [pageImageRecord()],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    await selectSectionType("Panoramique");
+
+    const updated = lastCall(onChange);
+    expect(updated.type).toBe("pan-x");
+    expect(updated.config).toMatchObject({
+      type: "pan-x",
+      imagePath: "uploaded/page.webp",
+      width: 1600,
+      height: 600,
+      audioPath: "audio/config.mp3",
+    });
+    expect(updated.config).not.toHaveProperty("fxPath");
+    expect(updated.config).not.toHaveProperty("fxConfig");
+    // pan-x reste sur le modèle « image de page » : le média est conservé.
+    expect(updated.images).toHaveLength(1);
+    expect(updated.images[0].storagePath).toBe("uploaded/page.webp");
+  });
+
+  test("switching image → animation resets section.images and drops FX", async () => {
+    const section = makeSection({
+      type: "image",
+      config: {
+        type: "image",
+        imagePath: "uploaded/page.webp",
+        width: 800,
+        height: 1200,
+        audioPath: "audio/config.mp3",
+        fxPath: "fx/overlay.gif",
+        fxConfig: { ...FX_CONFIG, position: { ...FX_CONFIG.position }, size: { ...FX_CONFIG.size } },
+      },
+      images: [pageImageRecord()],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    await selectSectionType("Animation");
+
+    const updated = lastCall(onChange);
+    expect(updated.type).toBe("animation");
+    // Modèle média changé (page → sprite) : aucun média obsolète ne doit rester.
+    expect(updated.images).toEqual([]);
+    expect(updated.config).not.toHaveProperty("fxPath");
+    expect(updated.config).not.toHaveProperty("fxConfig");
+    expect(updated.config).toMatchObject({
+      type: "animation",
+      spritePath: "",
+      audioPath: "audio/config.mp3",
+    });
+  });
+
+  test("switching animation → image resets the stale sprite record", async () => {
+    const section = makeSection({
+      type: "animation",
+      config: {
+        type: "animation",
+        spritePath: "uploaded/sprite.webp",
+        frameWidth: 100,
+        frameHeight: 100,
+        columns: 4,
+        rows: 3,
+        frameCount: 10,
+      },
+      images: [
+        {
+          id: "img-sprite",
+          sectionId: "sec-1",
+          webtoonId: "w1",
+          storagePath: "uploaded/sprite.webp",
+          width: 400,
+          height: 300,
+          mimeType: "image/webp",
+          position: 0,
+        },
+      ],
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    await selectSectionType("Image");
+
+    const updated = lastCall(onChange);
+    expect(updated.type).toBe("image");
+    expect(updated.images).toEqual([]);
+    expect(updated.config).not.toHaveProperty("spritePath");
+  });
+});
+
+describe("SectionConfigPanel — scroll settings", () => {
+  test("pan-x exposes an editable panSpeed defaulting to SCROLL_DISTANCES", () => {
+    const section = makeSection({
+      type: "pan-x",
+      config: { type: "pan-x", imagePath: "uploaded/page.webp", width: 1600, height: 600 },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const input = screen.getByLabelText("Durée du panoramique (vh)");
+    expect(input).toHaveValue(300);
+    expect(screen.queryByLabelText("Hauteur du défilement (vh)")).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "450" } });
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({ type: "pan-x", panSpeed: 450 });
+    expect(updated.images).toEqual(section.images);
+  });
+
+  test("panSpeed ignores non-positive values so the config stays Zod-valid", () => {
+    const section = makeSection({
+      type: "pan-x",
+      config: { type: "pan-x", imagePath: "uploaded/page.webp", width: 1600, height: 600, panSpeed: 320 },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const input = screen.getByLabelText("Durée du panoramique (vh)");
+    expect(input).toHaveValue(320);
+
+    fireEvent.change(input, { target: { value: "0" } });
+    fireEvent.change(input, { target: { value: "" } });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test("animation exposes an editable scrollHeight defaulting to SCROLL_DISTANCES", () => {
+    const section = makeSection({
+      type: "animation",
+      config: {
+        type: "animation",
+        spritePath: "uploaded/sprite.webp",
+        frameWidth: 100,
+        frameHeight: 100,
+        columns: 4,
+        rows: 3,
+        frameCount: 10,
+      },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const input = screen.getByLabelText("Hauteur du défilement (vh)");
+    expect(input).toHaveValue(200);
+    expect(screen.queryByLabelText("Durée du panoramique (vh)")).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "350" } });
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({ type: "animation", scrollHeight: 350 });
+  });
+
+  test("scrollHeight ignores non-positive values so the config stays Zod-valid", () => {
+    const section = makeSection({
+      type: "animation",
+      config: {
+        type: "animation",
+        spritePath: "uploaded/sprite.webp",
+        frameWidth: 100,
+        frameHeight: 100,
+        columns: 4,
+        rows: 3,
+        frameCount: 10,
+        scrollHeight: 250,
+      },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const input = screen.getByLabelText("Hauteur du défilement (vh)");
+    expect(input).toHaveValue(250);
+
+    fireEvent.change(input, { target: { value: "-10" } });
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
