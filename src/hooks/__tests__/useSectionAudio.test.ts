@@ -178,6 +178,44 @@ describe("useSectionAudio — élément Audio partagé + une piste à la fois", 
     expect(result.current.isPlaying).toBe(false)
   })
 
+  test("unlocked reste false avant le premier geste, puis passe à true", async () => {
+    const useSectionAudio = await loadHook()
+    const { result } = renderHook(() => useSectionAudio())
+
+    expect(result.current.unlocked).toBe(false)
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"))
+    })
+
+    expect(result.current.unlocked).toBe(true)
+  })
+
+  test("onUnlocked notifie les abonnés au premier geste, plus après désabonnement", async () => {
+    const useSectionAudio = await loadHook()
+    const { result } = renderHook(() => useSectionAudio())
+
+    const notified = vi.fn()
+    const removed = vi.fn()
+    const unsubscribeNotified = result.current.onUnlocked(notified)
+    const unsubscribeRemoved = result.current.onUnlocked(removed)
+    unsubscribeRemoved()
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"))
+    })
+
+    expect(notified).toHaveBeenCalledTimes(1)
+    expect(removed).not.toHaveBeenCalled()
+
+    unsubscribeNotified()
+
+    act(() => {
+      window.dispatchEvent(new Event("keydown"))
+    })
+    expect(notified).toHaveBeenCalledTimes(1)
+  })
+
   test("ne joue pas avant le premier geste (autoplay policy navigateur)", async () => {
     const useSectionAudio = await loadHook()
     const { result } = renderHook(() => useSectionAudio())

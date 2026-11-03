@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTranslations } from "next-intl";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, VolumeX } from "lucide-react";
 
 import { useSectionAudio, type UseSectionAudioResult } from "@/hooks/useSectionAudio";
 import { SectionAudioContext } from "./section-audio-context";
@@ -20,15 +20,21 @@ const FALLBACK_AUDIO: UseSectionAudioResult = {
   playSectionAudio: () => {},
   pauseCurrent: () => {},
   isPlaying: false,
+  unlocked: false,
+  onUnlocked: () => () => {},
 };
 
 /** Monte le hook T13 côté client uniquement et pousse la valeur réelle au provider. */
 function AudioBinder({ onAudio }: { onAudio: (a: UseSectionAudioResult) => void }) {
   const audio = useSectionAudio();
   const lastIsPlaying = React.useRef<boolean | null>(null);
+  const lastUnlocked = React.useRef<boolean | null>(null);
   React.useEffect(() => {
-    if (lastIsPlaying.current !== audio.isPlaying) {
+    // Republier aussi sur le déverrouillage : le tracker s'en sert pour rejouer
+    // la section déjà visible avant le premier geste.
+    if (lastIsPlaying.current !== audio.isPlaying || lastUnlocked.current !== audio.unlocked) {
       lastIsPlaying.current = audio.isPlaying;
+      lastUnlocked.current = audio.unlocked;
       onAudio(audio);
     }
   }, [audio, onAudio]);
@@ -75,9 +81,23 @@ export default function ReaderShell({ data }: { data: ReaderPageData }) {
               <h1 className="truncate font-heading text-base font-semibold tracking-tight text-foreground">
                 {data.webtoon.title}
               </h1>
-              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                {t("sectionCount", { count: sections.length })}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                {audio.isPlaying ? (
+                  <button
+                    type="button"
+                    onClick={audio.pauseCurrent}
+                    aria-label={t("mute")}
+                    title={t("mute")}
+                    data-testid="reader-mute"
+                    className="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                  >
+                    <VolumeX aria-hidden="true" className="size-4" />
+                  </button>
+                ) : null}
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {t("sectionCount", { count: sections.length })}
+                </span>
+              </div>
             </div>
           </header>
 

@@ -4,6 +4,18 @@ export interface UseSectionAudioResult {
   playSectionAudio(sectionId: string, audioUrl: string | null): void
   pauseCurrent(): void
   isPlaying: boolean
+  /**
+   * `true` dès qu'un geste utilisateur réel (pointerdown, touchstart, scroll,
+   * keydown) a déverrouillé la lecture. Avant ça, `playSectionAudio()` est un
+   * no-op : aucune lecture automatique imposée par le navigateur.
+   */
+  unlocked: boolean
+  /**
+   * Souscription aux déverrouillages. Permet aux consommateurs de rejouer la
+   * section qu'ils avaient mémorisée quand l'autoplay était encore bloqué.
+   * Retourne la fonction de désabonnement.
+   */
+  onUnlocked(listener: () => void): () => void
 }
 
 // Singleton module : un seul élément média partagé par toute l'app → garantie
@@ -15,6 +27,10 @@ let playing = false
 let unlocked = false
 let gesturesAttached = false
 const listeners = new Set<() => void>()
+// Set séparé du store : notifier un déverrouillage peut déclencher une lecture
+// (qui émet elle-même sur `listeners`). Mélanger les deux provoquerait une
+// itération réentrante du même Set.
+const unlockListeners = new Set<() => void>()
 
 function resolveAudioCtor(): (new () => HTMLAudioElement) | null {
   const g = globalThis as { Audio?: new () => HTMLAudioElement }
@@ -42,6 +58,9 @@ function handleGesture(): void {
   const el = getAudio()
   if (el === null) return
   unlocked = true
+  emitChange()
+  // Copie : un listener peut se désabonner (ou en ajouter) pendant l'itération.
+  for (const listener of [...unlockListeners]) listener()
 }
 
 function attachGestures(): void {
@@ -62,8 +81,20 @@ function subscribe(listener: () => void): () => void {
   }
 }
 
-function getSnapshot(): boolean {
+function onUnlocked(listener: () => void): () => void {
+  attachGestures()
+  unlockListeners.add(listener)
+  return () => {
+    unlockListeners.delete(listener)
+  }
+}
+
+function getPlayingSnapshot(): boolean {
   return playing
+}
+
+function getUnlockedSnapshot(): boolean {
+  return unlocked
 }
 
 function playSectionAudio(sectionId: string, audioUrl: string | null): void {
@@ -101,6 +132,7 @@ function pauseCurrent(): void {
 }
 
 export function useSectionAudio(): UseSectionAudioResult {
-  const isPlaying = React.useSyncExternalStore(subscribe, getSnapshot, () => false)
-  return { playSectionAudio, pauseCurrent, isPlaying }
+  const isPlaying = React.useSyncExternalStore(subscribe, getPlayingSnapshot, () => false)
+  const isUnlocked = React.useSyncExternalStore(subscribe, getUnlockedSnapshot, () => false)
+  return { playSectionAudio, pauseCurrent, isPlaying, unlocked: isUnlocked, onUnlocked }
 }

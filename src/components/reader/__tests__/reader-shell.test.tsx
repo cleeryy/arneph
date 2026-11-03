@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -267,6 +267,90 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
     expect(playSpy).toHaveBeenCalled();
     const player = playSpy.mock.instances[0] as HTMLAudioElement;
     expect(player.src).toContain(expectedUrl.replace(/^http:\/\/127\.0\.0\.1:54321/, ""));
+
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  test("lecture en cours → bouton mute accessible dans l'en-tête, clic = pause", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.useFakeTimers();
+    // Purge les espions d'éléments média posés par un test précédent.
+    vi.restoreAllMocks();
+
+    let observerCallback: IntersectionObserverCallback | null = null;
+    class TestObserver {
+      constructor(cb: IntersectionObserverCallback) {
+        observerCallback = cb;
+      }
+      observe = () => {};
+      unobserve = () => {};
+      disconnect = () => {};
+    }
+    vi.stubGlobal("IntersectionObserver", TestObserver);
+
+    const playSpy = vi
+      .spyOn(window.HTMLAudioElement.prototype, "play")
+      .mockImplementation(function (this: HTMLAudioElement) {
+        return Promise.resolve();
+      });
+    const pauseSpy = vi
+      .spyOn(window.HTMLAudioElement.prototype, "pause")
+      .mockImplementation(function (this: HTMLAudioElement) {});
+
+    const section = makeSection(
+      1,
+      "image",
+      { type: "image", imagePath: "a.webp", width: 800, height: 1200 },
+      "sec-mute",
+    );
+    section.audioPath = "audio/mute.mp3";
+    section.images = [
+      {
+        id: "img-1",
+        sectionId: section.id,
+        webtoonId: section.webtoonId,
+        storagePath: "a.webp",
+        width: 800,
+        height: 1200,
+        mimeType: "image/webp",
+        position: 0,
+      },
+    ];
+    renderShell([section]);
+
+    // Pas de contrôle audio tant que rien ne joue.
+    expect(screen.queryByRole("button", { name: "Couper le son" })).toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+
+    const target = document.querySelector("[data-section-id='sec-mute']");
+    expect(target).not.toBeNull();
+
+    await act(async () => {
+      observerCallback?.(
+        [{ target, isIntersecting: true, intersectionRatio: 0.6 } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      );
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+
+    expect(playSpy).toHaveBeenCalled();
+
+    const muteButton = screen.getByRole("button", { name: "Couper le son" });
+    expect(muteButton).toHaveAttribute("type", "button");
+
+    await act(async () => {
+      fireEvent.click(muteButton);
+    });
+
+    expect(pauseSpy).toHaveBeenCalled();
+    // isPlaying repasse à false : le contrôle disparaît.
+    expect(screen.queryByRole("button", { name: "Couper le son" })).toBeNull();
 
     vi.useRealTimers();
     vi.unstubAllGlobals();
