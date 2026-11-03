@@ -4,12 +4,21 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { AlertCircle, Plus, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  BookOpen,
+  Globe,
+  Layers,
+  Lock,
+  PenLine,
+  Plus,
+  Trash2,
+} from "lucide-react";
 
 import { createWebtoonAction, deleteWebtoonAction } from "@/app/editor/actions";
 import {
   Card,
-  CardDescription,
+  CardAction,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -35,7 +44,9 @@ interface WebtoonListClientProps {
   webtoons: WebtoonListItem[];
 }
 
-export function WebtoonListClient({ title, webtoons }: WebtoonListClientProps) {
+export function WebtoonListClient({ webtoons }: WebtoonListClientProps) {
+  // `title` reste dans le contrat : le layout éditeur affiche déjà ce titre
+  // dans sa barre supérieure, on évite donc un doublon visible ici.
   const t = useTranslations("editor");
   const tc = useTranslations("common");
   const router = useRouter();
@@ -98,86 +109,116 @@ export function WebtoonListClient({ title, webtoons }: WebtoonListClientProps) {
 
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-heading text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
-          {title}
-        </h1>
+      <header className="flex items-center justify-between gap-4 border-b border-border pb-5">
+        <p className="font-mono text-[11px] font-medium tracking-[0.28em] text-muted-foreground uppercase">
+          Arneph
+        </p>
         <Button
           type="button"
           size="lg"
-          className="h-12 gap-2 text-base"
+          className="h-10 shrink-0 gap-2 text-sm"
           onClick={handleCreate}
           disabled={creating}
         >
           <Plus aria-hidden="true" />
           {t("newWebtoon")}
         </Button>
-      </div>
+      </header>
 
       {createError && (
         <div
+          role="alert"
           data-testid="create-error"
-          className="mt-4 flex items-center gap-2 rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive"
+          className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
         >
-          <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+          <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
           {createError}
         </div>
       )}
 
       {webtoons.length === 0 ? (
-        <p
+        <div
           data-testid="editor-empty"
-          className="mx-auto mt-24 text-center text-base text-muted-foreground"
+          className="mt-8 flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-muted/20 px-6 py-16 text-center"
         >
-          {t("empty")}
-        </p>
+          <span className="flex size-11 items-center justify-center rounded-full border border-border bg-background text-muted-foreground">
+            <Layers aria-hidden="true" className="size-5" />
+          </span>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            {t("empty")}
+          </p>
+        </div>
       ) : (
-        <ul className="mx-auto mt-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {webtoons.map((webtoon) => (
-            <li key={webtoon.id}>
-              <Card className="h-full transition-colors hover:bg-accent/50">
-                <CardHeader>
-                  <CardTitle>{webtoon.title}</CardTitle>
-                  <CardDescription>
-                    {webtoon.visibility === "draft"
-                      ? t("draft")
-                      : t("published")}
-                  </CardDescription>
-                </CardHeader>
-                <div className="flex items-center gap-2 px-6 pb-4">
-                  <Link
-                    href={`/editor/${webtoon.id}`}
-                    className={cn(
-                      buttonVariants({ variant: "outline", size: "sm" }),
-                      "flex-1",
-                    )}
-                  >
-                    {t("edit")}
-                  </Link>
-                  {webtoon.visibility === "published" && (
-                    <Link
-                      href={`/read/${webtoon.id}`}
+        <ul className="mt-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {webtoons.map((webtoon) => {
+            const isPublished = webtoon.visibility === "published";
+
+            return (
+              <li key={webtoon.id} className="min-w-0">
+                <Card className="h-full gap-0 py-0 transition-colors duration-200 hover:ring-foreground/25">
+                  <CardHeader className="relative gap-3 px-4 pt-4 pb-4">
+                    <CardTitle className="pr-10 text-[15px] leading-snug">
+                      {webtoon.title}
+                    </CardTitle>
+
+                    <CardAction>
+                      <button
+                        type="button"
+                        data-testid={`delete-${webtoon.id}`}
+                        aria-label={t("delete")}
+                        title={t("delete")}
+                        onClick={() => requestDelete(webtoon)}
+                        className="-mt-1 -mr-1 inline-flex size-9 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-foreground/60"
+                      >
+                        <Trash2 aria-hidden="true" className="size-4" />
+                      </button>
+                    </CardAction>
+
+                    <span
                       className={cn(
-                        buttonVariants({ variant: "outline", size: "sm" }),
-                        "flex-1",
+                        "inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+                        isPublished
+                          ? "bg-green-100 text-green-700 dark:bg-green-500/15 dark:text-green-400"
+                          : "bg-muted text-muted-foreground",
                       )}
                     >
-                      {t("read")}
+                      {isPublished ? (
+                        <Globe aria-hidden="true" className="size-3" />
+                      ) : (
+                        <Lock aria-hidden="true" className="size-3" />
+                      )}
+                      {isPublished ? t("published") : t("draft")}
+                    </span>
+                  </CardHeader>
+
+                  <div className="mt-auto flex items-center gap-2 border-t border-border/70 px-4 py-3">
+                    <Link
+                      href={`/editor/${webtoon.id}`}
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" }),
+                        "h-8 flex-1 gap-1.5 focus-visible:ring-2 focus-visible:ring-foreground/60",
+                      )}
+                    >
+                      <PenLine aria-hidden="true" className="size-3.5" />
+                      {t("edit")}
                     </Link>
-                  )}
-                  <button
-                    type="button"
-                    data-testid={`delete-${webtoon.id}`}
-                    aria-label={t("delete")}
-                    onClick={() => requestDelete(webtoon)}
-                    className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
-                  >
-                    <Trash2 aria-hidden="true" className="size-4" />
-                  </button>
-                </div>
-              </Card>
-            </li>
-          ))}
+                    {isPublished && (
+                      <Link
+                        href={`/read/${webtoon.id}`}
+                        className={cn(
+                          buttonVariants({ variant: "outline", size: "sm" }),
+                          "h-8 flex-1 gap-1.5 focus-visible:ring-2 focus-visible:ring-foreground/60",
+                        )}
+                      >
+                        <BookOpen aria-hidden="true" className="size-3.5" />
+                        {t("read")}
+                      </Link>
+                    )}
+                  </div>
+                </Card>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -187,22 +228,31 @@ export function WebtoonListClient({ title, webtoons }: WebtoonListClientProps) {
           if (!open) closeDeleteDialog();
         }}
       >
-        <DialogContent data-testid="delete-dialog">
+        <DialogContent data-testid="delete-dialog" className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("delete")}</DialogTitle>
+            <span className="flex size-10 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <Trash2 aria-hidden="true" className="size-4" />
+            </span>
+            <DialogTitle className="text-lg leading-snug">
+              {t("delete")}
+            </DialogTitle>
             <DialogDescription>{t("confirm")}</DialogDescription>
           </DialogHeader>
           {pendingDelete && (
-            <p className="text-sm font-medium text-foreground">
+            <p className="truncate rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm font-medium text-foreground">
               {pendingDelete.title}
             </p>
           )}
           {deleteError && (
             <div
+              role="alert"
               data-testid="delete-error"
-              className="flex items-center gap-2 rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
             >
-              <AlertCircle className="size-4 shrink-0" aria-hidden="true" />
+              <AlertCircle
+                className="mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
               {deleteError}
             </div>
           )}
