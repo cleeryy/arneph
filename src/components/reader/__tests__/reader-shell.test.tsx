@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -190,6 +190,86 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
 
     expect(screen.getByText("Webtoon Test")).toBeInTheDocument();
     expect(screen.getByText("2 sections")).toBeInTheDocument();
+  });
+
+  test("section audio visible → le vrai lecteur média joue l'URL Supabase (intégration)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.useFakeTimers();
+
+    // Capture le callback IntersectionObserver installé par SectionAudioTracker.
+    let observerCallback: IntersectionObserverCallback | null = null;
+    const observed: Element[] = [];
+    class TestObserver {
+      constructor(cb: IntersectionObserverCallback) {
+        observerCallback = cb;
+      }
+      observe = (el: Element) => {
+        observed.push(el);
+      };
+      unobserve = () => {};
+      disconnect = () => {};
+    }
+    vi.stubGlobal("IntersectionObserver", TestObserver);
+
+    // Vrai HTMLAudioElement jsdom : on espionne play() (résolu) sans le mocker.
+    const playSpy = vi
+      .spyOn(window.HTMLAudioElement.prototype, "play")
+      .mockImplementation(function (this: HTMLAudioElement) {
+        return Promise.resolve();
+      });
+    vi.spyOn(window.HTMLAudioElement.prototype, "pause").mockImplementation(function (
+      this: HTMLAudioElement,
+    ) {});
+
+    const section = makeSection(
+      1,
+      "image",
+      { type: "image", imagePath: "a.webp", width: 800, height: 1200 },
+      "sec-audio-int",
+    );
+    section.audioPath = "audio/section1.mp3";
+    section.images = [
+      {
+        id: "img-1",
+        sectionId: section.id,
+        webtoonId: section.webtoonId,
+        storagePath: "a.webp",
+        width: 800,
+        height: 1200,
+        mimeType: "image/webp",
+        position: 0,
+      },
+    ];
+    renderShell([section]);
+
+    // Geste utilisateur : déverrouille l'autoplay (politique navigateur).
+    await act(async () => {
+      window.dispatchEvent(new Event("pointerdown"));
+    });
+
+    const target = document.querySelector("[data-section-id='sec-audio-int']");
+    expect(target).not.toBeNull();
+
+    await act(async () => {
+      observerCallback?.(
+        [
+          { target, isIntersecting: true, intersectionRatio: 0.5 } as IntersectionObserverEntry,
+        ],
+        {} as IntersectionObserver,
+      );
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(200);
+    });
+
+    const expectedUrl =
+      "http://127.0.0.1:54321/storage/v1/object/public/webtoon-images/audio/section1.mp3";
+    expect(playSpy).toHaveBeenCalled();
+    const player = playSpy.mock.instances[0] as HTMLAudioElement;
+    expect(player.src).toContain(expectedUrl.replace(/^http:\/\/127\.0\.0\.1:54321/, ""));
+
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   test("la section image utilise next/image (pas de <img> natif)", () => {

@@ -6,6 +6,7 @@ import { ArrowUp } from "lucide-react";
 
 import { useSectionAudio, type UseSectionAudioResult } from "@/hooks/useSectionAudio";
 import { SectionAudioContext } from "./section-audio-context";
+import { SectionAudioTracker } from "./SectionAudioTracker";
 import { SectionRenderer } from "./SectionRenderer";
 import type { ReaderPageData } from "@/app/read/[webtoonId]/page";
 
@@ -101,8 +102,11 @@ export default function ReaderShell({ data }: { data: ReaderPageData }) {
       </main>
       {/* Gate position enfant : le provider + main restent stables (pas de
           changement de type racine) — seul AudioBinder (hook T13 non SSR-safe)
-          monte après hydration. */}
+          monte après hydration. SectionAudioTracker est SSR-safe (rend null,
+          effect client uniquement) et consomme le contexte : FALLBACK avant
+          AudioBinder, vraies fonctions après — son effect se ré-abonne alors. */}
       {mounted ? <AudioBinder onAudio={handleAudio} /> : null}
+      <SectionAudioTracker sections={sections} />
     </SectionAudioContext.Provider>
   );
 }

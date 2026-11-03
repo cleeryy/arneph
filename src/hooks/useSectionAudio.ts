@@ -1,52 +1,36 @@
 import * as React from "react"
 
-/**
- * Contrat minimal du player audio.
- * Le vrai AudioContext (lib.dom) n'expose ni play(url) ni pause() : l'intégration
- * T19 branchera l'élément <audio> réel ; ce contrat permet le TDD par stub
- * (MockAudioContext resume/play/pause).
- */
-type AudioPlayer = {
-  resume(): void | Promise<void>
-  play(url: string): void
-  pause(): void
-}
-
 export interface UseSectionAudioResult {
   playSectionAudio(sectionId: string, audioUrl: string | null): void
   pauseCurrent(): void
   isPlaying: boolean
 }
 
-// Singleton module : état audio partagé par toute l'app → garantie "une seule
-// piste à la fois" même consommé par plusieurs sections (T19).
-let player: AudioPlayer | null = null
+// Singleton module : un seul élément média partagé par toute l'app → garantie
+// "une seule piste à la fois" même consommé par plusieurs sections.
+let audio: HTMLAudioElement | null = null
 let currentSectionId: string | null = null
+let currentUrl: string | null = null
 let playing = false
 let unlocked = false
 let gesturesAttached = false
 const listeners = new Set<() => void>()
 
-function resolveAudioContextCtor(): (new () => AudioContext) | null {
-  const g = globalThis as {
-    AudioContext?: new () => AudioContext
-    webkitAudioContext?: new () => AudioContext
-  }
-  const Ctor = g.AudioContext ?? g.webkitAudioContext
-  return typeof Ctor === "function" ? Ctor : null
+function resolveAudioCtor(): (new () => HTMLAudioElement) | null {
+  const g = globalThis as { Audio?: new () => HTMLAudioElement }
+  return typeof g.Audio === "function" ? g.Audio : null
 }
 
-function getPlayer(): AudioPlayer | null {
-  if (player !== null) return player
-  const Ctor = resolveAudioContextCtor()
+function getAudio(): HTMLAudioElement | null {
+  if (audio !== null) return audio
+  const Ctor = resolveAudioCtor()
   if (Ctor === null) return null
   try {
-    // AudioContext réel sans play/pause : cast borné vers le contrat du player
-    player = new Ctor() as unknown as AudioPlayer
+    audio = new Ctor()
   } catch {
-    player = null
+    audio = null
   }
-  return player
+  return audio
 }
 
 function emitChange(): void {
@@ -55,11 +39,9 @@ function emitChange(): void {
 
 function handleGesture(): void {
   if (unlocked) return
-  const p = getPlayer()
-  if (p === null) return
+  const el = getAudio()
+  if (el === null) return
   unlocked = true
-  // Autoplay policy → resume() peut être rejeté (NotAllowedError) : échec silencieux
-  void Promise.resolve(p.resume()).catch(() => {})
 }
 
 function attachGestures(): void {
@@ -86,20 +68,34 @@ function getSnapshot(): boolean {
 
 function playSectionAudio(sectionId: string, audioUrl: string | null): void {
   if (audioUrl === null || !unlocked) return
-  const p = getPlayer()
-  if (p === null) return
+  const el = getAudio()
+  if (el === null) return
   if (currentSectionId !== null && currentSectionId !== sectionId) {
-    p.pause()
+    el.pause()
+  }
+  if (currentUrl !== audioUrl) {
+    el.src = audioUrl
+    currentUrl = audioUrl
   }
   currentSectionId = sectionId
   playing = true
-  p.play(audioUrl)
   emitChange()
+  // play() peut être rejeté (autoplay policy, source illisible) : échec
+  // silencieux sans unhandled rejection, isPlaying repasse à false.
+  void Promise.resolve(el.play()).catch(() => {
+    if (currentSectionId === sectionId) {
+      currentSectionId = null
+      currentUrl = null
+      playing = false
+      emitChange()
+    }
+  })
 }
 
 function pauseCurrent(): void {
-  if (player !== null && playing) player.pause()
+  if (audio !== null && playing) audio.pause()
   currentSectionId = null
+  currentUrl = null
   playing = false
   emitChange()
 }
