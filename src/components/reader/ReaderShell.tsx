@@ -5,9 +5,11 @@ import { useTranslations } from "next-intl";
 import { ArrowUp, VolumeX } from "lucide-react";
 
 import { useSectionAudio, type UseSectionAudioResult } from "@/hooks/useSectionAudio";
+import { useReadingProgress } from "@/hooks/useReadingProgress";
 import { SectionAudioContext } from "./section-audio-context";
 import { SectionAudioTracker } from "./SectionAudioTracker";
 import { SectionRenderer } from "./SectionRenderer";
+import ReadingProgress from "./ReadingProgress";
 import type { ReaderPageData } from "@/app/read/[webtoonId]/page";
 
 // Valeur audio par défaut (SSR + première passe d'hydration). Le hook T13
@@ -58,6 +60,9 @@ export default function ReaderShell({ data }: { data: ReaderPageData }) {
   );
   const [audio, setAudio] = React.useState<UseSectionAudioResult>(FALLBACK_AUDIO);
   const [showBackToTop, setShowBackToTop] = React.useState(false);
+  const { progress, savedProgress, resume } = useReadingProgress({
+    webtoonId: data.webtoon.id,
+  });
 
   const handleAudio = React.useCallback((a: UseSectionAudioResult) => setAudio(a), []);
 
@@ -75,6 +80,7 @@ export default function ReaderShell({ data }: { data: ReaderPageData }) {
   return (
     <SectionAudioContext.Provider value={audio}>
       <main className="flex min-h-dvh flex-col bg-background">
+        <ReadingProgress progress={progress} savedProgress={savedProgress} onResume={resume} />
         <div data-testid="reader-container" className="mx-auto w-full max-w-[800px]">
           <header className="sticky top-0 z-10 border-b border-border bg-background/90 backdrop-blur">
             <div className="flex items-center justify-between gap-4 px-4 py-3">

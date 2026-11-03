@@ -47,6 +47,8 @@ vi.mock("next/image", () => ({
   },
 }));
 
+import { renderToString } from "react-dom/server";
+
 import ReaderShell from "../ReaderShell";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { ReaderPageData } from "@/app/read/[webtoonId]/page";
@@ -381,5 +383,158 @@ describe("ReaderShell — conteneur lecteur (T15)", () => {
     // MUST NOT T15 : aucun <img> natif — next/image uniquement (T16+).
     expect(screen.getByTestId("next-image")).toBeInTheDocument();
     expect(document.querySelector("img:not([data-testid])")).toBeNull();
+  });
+});
+
+describe("ReaderShell — progression de lecture et reprise", () => {
+  const STORAGE_KEY = "arneph:reading-progress:v1:w1";
+  let frames: Map<number, FrameRequestCallback>;
+  let nextFrameId: number;
+  const metrics = { scrollY: 0, innerHeight: 1000, scrollHeight: 4000 };
+
+  beforeEach(() => {
+    localStorage.clear();
+    metrics.scrollY = 0;
+    metrics.innerHeight = 1000;
+    metrics.scrollHeight = 4000;
+    frames = new Map();
+    nextFrameId = 1;
+    vi.spyOn(window, "scrollY", "get").mockImplementation(() => metrics.scrollY);
+    vi.spyOn(window, "innerHeight", "get").mockImplementation(() => metrics.innerHeight);
+    vi.spyOn(document.documentElement, "scrollHeight", "get").mockImplementation(
+      () => metrics.scrollHeight,
+    );
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    vi.spyOn(window, "scrollBy").mockImplementation(() => {});
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const id = nextFrameId++;
+      frames.set(id, callback);
+      return id;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+      frames.delete(id);
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    localStorage.clear();
+  });
+
+  function flushFrames() {
+    const pending = [...frames.values()];
+    frames.clear();
+    act(() => {
+      for (const callback of pending) callback(0);
+    });
+  }
+
+  test("barre de progression accessible, mise à jour au scroll via rAF", () => {
+    renderShell([
+      makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
+    ]);
+
+    const bar = screen.getByRole("progressbar", { name: "Progression de lecture" });
+    expect(bar).toHaveAttribute("aria-valuemin", "0");
+    expect(bar).toHaveAttribute("aria-valuemax", "100");
+    expect(bar).toHaveAttribute("aria-valuenow", "0");
+
+    metrics.scrollY = 1500;
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+    // Rien tant que la frame n'est pas rendue (throttle rAF).
+    expect(bar).toHaveAttribute("aria-valuenow", "0");
+
+    flushFrames();
+    expect(bar).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  test.each([
+    ["0.05", "5", true],
+    ["0.049", "", false],
+    ["0.95", "95", true],
+    ["0.951", "", false],
+  ])("progression sauvegardée %s → bouton de reprise visible=%s", (ratio, percent, visible) => {
+    localStorage.setItem(STORAGE_KEY, ratio);
+    renderShell([
+      makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
+    ]);
+
+    if (visible) {
+      const button = screen.getByRole("button", { name: `Reprendre à ${percent} %` });
+      expect(button).toHaveAttribute("type", "button");
+    } else {
+      expect(screen.queryByTestId("resume-reading")).toBeNull();
+    }
+  });
+
+  test("clic sur Reprendre : scrolle au ratio sauvegardé et masque le bouton", () => {
+    localStorage.setItem(STORAGE_KEY, "0.4");
+    renderShell([
+      makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
+    ]);
+
+    const button = screen.getByRole("button", { name: "Reprendre à 40 %" });
+    fireEvent.click(button);
+
+    // 0.4 × (4000 - 1000) = 1200
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 1200, behavior: "smooth" });
+    expect(screen.queryByTestId("resume-reading")).toBeNull();
+  });
+
+  test("clavier : une page par flèche/PageDown, Home revient en haut", () => {
+    renderShell([
+      makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
+    ]);
+
+    fireEvent.keyDown(window, { key: "ArrowDown" });
+    expect(window.scrollBy).toHaveBeenLastCalledWith({ top: 1000, behavior: "smooth" });
+
+    fireEvent.keyDown(window, { key: "PageDown" });
+    expect(window.scrollBy).toHaveBeenLastCalledWith({ top: 1000, behavior: "smooth" });
+
+    fireEvent.keyDown(window, { key: "ArrowUp" });
+    expect(window.scrollBy).toHaveBeenLastCalledWith({ top: -1000, behavior: "smooth" });
+
+    fireEvent.keyDown(window, { key: "PageUp" });
+    expect(window.scrollBy).toHaveBeenLastCalledWith({ top: -1000, behavior: "smooth" });
+
+    fireEvent.keyDown(window, { key: "Home" });
+    expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 0, behavior: "smooth" });
+  });
+
+  test("clavier sans effet dans les champs de saisie", () => {
+    renderShell([
+      makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
+    ]);
+
+    const textarea = document.createElement("textarea");
+    document.body.append(textarea);
+    textarea.focus();
+
+    fireEvent.keyDown(textarea, { key: "PageDown" });
+
+    expect(window.scrollBy).not.toHaveBeenCalled();
+    textarea.remove();
+  });
+
+  test("rendu serveur sans window : ni crash ni accès localStorage", () => {
+    const data: ReaderPageData = {
+      webtoon: {
+        ...baseWebtoon,
+        sections: [
+          makeSection(1, "image", { type: "image", imagePath: "a.webp", width: 800, height: 1200 }),
+        ],
+      },
+    };
+    const getItemSpy = vi.spyOn(Storage.prototype, "getItem");
+    vi.stubGlobal("window", undefined);
+
+    const html = renderToString(wrap(<ReaderShell data={data} />));
+
+    expect(html).toContain("Webtoon Test");
+    expect(getItemSpy).not.toHaveBeenCalled();
   });
 });
