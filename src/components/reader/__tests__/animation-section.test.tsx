@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
 import { AnimationSection, spriteUrl } from "../AnimationSection";
+import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type { AnimationSectionConfig } from "@/types/webtoon";
 import frMessages from "../../../../messages/fr.json";
@@ -205,5 +206,154 @@ describe("AnimationSection — sprite sheet scroll-driven (T18)", () => {
     expect(screen.getByTestId("animation-frame").style.backgroundImage).toBe(
       `url("${spriteUrl("sprite.webp")}")`,
     );
+  });
+});
+
+describe("AnimationSection — config invalide clampée", () => {
+  test("dimensions de frame invalides (0 / NaN / négatives) : backgroundSize finie, jamais NaN", () => {
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+
+    const config = {
+      ...baseConfig,
+      frameWidth: 0,
+      frameHeight: Number.NaN,
+      columns: -3,
+      rows: 0,
+    } as AnimationSectionConfig;
+
+    render(wrap(<AnimationSection section={makeSection(config)} />));
+
+    const frame = screen.getByTestId("animation-frame");
+    expect(frame.style.backgroundSize).not.toContain("NaN");
+    expect(frame.style.backgroundSize).toBe("1px 1px");
+    expect(frame.style.width).toBe("1px");
+    expect(frame.style.height).toBe("1px");
+  });
+
+  test("frameWidth/Height non finis (Infinity, chaîne) : valeurs finies conservées côté grille", () => {
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+
+    const config = {
+      ...baseConfig,
+      frameWidth: Number.POSITIVE_INFINITY,
+      frameHeight: "150",
+    } as unknown as AnimationSectionConfig;
+
+    render(wrap(<AnimationSection section={makeSection(config)} />));
+
+    const frame = screen.getByTestId("animation-frame");
+    expect(frame.style.backgroundSize).toMatch(/^\d+px \d+px$/);
+    expect(frame.style.backgroundSize).toBe("4px 3px");
+  });
+
+  test("frameCount invalide (0 / négatif / NaN) : une seule frame, position stable", () => {
+    mockUseScroll.mockReturnValue({ scrollYProgress: 1 });
+
+    const { rerender } = render(
+      wrap(<AnimationSection section={makeSection({ ...baseConfig, frameCount: 0 })} />),
+    );
+    expect(screen.getByTestId("animation-frame").style.backgroundPosition).toBe(
+      "0px 0px",
+    );
+
+    rerender(
+      wrap(<AnimationSection section={makeSection({ ...baseConfig, frameCount: -7 })} />),
+    );
+    expect(screen.getByTestId("animation-frame").style.backgroundPosition).toBe(
+      "0px 0px",
+    );
+
+    rerender(
+      wrap(
+        <AnimationSection section={makeSection({ ...baseConfig, frameCount: Number.NaN })} />,
+      ),
+    );
+    const position = screen.getByTestId("animation-frame").style.backgroundPosition;
+    expect(position).not.toContain("NaN");
+    expect(position).toBe("0px 0px");
+  });
+
+  test("scrollHeight invalide (0 / NaN / négatif) : défaut SCROLL_DISTANCES.animation", () => {
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+
+    const { rerender } = render(
+      wrap(<AnimationSection section={makeSection({ ...baseConfig, scrollHeight: 0 })} />),
+    );
+    expect(screen.getByTestId("animation-section").style.height).toBe(
+      `${SCROLL_DISTANCES.animation}vh`,
+    );
+
+    rerender(
+      wrap(
+        <AnimationSection section={makeSection({ ...baseConfig, scrollHeight: Number.NaN })} />,
+      ),
+    );
+    expect(screen.getByTestId("animation-section").style.height).toBe(
+      `${SCROLL_DISTANCES.animation}vh`,
+    );
+
+    rerender(
+      wrap(<AnimationSection section={makeSection({ ...baseConfig, scrollHeight: -50 })} />),
+    );
+    expect(screen.getByTestId("animation-section").style.height).toBe(
+      `${SCROLL_DISTANCES.animation}vh`,
+    );
+  });
+
+  test("reduced-motion + config invalide : frame médiane figée et finie", () => {
+    mockUseReducedMotion.mockReturnValue(true);
+    mockUseScroll.mockReturnValue({ scrollYProgress: 1 });
+
+    const config = {
+      ...baseConfig,
+      frameWidth: 0,
+      frameHeight: Number.NaN,
+      columns: 0,
+      rows: 0,
+      frameCount: Number.NaN,
+    } as AnimationSectionConfig;
+
+    render(wrap(<AnimationSection section={makeSection(config)} />));
+
+    const position = screen.getByTestId("animation-frame").style.backgroundPosition;
+    expect(position).not.toContain("NaN");
+    expect(position).toBe("0px 0px");
+  });
+});
+
+describe("AnimationSection — sprite manquant", () => {
+  test("aucun chemin de sprite : placeholder borné, pas de frame ni de hauteur de scroll", () => {
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+
+    const section = makeSection({ ...baseConfig, spritePath: "" });
+    section.images = [];
+    render(wrap(<AnimationSection section={section} />));
+
+    expect(screen.getByTestId("animation-placeholder")).toBeInTheDocument();
+    expect(screen.queryByTestId("animation-frame")).not.toBeInTheDocument();
+    expect(screen.getByTestId("animation-section").style.height).toBe("");
+  });
+
+  test("spritePath undefined ne fait pas planter le rendu", () => {
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+
+    const section = makeSection(baseConfig);
+    section.images = [];
+    (section.config as { spritePath?: string }).spritePath = undefined;
+
+    expect(() => render(wrap(<AnimationSection section={section} />))).not.toThrow();
+    expect(screen.getByTestId("animation-placeholder")).toBeInTheDocument();
+  });
+
+  test("sans sprite : aucune requête vers la racine du bucket storage", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://localhost:54321");
+    mockUseScroll.mockReturnValue({ scrollYProgress: 0 });
+
+    const section = makeSection({ ...baseConfig, spritePath: "" });
+    section.images = [];
+    const { container } = render(wrap(<AnimationSection section={section} />));
+
+    expect(container.innerHTML).not.toContain("webtoon-images/");
+    expect(container.querySelector("img")).toBeNull();
   });
 });
