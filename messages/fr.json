@@ -30,7 +30,10 @@
       "panX": "Section panoramique",
       "animation": "Section animation",
       "pending": "Rendu temporaire — composant final en cours de développement (T16–T18)"
-    }
+    },
+    "readingProgress": "Progression de lecture",
+    "resumeAt": "Reprendre à {percent} %",
+    "continueReading": "Continuer la lecture"
   },
   "editor": {
     "title": "Éditeur",
@@ -117,11 +120,21 @@
     "deleteError": "Impossible de supprimer le webtoon.",
     "publishNoSections": "Aucune section : ajoutez-en une avant de publier.",
     "publishError": "Impossible de publier le webtoon.",
-    "saveError": "Impossible d'enregistrer les modifications."
+    "saveError": "Impossible d'enregistrer les modifications.",
+    "duplicateSection": "Dupliquer la section",
+    "undo": "Annuler",
+    "redo": "Rétablir"
   },
   "errors": {
     "notFound": "Page introuvable",
     "generic": "Une erreur est survenue. Réessayez plus tard.",
     "retry": "Réessayer"
+  },
+  "library": {
+    "searchPlaceholder": "Rechercher un webtoon…",
+    "sortBy": "Trier par",
+    "sortNewest": "Plus récents",
+    "sortTitle": "Titre (A→Z)",
+    "noResults": "Aucun webtoon ne correspond."
   }
 }
