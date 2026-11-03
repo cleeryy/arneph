@@ -12,7 +12,13 @@ interface SectionLayersPanelClientProps {
 export function SectionLayersPanelClient({
   initialSections,
 }: SectionLayersPanelClientProps) {
-  const { sections, setSections, setIsDirty } = useEditorState();
+  const {
+    sections,
+    setSections,
+    setIsDirty,
+    selectedSectionId,
+    setSelectedSectionId,
+  } = useEditorState();
 
   React.useEffect(() => {
     setSections(initialSections);
@@ -26,11 +32,28 @@ export function SectionLayersPanelClient({
     [setSections, setIsDirty],
   );
 
+  const handleSelect = React.useCallback(
+    (id: string) => {
+      setSelectedSectionId(id);
+      // Scope to the canvas: layer rows and sortable wrappers also carry
+      // data-section-id, so target the rendered section card explicitly.
+      const target =
+        document.querySelector<HTMLElement>(
+          `[data-testid="editor-canvas"] [data-testid="editor-section-${id}"]`,
+        ) ??
+        document.querySelector<HTMLElement>(
+          `[data-testid="editor-canvas"] [data-section-id="${id}"]`,
+        );
+      target?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    },
+    [setSelectedSectionId],
+  );
+
   return (
     <SectionLayersPanel
       sections={sections}
-      selectedId={null}
-      onSelect={() => {}}
+      selectedId={selectedSectionId}
+      onSelect={handleSelect}
       onSectionsChange={handleSectionsChange}
     />
   );

@@ -47,9 +47,23 @@ function renumberSections(sections: SectionWithImages[]): SectionWithImages[] {
 
 export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCanvasProps) {
   const t = useTranslations("editor");
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [localSelectedId, setLocalSelectedId] = React.useState<string | null>(null);
   const editorState = React.useContext(EditorStateContext);
   const setIsDirty = editorState?.setIsDirty ?? noop;
+  // Selection lives in the editor context so the sidebar and the canvas agree.
+  // Without a provider (isolated canvas tests) it falls back to local state.
+  const selectedId = editorState ? editorState.selectedSectionId : localSelectedId;
+  const contextSetSelectedId = editorState?.setSelectedSectionId;
+  const setSelectedId = React.useCallback(
+    (next: string | null) => {
+      if (contextSetSelectedId) {
+        contextSetSelectedId(next);
+      } else {
+        setLocalSelectedId(next);
+      }
+    },
+    [contextSetSelectedId],
+  );
   const [configPanelSection, setConfigPanelSection] = React.useState<SectionWithImages | null>(null);
   const [newSectionOpen, setNewSectionOpen] = React.useState(false);
   const [scrollTargetId, setScrollTargetId] = React.useState<string | null>(null);
@@ -57,10 +71,12 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
   React.useEffect(() => {
     if (!scrollTargetId) return;
     const raf = requestAnimationFrame(() => {
-      document.querySelector(`[data-section-id="${scrollTargetId}"]`)?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-      });
+      document
+        .querySelector(`[data-testid="editor-canvas"] [data-section-id="${scrollTargetId}"]`)
+        ?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
       setScrollTargetId(null);
     });
     return () => cancelAnimationFrame(raf);
@@ -93,7 +109,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
       setSelectedId(newId);
       setScrollTargetId(newId);
     },
-    [sections, onSectionsChange, setIsDirty, webtoonId],
+    [sections, onSectionsChange, setIsDirty, setSelectedId, webtoonId],
   );
 
   const sensors = useSensors(
@@ -115,9 +131,12 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
     [sorted],
   );
 
-  const handleSelect = React.useCallback((id: string) => {
-    setSelectedId((prev) => (prev === id ? null : id));
-  }, []);
+  const handleSelect = React.useCallback(
+    (id: string) => {
+      setSelectedId(selectedId === id ? null : id);
+    },
+    [selectedId, setSelectedId],
+  );
 
   const handleConfigSectionChange = React.useCallback((section: SectionWithImages) => {
     onSectionsChange(sections.map((current) => (current.id === section.id ? section : current)));
@@ -131,9 +150,9 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
         renumberSections(sections.filter((section) => section.id !== id)),
       );
       setIsDirty(true);
-      setSelectedId((prev) => (prev === id ? null : prev));
+      if (selectedId === id) setSelectedId(null);
     },
-    [sections, onSectionsChange, setIsDirty],
+    [sections, onSectionsChange, setIsDirty, selectedId, setSelectedId],
   );
 
   const handleMoveUp = React.useCallback(
