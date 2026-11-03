@@ -4,9 +4,48 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
 import type { SectionWithImages } from "@/lib/db/queries";
+import { useEditorState } from "@/components/editor/EditorStateContext";
 import frMessages from "../../../../messages/fr.json";
-import { saveWebtoon, publishWebtoon, unpublishWebtoon } from "@/app/editor/actions";
+
+vi.mock("next/image", () => ({
+  default: (props: Record<string, unknown>) => {
+    const { src, alt, width, height, loading, priority, className, sizes, ...rest } =
+      props as {
+        src: string;
+        alt: string;
+        width: number;
+        height: number;
+        loading?: "eager" | "lazy";
+        priority?: boolean;
+        className?: string;
+        sizes?: string;
+      };
+    return (
+      <img
+        data-testid="next-image"
+        src={src}
+        alt={alt}
+        width={width}
+        height={height}
+        loading={loading}
+        sizes={sizes}
+        data-priority={String(priority)}
+        className={className}
+        {...rest}
+      />
+    );
+  },
+}));
+import {
+  saveWebtoon,
+  publishWebtoon,
+  unpublishWebtoon,
+  updateWebtoonMetadataAction,
+} from "@/app/editor/actions";
 vi.mock("@/app/editor/actions", () => ({
+  createWebtoonAction: vi.fn(),
+  updateWebtoonMetadataAction: vi.fn(),
+  deleteWebtoonAction: vi.fn(),
   saveWebtoon: vi.fn(),
   publishWebtoon: vi.fn(),
   unpublishWebtoon: vi.fn(),
@@ -25,6 +64,13 @@ vi.mock("next/link", () => ({
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  // clearAllMocks keeps queued mockResolvedValueOnce/mockImplementationOnce
+  // implementations: reset them so a skipped save in one test cannot leak
+  // into the next one.
+  vi.mocked(saveWebtoon).mockReset();
+  vi.mocked(publishWebtoon).mockReset();
+  vi.mocked(unpublishWebtoon).mockReset();
+  vi.mocked(updateWebtoonMetadataAction).mockReset();
 });
 
 // ---------------------------------------------------------------------------
@@ -124,11 +170,12 @@ describe("Editor client — layout applies server id map on save", () => {
   function makeSection(
     id: string,
     imageSectionId: string = id,
+    position: number = 1,
   ): SectionWithImages {
     return {
       id,
       webtoonId: "w1",
-      position: 0,
+      position,
       type: "image",
       config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
       audioPath: undefined,
@@ -150,9 +197,9 @@ describe("Editor client — layout applies server id map on save", () => {
   }
 
   async function renderLayoutWithSections(initial: SectionWithImages[]) {
-    const layoutModule = await import("@/app/editor/[webtoonId]/layout");
+    const layoutModule = await import("@/components/editor/EditorDetailShell");
     const { EditorDetailLayoutContent } = layoutModule;
-    const { EditorStateProvider, useEditorState } = await import(
+    const { EditorStateProvider } = await import(
       "@/components/editor/EditorStateContext"
     );
 
@@ -240,7 +287,7 @@ describe("Editor client — layout applies server id map on save", () => {
       error: "config.imagePath: String must contain at least 1 character(s)",
     });
     const incomplete: SectionWithImages = {
-      ...makeSection("client-temp-id"),
+      ...makeSection("client-temp-id", "client-temp-id", 3),
       config: { type: "image", imagePath: "", width: 0, height: 0 },
       images: [],
     };
@@ -256,18 +303,35 @@ describe("Editor client — layout applies server id map on save", () => {
     });
     expect(vi.mocked(saveWebtoon)).not.toHaveBeenCalled();
     const alert = screen.getByTestId("save-error");
-    expect(alert.textContent).toMatch(/Section 1/);
+    // Positions are 1-based: section.position is reported as-is, never +1.
+    expect(alert.textContent).toMatch(/Section 3/);
+    expect(alert.textContent).not.toMatch(/Section 4/);
     expect(alert.textContent?.toLowerCase()).toMatch(/image|uploader/);
   });
 });
 
 describe("Editor detail — persisted metadata header/badge", () => {
+  function makeDetailSection(id: string = "sec-1"): SectionWithImages {
+    return {
+      id,
+      webtoonId: "11111111-2222-4333-8444-555555555555",
+      position: 1,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
   async function renderDetailWithMetadata(opts: {
     title: string;
     visibility: "draft" | "published";
+    sections?: SectionWithImages[];
   }) {
     const { EditorDetailLayoutContent } = await import(
-      "@/app/editor/[webtoonId]/layout"
+      "@/components/editor/EditorDetailShell"
     );
     const { EditorStateProvider } = await import(
       "@/components/editor/EditorStateContext"
@@ -281,7 +345,7 @@ describe("Editor detail — persisted metadata header/badge", () => {
         <EditorStateProvider>
           <EditorDetailLayoutContent webtoonId="11111111-2222-4333-8444-555555555555">
             <EditorCanvasClient
-              initialSections={[]}
+              initialSections={opts.sections ?? [makeDetailSection()]}
               webtoonId="11111111-2222-4333-8444-555555555555"
               initialTitle={opts.title}
               initialVisibility={opts.visibility}
@@ -360,7 +424,7 @@ describe("Editor detail — persisted metadata header/badge", () => {
 
   test("neutral loading state before metadata arrives (no draft flash)", async () => {
     const { EditorDetailLayoutContent } = await import(
-      "@/app/editor/[webtoonId]/layout"
+      "@/components/editor/EditorDetailShell"
     );
     const { EditorStateProvider } = await import(
       "@/components/editor/EditorStateContext"
@@ -390,6 +454,404 @@ describe("Editor detail — persisted metadata header/badge", () => {
     );
     expect(screen.getByTestId("visibility-badge").textContent).not.toContain(
       "Publié",
+    );
+  });
+});
+
+describe("Editor detail — metadata form", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  function makeDetailSection(position: number = 1): SectionWithImages {
+    return {
+      id: `sec-${position}`,
+      webtoonId: WEBTOON_ID,
+      position,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
+  function Seed({
+    seedSections,
+    seedDirty,
+  }: {
+    seedSections: SectionWithImages[];
+    seedDirty: boolean;
+  }) {
+    const { setSections, setIsDirty } = useEditorState();
+    React.useEffect(() => {
+      setSections(seedSections);
+      setIsDirty(seedDirty);
+    }, [seedSections, seedDirty, setSections, setIsDirty]);
+    return null;
+  }
+
+  async function renderShell(opts: {
+    initialTitle?: string | null;
+    initialDescription?: string | null;
+    initialVisibility?: "draft" | "published" | null;
+    sections?: SectionWithImages[];
+    dirty?: boolean;
+  }) {
+    const shellModule = await import("@/components/editor/EditorDetailShell");
+    const stateModule = await import("@/components/editor/EditorStateContext");
+    const { EditorDetailLayoutContent } = shellModule;
+    const { EditorStateProvider } = stateModule;
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider
+          initialTitle={opts.initialTitle ?? null}
+          initialDescription={opts.initialDescription ?? null}
+          initialVisibility={opts.initialVisibility ?? null}
+        >
+          <EditorDetailLayoutContent webtoonId={WEBTOON_ID}>
+            <Seed
+              seedSections={opts.sections ?? [makeDetailSection()]}
+              seedDirty={opts.dirty ?? false}
+            />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    await screen.findByTestId("metadata-title");
+  }
+
+  test("prefills title and description and saves through updateWebtoonMetadataAction", async () => {
+    vi.mocked(updateWebtoonMetadataAction).mockResolvedValueOnce({ ok: true });
+    await renderShell({
+      initialTitle: "Titre initial",
+      initialDescription: "Description initiale",
+      initialVisibility: "draft",
+    });
+
+    const titleInput = screen.getByTestId("metadata-title");
+    const descriptionInput = screen.getByTestId("metadata-description");
+    expect(titleInput).toHaveValue("Titre initial");
+    expect(descriptionInput).toHaveValue("Description initiale");
+
+    fireEvent.change(titleInput, { target: { value: "Titre modifié" } });
+    fireEvent.change(descriptionInput, { target: { value: "Nouvelle description" } });
+    fireEvent.click(screen.getByTestId("metadata-save"));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateWebtoonMetadataAction)).toHaveBeenCalledWith(WEBTOON_ID, {
+        title: "Titre modifié",
+        description: "Nouvelle description",
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("editor-title")).toHaveTextContent("Titre modifié");
+    });
+    expect(screen.queryByTestId("metadata-error")).not.toBeInTheDocument();
+  });
+
+  test("an empty title is rejected inline and never reaches the action", async () => {
+    await renderShell({
+      initialTitle: "Titre",
+      initialDescription: "",
+      initialVisibility: "draft",
+    });
+
+    fireEvent.change(screen.getByTestId("metadata-title"), {
+      target: { value: "   " },
+    });
+    fireEvent.click(screen.getByTestId("metadata-save"));
+
+    const error = await screen.findByTestId("metadata-error");
+    expect(error.textContent?.toLowerCase()).toMatch(/titre/);
+    expect(vi.mocked(updateWebtoonMetadataAction)).not.toHaveBeenCalled();
+  });
+
+  test("an action failure is shown inline and the save button is re-enabled", async () => {
+    vi.mocked(updateWebtoonMetadataAction).mockResolvedValueOnce({
+      ok: false,
+      error: "db.updateWebtoon failed: boom",
+    });
+    await renderShell({
+      initialTitle: "Titre",
+      initialDescription: "Desc",
+      initialVisibility: "draft",
+    });
+
+    const saveButton = screen.getByTestId("metadata-save");
+    fireEvent.click(saveButton);
+
+    const error = await screen.findByTestId("metadata-error");
+    expect(error).toHaveTextContent(/boom/);
+    expect(saveButton).toBeEnabled();
+  });
+
+  test("the save button is disabled while the action is pending", async () => {
+    let resolveUpdate: (value: { ok: boolean }) => void = () => {};
+    vi.mocked(updateWebtoonMetadataAction).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+    await renderShell({
+      initialTitle: "Titre",
+      initialDescription: "Desc",
+      initialVisibility: "draft",
+    });
+
+    const saveButton = screen.getByTestId("metadata-save");
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+      expect(saveButton).toBeDisabled();
+    });
+
+    resolveUpdate({ ok: true });
+    await waitFor(() => {
+      expect(saveButton).toBeEnabled();
+    });
+  });
+});
+
+describe("Editor detail — publish guards", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  function makeDetailSection(position: number = 1): SectionWithImages {
+    return {
+      id: `sec-${position}`,
+      webtoonId: WEBTOON_ID,
+      position,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
+  function Seed({
+    seedSections,
+    seedDirty,
+  }: {
+    seedSections: SectionWithImages[];
+    seedDirty: boolean;
+  }) {
+    const { setSections, setIsDirty } = useEditorState();
+    React.useEffect(() => {
+      setSections(seedSections);
+      setIsDirty(seedDirty);
+    }, [seedSections, seedDirty, setSections, setIsDirty]);
+    return null;
+  }
+
+  async function renderShell(opts: {
+    initialTitle?: string;
+    initialVisibility?: "draft" | "published";
+    sections?: SectionWithImages[];
+    dirty?: boolean;
+  }) {
+    const shellModule = await import("@/components/editor/EditorDetailShell");
+    const stateModule = await import("@/components/editor/EditorStateContext");
+    const { EditorDetailLayoutContent } = shellModule;
+    const { EditorStateProvider } = stateModule;
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider
+          initialTitle={opts.initialTitle ?? null}
+          initialDescription={null}
+          initialVisibility={opts.initialVisibility ?? null}
+        >
+          <EditorDetailLayoutContent webtoonId={WEBTOON_ID}>
+            <Seed
+              seedSections={opts.sections ?? [makeDetailSection()]}
+              seedDirty={opts.dirty ?? false}
+            />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    await screen.findByTestId("editor-title");
+  }
+
+  test("publishing without sections shows a clear error and never publishes", async () => {
+    await renderShell({
+      initialTitle: "Vide",
+      initialVisibility: "draft",
+      sections: [],
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publier" }));
+
+    const error = await screen.findByTestId("save-error");
+    expect(error.textContent?.toLowerCase()).toMatch(/aucune section/);
+    expect(vi.mocked(publishWebtoon)).not.toHaveBeenCalled();
+    expect(screen.getByTestId("visibility-badge")).toHaveTextContent("Brouillon");
+  });
+
+  test("a dirty editor saves first and only then publishes", async () => {
+    const order: string[] = [];
+    vi.mocked(saveWebtoon).mockImplementationOnce(async () => {
+      order.push("save");
+      return { ok: true, sectionIds: { "sec-1": "sec-1" } };
+    });
+    vi.mocked(publishWebtoon).mockImplementationOnce(async () => {
+      order.push("publish");
+      return { ok: true };
+    });
+
+    await renderShell({
+      initialTitle: "Sale",
+      initialVisibility: "draft",
+      dirty: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publier" }));
+
+    await waitFor(() => {
+      expect(vi.mocked(publishWebtoon)).toHaveBeenCalledTimes(1);
+    });
+    expect(order).toEqual(["save", "publish"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("visibility-badge")).toHaveTextContent("Publié");
+    });
+  });
+
+  test("publish is aborted when the pre-publish save fails", async () => {
+    vi.mocked(saveWebtoon).mockResolvedValueOnce({
+      ok: false,
+      error: "db.updateSection failed: save ko",
+    });
+
+    await renderShell({
+      initialTitle: "Sale",
+      initialVisibility: "draft",
+      dirty: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publier" }));
+
+    const error = await screen.findByTestId("save-error");
+    expect(error).toHaveTextContent(/save ko/);
+    expect(vi.mocked(publishWebtoon)).not.toHaveBeenCalled();
+    expect(screen.getByTestId("visibility-badge")).toHaveTextContent("Brouillon");
+  });
+
+  test("a publish failure surfaces the error and keeps the draft badge", async () => {
+    vi.mocked(publishWebtoon).mockResolvedValueOnce({
+      ok: false,
+      error: "updateWebtoon failed: denied",
+    });
+
+    await renderShell({
+      initialTitle: "Refusé",
+      initialVisibility: "draft",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Publier" }));
+
+    const error = await screen.findByTestId("save-error");
+    expect(error).toHaveTextContent(/denied/);
+    expect(screen.getByTestId("visibility-badge")).toHaveTextContent("Brouillon");
+  });
+});
+
+describe("Editor sidebar — selection is shared with the canvas", () => {
+  function makeLayerSection(id: string, position: number): SectionWithImages {
+    return {
+      id,
+      webtoonId: "w1",
+      position,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
+  async function renderSidebarWithCanvas(sections: SectionWithImages[]) {
+    const { EditorStateProvider } = await import(
+      "@/components/editor/EditorStateContext"
+    );
+    const { SectionLayersPanelClient } = await import(
+      "@/components/editor/SectionLayersPanelClient"
+    );
+    const { EditorCanvas } = await import("@/components/editor/EditorCanvas");
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider>
+          <div data-testid="editor-sidebar">
+            <SectionLayersPanelClient initialSections={sections} />
+          </div>
+          <EditorCanvas
+            sections={sections}
+            onSectionsChange={vi.fn()}
+            webtoonId="w1"
+          />
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    await screen.findByTestId(`layer-section-${sections[0].id}`);
+  }
+
+  test("clicking a layer selects the canvas section and scrolls it into view", async () => {
+    const sections = [makeLayerSection("sec-1", 1), makeLayerSection("sec-2", 2)];
+    await renderSidebarWithCanvas(sections);
+
+    const canvasNode = screen.getByTestId("editor-section-sec-2");
+    const canvasSpy = vi.fn();
+    (
+      canvasNode as unknown as { scrollIntoView: (arg?: unknown) => void }
+    ).scrollIntoView = canvasSpy;
+
+    fireEvent.click(screen.getByTestId("layer-section-sec-2"));
+
+    await waitFor(() => {
+      expect(canvasSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ block: "center" }),
+      );
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("layer-section-sec-2")).toHaveAttribute(
+        "data-selected",
+        "true",
+      );
+    });
+    expect(screen.getByTestId("layer-section-sec-2")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("layer-section-sec-1")).not.toHaveAttribute(
+      "data-selected",
+    );
+    expect(screen.getByTestId("editor-section-sec-2")).toHaveAttribute(
+      "data-selected",
+      "true",
+    );
+  });
+
+  test("a canvas click highlights the matching layer through the shared state", async () => {
+    const sections = [makeLayerSection("sec-1", 1), makeLayerSection("sec-2", 2)];
+    await renderSidebarWithCanvas(sections);
+
+    fireEvent.click(screen.getByTestId("editor-section-sec-1"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("layer-section-sec-1")).toHaveAttribute(
+        "data-selected",
+        "true",
+      );
+    });
+    expect(screen.getByTestId("layer-section-sec-2")).not.toHaveAttribute(
+      "data-selected",
     );
   });
 });

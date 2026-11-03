@@ -11,8 +11,13 @@ interface EditorState {
   setIsDirty: (dirty: boolean) => void;
   webtoonTitle: string | null;
   setWebtoonTitle: (title: string | null) => void;
+  webtoonDescription: string | null;
+  setWebtoonDescription: (description: string | null) => void;
   visibility: SectionVisibility | null;
   setVisibility: (visibility: SectionVisibility | null) => void;
+  /** Selection is shared between the sidebar layers panel and the canvas. */
+  selectedSectionId: string | null;
+  setSelectedSectionId: (sectionId: string | null) => void;
 }
 
 /**
@@ -41,17 +46,46 @@ export const EditorStateContext = React.createContext<EditorState | null>(null);
 
 export function EditorStateProvider({
   children,
+  initialTitle = null,
+  initialDescription = null,
+  initialVisibility = null,
 }: {
   children: React.ReactNode;
+  initialTitle?: string | null;
+  initialDescription?: string | null;
+  initialVisibility?: SectionVisibility | null;
 }) {
   const [sections, setSections] = React.useState<SectionWithImages[]>([]);
   const [isDirty, setIsDirty] = React.useState(false);
-  const [webtoonTitle, setWebtoonTitle] = React.useState<string | null>(null);
-  const [visibility, setVisibility] = React.useState<SectionVisibility | null>(null);
+  const [webtoonTitle, setWebtoonTitle] = React.useState<string | null>(
+    initialTitle,
+  );
+  const [webtoonDescription, setWebtoonDescription] = React.useState<
+    string | null
+  >(initialDescription);
+  const [visibility, setVisibility] = React.useState<SectionVisibility | null>(
+    initialVisibility,
+  );
+  const [selectedSectionId, setSelectedSectionId] = React.useState<
+    string | null
+  >(null);
 
   const value = React.useMemo(
-    () => ({ sections, setSections, isDirty, setIsDirty, webtoonTitle, setWebtoonTitle, visibility, setVisibility }),
-    [sections, isDirty, webtoonTitle, visibility],
+    () => ({
+      sections,
+      setSections,
+      isDirty,
+      setIsDirty,
+      webtoonTitle,
+      setWebtoonTitle,
+      webtoonDescription,
+      setWebtoonDescription,
+      visibility,
+      setVisibility,
+      selectedSectionId,
+      setSelectedSectionId,
+    }),
+    [sections, isDirty, webtoonTitle, webtoonDescription, visibility, selectedSectionId],
   );
 
   return (
