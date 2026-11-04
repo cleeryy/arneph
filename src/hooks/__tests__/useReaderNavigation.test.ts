@@ -50,23 +50,23 @@ const steps = buildReaderSteps([image(1), pan(2), longY(3), anim(4)]);
 
 describe("reduceWheel — images", () => {
   test("n'avance qu'au-delà du seuil, sans mouvement intermédiaire", () => {
-    const below = reduceWheel({ index: 0, inner: 0 }, steps, H * 0.1, H, 0);
-    expect(below.state).toEqual({ index: 0, inner: 0 });
+    const below = reduceWheel({ index: 0, inner: 0, direction: 0 }, steps, H * 0.1, H, 0);
+    expect(below.state).toEqual({ index: 0, inner: 0, direction: 0 });
     expect(below.navigated).toBe(false);
 
     const above = reduceWheel(
-      { index: 0, inner: 0 },
+      { index: 0, inner: 0, direction: 0 },
       steps,
       H * WHEEL_THRESHOLD_RATIO,
       H,
       0,
     );
-    expect(above.state).toEqual({ index: 1, inner: 0 });
+    expect(above.state).toEqual({ index: 1, inner: 0, direction: 1 });
     expect(above.navigated).toBe(true);
   });
 
   test("accumule deux petits gestes jusqu'au seuil", () => {
-    const first = reduceWheel({ index: 0, inner: 0 }, steps, H * 0.15, H, 0);
+    const first = reduceWheel({ index: 0, inner: 0, direction: 0 }, steps, H * 0.15, H, 0);
     expect(first.navigated).toBe(false);
     const second = reduceWheel(
       first.state,
@@ -79,19 +79,19 @@ describe("reduceWheel — images", () => {
   });
 
   test("geste vers le haut depuis la première étape reste bloqué", () => {
-    const up = reduceWheel({ index: 0, inner: 0 }, steps, -H, H, 0);
-    expect(up.state).toEqual({ index: 0, inner: 0 });
+    const up = reduceWheel({ index: 0, inner: 0, direction: 0 }, steps, -H, H, 0);
+    expect(up.state).toEqual({ index: 0, inner: 0, direction: 0 });
   });
 });
 
 describe("reduceWheel — étapes épinglées", () => {
   test("le geste alimente la progression interne puis passe à la suite", () => {
-    const half = reduceWheel({ index: 1, inner: 0 }, steps, 150, H, 0);
+    const half = reduceWheel({ index: 1, inner: 0, direction: 0 }, steps, 150, H, 0);
     expect(half.state.inner).toBeCloseTo(0.125);
     expect(half.navigated).toBe(false);
 
-    const done = reduceWheel({ index: 1, inner: 0.9 }, steps, 200, H, 0);
-    expect(done.state).toEqual({ index: 2, inner: 0 });
+    const done = reduceWheel({ index: 1, inner: 0.9, direction: 0 }, steps, 200, H, 0);
+    expect(done.state).toEqual({ index: 2, inner: 0, direction: 1 });
     expect(done.navigated).toBe(true);
   });
 
@@ -106,16 +106,16 @@ describe("reduceWheel — étapes épinglées", () => {
 
 describe("reduceWheel — long-y et écran de fin", () => {
   test("long-y laisse le scroll natif, sans navigation", () => {
-    const result = reduceWheel({ index: 2, inner: 0 }, steps, 500, H, 0);
-    expect(result.state).toEqual({ index: 2, inner: 0 });
+    const result = reduceWheel({ index: 2, inner: 0, direction: 0 }, steps, 500, H, 0);
+    expect(result.state).toEqual({ index: 2, inner: 0, direction: 0 });
     expect(result.navigated).toBe(false);
   });
 
   test("écran de fin : le geste vers le haut revient sur la dernière étape", () => {
-    const back = reduceWheel({ index: steps.length, inner: 0 }, steps, -50, H, 0);
+    const back = reduceWheel({ index: steps.length, inner: 0, direction: 0 }, steps, -50, H, 0);
     expect(back.state.index).toBe(steps.length - 1);
     expect(back.navigated).toBe(true);
-    const stay = reduceWheel({ index: steps.length, inner: 0 }, steps, 50, H, 0);
+    const stay = reduceWheel({ index: steps.length, inner: 0, direction: 0 }, steps, 50, H, 0);
     expect(stay.navigated).toBe(false);
   });
 });

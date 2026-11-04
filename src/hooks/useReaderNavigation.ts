@@ -12,6 +12,8 @@ export interface NavigationState {
   index: number;
   /** Progression interne d'une étape épinglée (pan-x, animation), 0→1. */
   inner: number;
+  /** Sens du dernier déplacement : sert aux transitions fluides. */
+  direction: 1 | -1 | 0;
 }
 
 export interface NavigationApi extends NavigationState {
@@ -37,7 +39,7 @@ export function stepLengthPx(step: ReaderStep, viewportHeight: number): number {
 }
 
 export function initialNavigationState(): NavigationState {
-  return { index: 0, inner: 0 };
+  return { index: 0, inner: 0, direction: 0 };
 }
 
 /**
@@ -67,6 +69,7 @@ export function reduceWheel(
         state: {
           index: last,
           inner: lastStep.kind === "pan-x" || lastStep.kind === "animation" ? 1 : 0,
+          direction: -1,
         },
         accumulated: 0,
         navigated: true,
@@ -88,23 +91,26 @@ export function reduceWheel(
     if (nextInner >= 1) {
       const nextIndex = state.index + 1;
       return {
-        state: { index: nextIndex, inner: 0 },
+        state: { index: nextIndex, inner: 0, direction: 1 },
         accumulated: 0,
         navigated: true,
       };
     }
     if (nextInner <= 0 && deltaY < 0) {
       if (state.index === 0) {
-        return { state: { index: 0, inner: 0 }, accumulated: 0, navigated: false };
+        return { state, accumulated: 0, navigated: false };
       }
       return {
-        state: { index: state.index - 1, inner: 1 },
+        state: { index: state.index - 1, inner: 1, direction: -1 },
         accumulated: 0,
         navigated: true,
       };
     }
     return {
-      state: { index: state.index, inner: Math.min(1, Math.max(0, nextInner)) },
+      state: {
+        ...state,
+        inner: Math.min(1, Math.max(0, nextInner)),
+      },
       accumulated: 0,
       navigated: false,
     };
@@ -113,14 +119,18 @@ export function reduceWheel(
   const acc = accumulated + deltaY;
   if (acc >= threshold) {
     return {
-      state: { index: Math.min(steps.length, state.index + 1), inner: 0 },
+      state: { index: Math.min(steps.length, state.index + 1), inner: 0, direction: 1 },
       accumulated: 0,
       navigated: true,
     };
   }
   if (acc <= -threshold) {
+    const backIndex = Math.max(0, state.index - 1);
+    if (backIndex === state.index) {
+      return { state, accumulated: 0, navigated: false };
+    }
     return {
-      state: { index: Math.max(0, state.index - 1), inner: 0 },
+      state: { index: backIndex, inner: 0, direction: -1 },
       accumulated: 0,
       navigated: true,
     };
@@ -152,6 +162,7 @@ export function useReaderNavigation(steps: ReaderStep[]): NavigationApi {
     setState((prev) => ({
       index: Math.min(steps.length, prev.index + 1),
       inner: 0,
+      direction: 1,
     }));
   }, [steps.length]);
 
@@ -163,6 +174,7 @@ export function useReaderNavigation(steps: ReaderStep[]): NavigationApi {
       return {
         index: target,
         inner: steps[target]?.kind === "pan-x" || steps[target]?.kind === "animation" ? 1 : 0,
+        direction: -1,
       };
     });
   }, [steps]);
@@ -173,6 +185,7 @@ export function useReaderNavigation(steps: ReaderStep[]): NavigationApi {
       setState({
         index: Math.min(steps.length, Math.max(0, Math.floor(index))),
         inner: 0,
+        direction: 0,
       });
     },
     [steps.length],

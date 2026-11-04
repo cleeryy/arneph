@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  MAX_SPRITE_PIXELS,
   buildSpriteSheet,
   createBrowserFactory,
   readImageDimensions,
@@ -255,21 +256,21 @@ describe("buildSpriteSheet(files, {maxColumns=10})", () => {
       frameCount: 25,
       columns: 10,
       rows: 3,
-      frameWidth: 1600,
-      frameHeight: 900,
     });
     expect(sheet.spriteBlob.type).toBe("image/webp");
 
-    const canvas = factory.canvases[0];
-    expect(canvas.width).toBe(16000);
-    expect(canvas.height).toBe(2700);
-    expect(canvas.draws).toHaveLength(25);
+    // 16000×2700 dépasserait le budget mémoire : les frames sont réduites
+    // proportionnellement, jamais la grille.
+    expect(sheet.frameWidth).toBeLessThan(1600);
+    expect(sheet.frameHeight).toBeLessThan(900);
+    expect(
+      sheet.frameWidth * sheet.columns * sheet.frameHeight * sheet.rows,
+    ).toBeLessThanOrEqual(MAX_SPRITE_PIXELS);
 
-    // positions de la grille : ligne 0 col 0 / 9, ligne 1 col 0, ligne 2 col 4
-    expect(canvas.draws[0]).toMatchObject({ dx: 0, dy: 0, dw: 1600, dh: 900 });
-    expect(canvas.draws[9]).toMatchObject({ dx: 14400, dy: 0 });
-    expect(canvas.draws[10]).toMatchObject({ dx: 0, dy: 900 });
-    expect(canvas.draws[24]).toMatchObject({ dx: 6400, dy: 1800 });
+    const canvas = factory.canvases[0];
+    expect(canvas.draws).toHaveLength(25);
+    expect(canvas.width).toBe(sheet.frameWidth * sheet.columns);
+    expect(canvas.height).toBe(sheet.frameHeight * sheet.rows);
   });
 
   test("1 image → 1 frame, grille 1×1, dims de la source", async () => {
@@ -304,18 +305,22 @@ describe("buildSpriteSheet(files, {maxColumns=10})", () => {
     });
   });
 
-  test("downscale uniquement au-delà de MAX_CANVAS_DIMENSION : 20000×2000 → 16384×1638", async () => {
+  test("réduit une frame géante sous le budget mémoire : 20000×2000", async () => {
     const factory = mockFactory([img("wide", 20000, 2000)]);
     const sheet = await buildSpriteSheet([factory.file("wide")], { factory });
 
-    expect(sheet).toMatchObject({ frameWidth: 16384, frameHeight: 1638 });
+    expect(sheet.frameWidth).toBeLessThan(16384);
+    expect(sheet.frameWidth * sheet.frameHeight).toBeLessThanOrEqual(
+      MAX_SPRITE_PIXELS,
+    );
+    // Ratio conservé.
+    expect(sheet.frameWidth / sheet.frameHeight).toBeCloseTo(10, 1);
     const canvas = factory.canvases[0];
-    expect(canvas.width).toBe(16384);
-    expect(canvas.height).toBe(1638);
-    expect(canvas.draws[0]).toMatchObject({ dw: 16384, dh: 1638 });
+    expect(canvas.width).toBe(sheet.frameWidth);
+    expect(canvas.height).toBe(sheet.frameHeight);
   });
 
-  test("grille 100 frames 1600×1600, 10 colonnes → 16000×16000 (limite atteinte, accepté)", async () => {
+  test("grille 100 frames 1600×1600 : grille conservée, frames réduites", async () => {
     const images = Array.from({ length: 100 }, (_, i) => img(`f${i}`, 1600, 1600));
     const factory = mockFactory(images);
     const sheet = await buildSpriteSheet(
@@ -323,20 +328,26 @@ describe("buildSpriteSheet(files, {maxColumns=10})", () => {
       { maxColumns: 10, factory },
     );
 
+    expect(sheet.columns).toBe(10);
     expect(sheet.rows).toBe(10);
-    expect(factory.canvases[0].width).toBe(16000);
-    expect(factory.canvases[0].height).toBe(16000);
+    expect(
+      sheet.frameWidth * sheet.columns * sheet.frameHeight * sheet.rows,
+    ).toBeLessThanOrEqual(MAX_SPRITE_PIXELS);
+    expect(factory.canvases[0].width).toBe(sheet.frameWidth * 10);
   });
 
-  test("rejette une grille qui dépasserait la limite canvas (110×1600 = 17600 > 16384)", async () => {
+  test("110 frames : la grille est réduite, pas rejetée", async () => {
     const images = Array.from({ length: 110 }, (_, i) => img(`f${i}`, 1600, 1600));
     const factory = mockFactory(images);
-    await expect(
-      buildSpriteSheet(images.map((i) => factory.file(i.id)), {
-        maxColumns: 10,
-        factory,
-      }),
-    ).rejects.toMatchObject({ code: "SPRITE_TOO_LARGE" });
+    const sheet = await buildSpriteSheet(
+      images.map((i) => factory.file(i.id)),
+      { maxColumns: 10, factory },
+    );
+
+    expect(sheet.rows).toBe(11);
+    expect(
+      sheet.frameWidth * sheet.columns * sheet.frameHeight * sheet.rows,
+    ).toBeLessThanOrEqual(MAX_SPRITE_PIXELS);
   });
 
   test("rejette un lot vide", async () => {

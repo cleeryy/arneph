@@ -91,6 +91,29 @@ function setScrollMetrics(
   });
 }
 
+describe("LongYStep — restauration de position", () => {
+  test("applique la position initiale et remonte les changements", () => {
+    const onScrollTopChange = vi.fn();
+    render(
+      wrap(
+        <LongYStep
+          section={longSection()}
+          onBoundary={vi.fn()}
+          initialScrollTop={420}
+          onScrollTopChange={onScrollTopChange}
+        />,
+      ),
+    );
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    expect(scroller.scrollTop).toBe(420);
+
+    Object.defineProperty(scroller, "scrollTop", { value: 760, writable: true });
+    fireEvent.scroll(scroller);
+    expect(onScrollTopChange).toHaveBeenCalledWith(760);
+  });
+});
+
 describe("LongYStep — conteneur de scroll", () => {
   test("écran plein avec son propre défilement borné (overscroll-contain)", () => {
     render(wrap(<LongYStep section={longSection()} onBoundary={vi.fn()} />));

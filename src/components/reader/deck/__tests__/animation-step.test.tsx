@@ -40,6 +40,28 @@ function frameIndex(): number {
   return Number(screen.getByTestId("animation-step-frame").dataset.frameIndex);
 }
 
+describe("AnimationStep — garde-fou mémoire", () => {
+  test("une sprite démesurée affiche un placeholder au lieu de planter", () => {
+    render(
+      wrap(
+        <AnimationStep
+          section={animationSection({
+            frameWidth: 1600,
+            frameHeight: 1600,
+            columns: 10,
+            rows: 10,
+            frameCount: 100,
+          })}
+          progress={0.4}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId("animation-step-too-large")).toBeInTheDocument();
+    expect(screen.queryByTestId("animation-step-frame")).not.toBeInTheDocument();
+  });
+});
+
 describe("AnimationStep — frame pilotée par la progression", () => {
   test("frame = floor(progress * frameCount), sans interpolation", () => {
     const { rerender } = render(

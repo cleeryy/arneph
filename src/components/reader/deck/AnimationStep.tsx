@@ -4,6 +4,7 @@ import { useTranslations } from "next-intl";
 
 import type { SectionWithImages } from "@/lib/db/queries";
 import { spritePositionFromFrame } from "@/lib/scroll/transforms";
+import { MAX_SPRITE_PIXELS } from "@/lib/image/limits";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { AnimationSectionConfig } from "@/types/webtoon";
 
@@ -86,6 +87,30 @@ export function AnimationStep({ section, progress }: AnimationStepProps) {
           data-testid="animation-step-placeholder"
           className="mx-auto h-40 max-h-[40vh] w-full max-w-3xl overflow-hidden border-b border-border bg-muted/20"
         />
+      </section>
+    );
+  }
+
+  const sheetPixels = columns * frameWidth * rows * frameHeight;
+
+  // Garde-fou mémoire : une sprite démesurée (16k×14k ≈ 900 Mo décodés) fait
+  // tomber l'onglet. On refuse de la charger plutôt que de planter.
+  if (sheetPixels > MAX_SPRITE_PIXELS) {
+    return (
+      <section
+        data-testid="animation-step"
+        data-section-id={section.id}
+        data-section-type={section.type}
+        role="article"
+        aria-label={t("animation")}
+        className="relative h-full w-full overflow-hidden bg-background"
+      >
+        <div
+          data-testid="animation-step-too-large"
+          className="mx-auto flex h-40 max-h-[40vh] w-full max-w-3xl items-center justify-center border-b border-border bg-muted/20 px-4 text-center text-xs text-muted-foreground"
+        >
+          {t("animationTooLarge")}
+        </div>
       </section>
     );
   }

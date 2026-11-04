@@ -17,6 +17,10 @@ export interface LongYStepProps {
    * s'en sert pour changer d'étape ; aucun listener global ici.
    */
   onBoundary: (edge: LongYBoundaryEdge) => void;
+  /** Position de défilement à restaurer au montage (retour arrière). */
+  initialScrollTop?: number;
+  /** Remonte la position courante pour la mémoriser entre deux visites. */
+  onScrollTopChange?: (scrollTop: number) => void;
 }
 
 function isAtTop(el: HTMLElement): boolean {
@@ -36,13 +40,33 @@ function isAtBottom(el: HTMLElement): boolean {
  * butée ne prévient le deck qu'une fois, puis le verrou est relâché dès que
  * l'utilisateur repart dans le contenu.
  */
-export function LongYStep({ section, onBoundary }: LongYStepProps) {
+export function LongYStep({
+  section,
+  onBoundary,
+  initialScrollTop = 0,
+  onScrollTopChange,
+}: LongYStepProps) {
   const t = useTranslations("reader.section");
   const config = section.config as LongYSectionConfig;
   const fxPath = typeof config.fxPath === "string" ? config.fxPath.trim() : "";
 
+  const scrollerRef = React.useRef<HTMLDivElement>(null);
+  const restoreRef = React.useRef(initialScrollTop);
   const latchedRef = React.useRef<LongYBoundaryEdge | null>(null);
   const touchStartYRef = React.useRef<number | null>(null);
+
+  // Restaure la position au montage : revenir sur une image longue doit
+  // retrouver l'endroit quitté (souvent le bas), pas le haut.
+  React.useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const target = Math.max(0, restoreRef.current);
+    if (target > 0) el.scrollTop = target;
+  }, []);
+
+  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    onScrollTopChange?.(event.currentTarget.scrollTop);
+  };
 
   const notify = React.useCallback(
     (edge: LongYBoundaryEdge) => {
@@ -96,7 +120,9 @@ export function LongYStep({ section, onBoundary }: LongYStepProps) {
       className="relative h-full w-full overflow-hidden bg-background"
     >
       <div
+        ref={scrollerRef}
         data-testid="long-y-scroll"
+        onScroll={handleScroll}
         className="h-full w-full overflow-y-auto overscroll-contain"
         onWheel={handleWheel}
         onTouchStart={handleTouchStart}

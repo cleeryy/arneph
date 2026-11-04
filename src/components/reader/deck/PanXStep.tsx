@@ -62,6 +62,8 @@ export interface PanXStepProps {
   section: SectionWithImages;
   /** Progression interne de l'étape, 0→1 (pilotée par le deck). */
   progress: number;
+  /** Interpole visuellement entre deux crans de molette. */
+  smooth?: boolean;
 }
 
 /**
@@ -73,7 +75,7 @@ export interface PanXStepProps {
  * Une image déjà plus étroite que l'écran reste statique et centrée (calcul
  * CSS `min`/`max`).
  */
-export function PanXStep({ section, progress }: PanXStepProps) {
+export function PanXStep({ section, progress, smooth = true }: PanXStepProps) {
   const t = useTranslations("reader.section");
   const config = section.config as PanXSectionConfig;
   const image = section.images[0];
@@ -118,7 +120,13 @@ export function PanXStep({ section, progress }: PanXStepProps) {
         decoding="async"
         draggable={false}
         className="absolute top-0 left-0 h-full w-auto max-w-none bg-muted/20 select-none"
-        style={{ transform, willChange: "transform" }}
+        style={{
+          transform,
+          willChange: "transform",
+          transition: smooth
+            ? "transform 140ms linear"
+            : undefined,
+        }}
       />
     </section>
   );

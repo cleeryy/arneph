@@ -128,3 +128,18 @@
     @apply font-sans;
   }
 }
+
+/* Lecteur : transition verticale optionnelle entre deux écrans. */
+@keyframes reader-step-forward {
+  from { transform: translateY(24px); opacity: 0.98; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes reader-step-backward {
+  from { transform: translateY(-24px); opacity: 0.98; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.reader-step-forward { animation: reader-step-forward 220ms ease-out; }
+.reader-step-backward { animation: reader-step-backward 220ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .reader-step-forward, .reader-step-backward { animation: none; }
+}

@@ -8,11 +8,14 @@
  * `createBrowserFactory()` branche le vrai DOM en runtime navigateur.
  */
 
+import { MAX_SPRITE_PIXELS } from "./limits";
 import { isAnimatedImage } from "./animated";
 
 export const DEFAULT_WEBP_QUALITY = 0.9;
 export const DEFAULT_MAX_COLUMNS = 10;
 export const MAX_CANVAS_DIMENSION = 16384;
+
+export { MAX_SPRITE_PIXELS } from "./limits";
 export const SUPPORTED_IMAGE_TYPES = [
   "image/png",
   "image/jpeg",
@@ -267,10 +270,20 @@ export async function buildSpriteSheet(
     }),
   );
 
-  const frameWidth = Math.max(...frames.map((frame) => frame.fittedWidth));
-  const frameHeight = Math.max(...frames.map((frame) => frame.fittedHeight));
+  const maxFrameWidth = Math.max(...frames.map((frame) => frame.fittedWidth));
+  const maxFrameHeight = Math.max(...frames.map((frame) => frame.fittedHeight));
   const columns = Math.min(maxColumns, frames.length);
   const rows = Math.ceil(frames.length / columns);
+
+  // Budget mémoire : on réduit d'abord la taille des frames, jamais la grille,
+  // pour rester sous `MAX_SPRITE_PIXELS` (sinon le décodage fait tomber l'onglet).
+  const rawPixels = columns * maxFrameWidth * rows * maxFrameHeight;
+  const scale =
+    rawPixels > MAX_SPRITE_PIXELS
+      ? Math.sqrt(MAX_SPRITE_PIXELS / rawPixels)
+      : 1;
+  const frameWidth = Math.max(1, Math.floor(maxFrameWidth * scale));
+  const frameHeight = Math.max(1, Math.floor(maxFrameHeight * scale));
   const sheetWidth = columns * frameWidth;
   const sheetHeight = rows * frameHeight;
 
@@ -287,13 +300,11 @@ export async function buildSpriteSheet(
   frames.forEach((frame, index) => {
     const column = index % columns;
     const row = Math.floor(index / columns);
-    const dx = Math.round(
-      column * frameWidth + (frameWidth - frame.fittedWidth) / 2,
-    );
-    const dy = Math.round(
-      row * frameHeight + (frameHeight - frame.fittedHeight) / 2,
-    );
-    context.drawImage(frame.image, dx, dy, frame.fittedWidth, frame.fittedHeight);
+    const fittedWidth = Math.max(1, Math.round(frame.fittedWidth * scale));
+    const fittedHeight = Math.max(1, Math.round(frame.fittedHeight * scale));
+    const dx = Math.round(column * frameWidth + (frameWidth - fittedWidth) / 2);
+    const dy = Math.round(row * frameHeight + (frameHeight - fittedHeight) / 2);
+    context.drawImage(frame.image, dx, dy, fittedWidth, fittedHeight);
   });
 
   const spriteBlob = await toBlobAsync(

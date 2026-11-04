@@ -155,7 +155,7 @@ describe("PanXStep — rendu", () => {
     expect(img.className).not.toContain("transition");
     expect(img.style.left).toBe("");
     expect(img.style.top).toBe("");
-    expect(img.style.transition).toBe("");
+    expect(img.style.transition).toContain("transform");
     expect(img.style.transform).toBe(expectedTransform(0.25, "ltr"));
   });
 

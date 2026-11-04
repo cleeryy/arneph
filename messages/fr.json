@@ -29,14 +29,21 @@
       "longY": "Section défilement long",
       "panX": "Section panoramique",
       "animation": "Section animation",
-      "pending": "Rendu temporaire — composant final en cours de développement (T16–T18)"
+      "pending": "Rendu temporaire — composant final en cours de développement (T16–T18)",
+      "animationTooLarge": "Animation trop volumineuse pour être lue sur cet appareil."
     },
     "readingProgress": "Progression de lecture",
     "resumeAt": "Reprendre à {percent} %",
     "continueReading": "Continuer la lecture",
     "endTitle": "Fin du webtoon",
     "endRestart": "Revoir depuis le début",
-    "endLibrary": "Retour à la bibliothèque"
+    "endLibrary": "Retour à la bibliothèque",
+    "settings": "Réglages de lecture",
+    "settingsTitle": "Réglages de lecture",
+    "settingsClose": "Fermer les réglages",
+    "settingsSmoothY": "Transitions verticales fluides",
+    "settingsSmoothX": "Panoramique fluide",
+    "settingsHint": "Ces réglages sont conservés sur cet appareil."
   },
   "editor": {
     "title": "Éditeur",

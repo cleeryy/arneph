@@ -3,13 +3,15 @@
 import * as React from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowUp, BookOpen, RotateCcw } from "lucide-react";
+import { ArrowUp, BookOpen, RotateCcw, Settings } from "lucide-react";
 
 import { buildReaderSteps, globalProgress, type ReaderStep } from "@/lib/reader/steps";
 import { useReaderNavigation } from "@/hooks/useReaderNavigation";
 import { useSectionAudio } from "@/hooks/useSectionAudio";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { ReaderPageData } from "@/app/read/[webtoonId]/page";
+import { ReaderSettings } from "./ReaderSettings";
+import { useReaderPreferences } from "@/hooks/useReaderPreferences";
 import { ImageStep } from "./deck/ImageStep";
 import { PanXStep } from "./deck/PanXStep";
 import { AnimationStep } from "./deck/AnimationStep";
@@ -17,6 +19,13 @@ import { LongYStep } from "./deck/LongYStep";
 
 const HEADER_HIDE_MS = 2000;
 const STORAGE_PREFIX = "arneph:reader-index:v1:";
+
+/**
+ * Position de défilement des images longues, par section. Conservée au niveau
+ * du module : revenir sur une image longue doit retrouver l'endroit quitté,
+ * même après un démontage du deck.
+ */
+const longYScrollPositions = new Map<string, number>();
 
 function saveIndex(webtoonId: string, index: number): void {
   try {
@@ -48,7 +57,10 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     () => true,
     () => false,
   );
+  const { preferences } = useReaderPreferences();
   const [headerVisible, setHeaderVisible] = React.useState(true);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const settingsOpenRef = React.useRef(false);
   const [resumeDismissed, setResumeDismissed] = React.useState(false);
   const hideTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartY = React.useRef<number | null>(null);
@@ -64,6 +76,10 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     navRef.current = nav;
     stepKindRef.current = step?.kind;
   });
+
+  React.useEffect(() => {
+    settingsOpenRef.current = settingsOpen;
+  }, [settingsOpen]);
 
   // Reprise : lecture non bloquante du stockage (pas de setState en effet,
   // et aucun accès à `window` pendant le rendu serveur).
@@ -164,6 +180,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
   // Clavier.
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (settingsOpenRef.current) return;
       if (isInteractiveTarget(event.target)) return;
 
       // Sur une image longue, les flèches défilent D'ABORD le contenu ;
@@ -239,9 +256,20 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
           <span className="truncate font-heading text-sm font-semibold">
             {data.webtoon.title}
           </span>
-          <span className="shrink-0 text-xs tabular-nums text-white/80">
-            {Math.min(nav.index + 1, total)}/{total}
-          </span>
+          <div className="flex shrink-0 items-center gap-1">
+            <span className="text-xs tabular-nums text-white/80">
+              {Math.min(nav.index + 1, total)}/{total}
+            </span>
+            <button
+              type="button"
+              data-testid="reader-settings-button"
+              aria-label={t("settings")}
+              onClick={() => setSettingsOpen(true)}
+              className="inline-flex size-8 items-center justify-center rounded-md text-white/90 hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none"
+            >
+              <Settings aria-hidden="true" className="size-4" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -273,12 +301,28 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
           </div>
         </section>
       ) : (
-        <div data-testid="reader-step" data-step-kind={step?.kind} className="h-full">
+        <div
+          key={nav.index}
+          data-testid="reader-step"
+          data-step-kind={step?.kind}
+          className={
+            "h-full " +
+            (preferences.smoothY && nav.direction !== 0
+              ? nav.direction > 0
+                ? "reader-step-forward"
+                : "reader-step-backward"
+              : "")
+          }
+        >
           {step?.kind === "image" ? (
             <ImageStep section={step.section} priority={nav.index === 0} />
           ) : null}
           {step?.kind === "pan-x" ? (
-            <PanXStep section={step.section} progress={nav.inner} />
+            <PanXStep
+              section={step.section}
+              progress={nav.inner}
+              smooth={preferences.smoothX}
+            />
           ) : null}
           {step?.kind === "animation" ? (
             <AnimationStep section={step.section} progress={nav.inner} />
@@ -286,6 +330,10 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
           {step?.kind === "long-y" ? (
             <LongYStep
               section={step.section}
+              initialScrollTop={longYScrollPositions.get(step.section.id) ?? 0}
+              onScrollTopChange={(top) =>
+                longYScrollPositions.set(step.section.id, top)
+              }
               onBoundary={(edge) => (edge === "bottom" ? nav.goNext() : nav.goPrev())}
             />
           ) : null}
@@ -316,6 +364,8 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
           {t("resumeAt", { percent: Math.round((savedIndex / Math.max(1, total - 1)) * 100) })}
         </button>
       ) : null}
+
+      <ReaderSettings open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       <div
         role="progressbar"
