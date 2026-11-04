@@ -6,6 +6,8 @@
  * (clé anon) est créé ici, jamais dupliqué dans un composant. Le chemin
  * retourné est celui du Storage (relatif), jamais une URL complète.
  */
+import { resolveAnonKey, resolveSupabaseUrl } from "./env";
+
 const STORAGE_BUCKET = "webtoon-images";
 
 export async function uploadSectionAsset(
@@ -14,10 +16,12 @@ export async function uploadSectionAsset(
   contentType: string,
 ): Promise<string> {
   const { createClient } = await import("@supabase/supabase-js");
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const supabaseUrl = resolveSupabaseUrl();
+  const supabaseAnonKey = resolveAnonKey();
   if (!supabaseUrl || !supabaseAnonKey)
-    throw new Error("Supabase URL or anon key not configured");
+    throw new Error(
+      "Supabase URL ou clé publique non configurée (NEXT_PUBLIC_SUPABASE_ANON_KEY ou NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY)",
+    );
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
   const { data, error } = await supabase

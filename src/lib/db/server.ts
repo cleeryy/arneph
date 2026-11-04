@@ -1,5 +1,6 @@
 import "server-only";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { resolveServiceRoleKey, resolveSupabaseUrl } from "@/lib/supabase/env";
 import type {
   SectionConfig,
   SectionType,
@@ -125,12 +126,12 @@ function initSupabaseClient() {
     return supabaseClient;
   }
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = resolveSupabaseUrl();
+  const serviceRoleKey = resolveServiceRoleKey();
 
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error(
-      "[db/server] Variables d'environnement manquantes : NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY doivent être définies.",
+      "[db/server] Variables d'environnement manquantes : NEXT_PUBLIC_SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY (ou SUPABASE_SECRET_KEY) doivent être définies.",
     );
   }
 

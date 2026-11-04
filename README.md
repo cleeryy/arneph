@@ -97,8 +97,8 @@ A seeded demo webtoon **« Démo »** (id `98ed65b1-833f-4dac-ae8f-77d5789d986f`
 | Variable | Description |
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase URL (`http://127.0.0.1:54321` for local, `https://<project-ref>.supabase.co` for production) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for client-side operations (uploads, storage) |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for server-side operations (required for local dev, production) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for client-side operations (uploads, storage). `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` acceptée en remplacement. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for server-side operations. `SUPABASE_SECRET_KEY` acceptée en remplacement. |
 
 Les URLs Storage sont construites par `src/lib/supabase/public-url.ts`. Les
 images Supabase dynamiques sont servies directement (`unoptimized`) après

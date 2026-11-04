@@ -71,7 +71,7 @@ describe("uploadSectionAsset", () => {
 
     await expect(
       uploadSectionAsset("a.webp", new Blob(["x"]), "image/webp"),
-    ).rejects.toThrow(/Supabase URL or anon key not configured/);
+    ).rejects.toThrow(/clé publique non configurée/);
     expect(createClientSpy).not.toHaveBeenCalled();
   });
 });
