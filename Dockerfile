@@ -13,6 +13,12 @@ ARG NEXT_PUBLIC_ASSET_VERSION
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_ASSET_VERSION=$NEXT_PUBLIC_ASSET_VERSION
+# Les variables NEXT_PUBLIC_* sont inlinées au build : sans elles, le bundle
+# navigateur ne peut joindre ni l'API ni le Storage. On échoue tôt plutôt que
+# de livrer une image silencieusement cassée.
+RUN test -n "$NEXT_PUBLIC_SUPABASE_URL" \
+ && test -n "$NEXT_PUBLIC_SUPABASE_ANON_KEY" \
+ || (echo "Build args manquants : NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_ANON_KEY sont requis au build." >&2; exit 1)
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
