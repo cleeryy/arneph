@@ -46,8 +46,20 @@ export function spritePositionFromFrame(
 }
 
 /**
+ * Bornes de la distance de scroll d'une section pan-x, en vh.
+ *
+ * Le plancher d'un écran (100 vh) est structurel : le contenu sticky fait
+ * `h-screen`, donc une section plus courte que le viewport laisserait le bloc
+ * sticky déborder sur les sections voisines. Le plafond évite les sections
+ * interminables pour les images très larges.
+ */
+export const PAN_MIN_DISTANCE_VH = 100;
+export const PAN_MAX_DISTANCE_VH = 600;
+
+/**
  * Distance de scroll (vh) pour parcourir toute la distance de pan au taux
- * `speed` (px de pan par vh). 0 si rien à panner ou vitesse invalide.
+ * `speed` (px de pan par vh), bornée à [100, 600] vh. 0 si rien à panner ou
+ * vitesse invalide.
  */
 export function panDistance(
   imageWidth: number,
@@ -56,5 +68,6 @@ export function panDistance(
 ): number {
   const panPx = Math.max(0, imageWidth - viewportWidth);
   if (panPx === 0 || speed <= 0) return 0;
-  return panPx / speed;
+  const raw = panPx / speed;
+  return Math.min(PAN_MAX_DISTANCE_VH, Math.max(PAN_MIN_DISTANCE_VH, raw));
 }

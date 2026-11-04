@@ -147,9 +147,12 @@ describe("normalizeProgress(value, min, max)", () => {
 });
 
 describe("panDistance(imageWidth, viewportWidth, speed)", () => {
-  test("distance requise = panPx ÷ vitesse px·vh⁻¹ (1600÷8=200 vh)", () => {
+  test("distance requise = panPx ÷ vitesse px·vh⁻¹, bornée à [100, 600] vh", () => {
     expect(panDistance(2000, 400, 8)).toBe(200);
-    expect(panDistance(2000, 400, 100)).toBe(16);
+    // 16 vh serait plus court que le contenu sticky (100 vh) : plancher.
+    expect(panDistance(2000, 400, 100)).toBe(100);
+    // Image très large : plafond pour éviter une section interminable.
+    expect(panDistance(10000, 400, 5)).toBe(600);
   });
 
   test("image pas plus large que le viewport → 0 vh", () => {
