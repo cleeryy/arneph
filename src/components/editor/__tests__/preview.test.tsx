@@ -223,16 +223,21 @@ describe("ScrollScrubber — slider value → progress mapping", () => {
     render(wrap(<SectionPreview section={makePanXSection()} />));
 
     const slider = screen.getByRole("slider");
-    const img = screen.getByTestId("preview-pan-x").querySelector("img");
+    const img = screen.getByTestId("pan-x-step").querySelector("img");
     expect(img).toBeInTheDocument();
 
-    expect(img?.style.transform).toBe("translateX(-0px)");
+    // Le transform est désormais résolu en CSS (min/max sur la largeur réelle) :
+    // on vérifie qu'il évolue avec la progression plutôt que des pixels figés.
+    const at0 = img?.style.transform ?? "";
+    expect(at0).toContain("translateX(calc(");
 
     fireEvent.change(slider, { target: { value: "50" } });
-    expect(img?.style.transform).toBe("translateX(-600px)");
+    const at50 = img?.style.transform ?? "";
+    expect(at50).not.toBe(at0);
 
     fireEvent.change(slider, { target: { value: "100" } });
-    expect(img?.style.transform).toBe("translateX(-1200px)");
+    const at100 = img?.style.transform ?? "";
+    expect(at100).not.toBe(at50);
   });
 
   test("slider is visible only for pan-x and animation sections", () => {
@@ -265,37 +270,37 @@ describe("PreviewRenderer — correct component per section type", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makeImageSection()} />));
 
-    expect(screen.getByTestId("section-image")).toBeInTheDocument();
+    expect(screen.getByTestId("image-step")).toBeInTheDocument();
   });
 
   test("long-y type renders the long-y section", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makeLongYSection()} />));
 
-    expect(screen.getByTestId("section-long-y")).toBeInTheDocument();
+    expect(screen.getByTestId("long-y-step")).toBeInTheDocument();
   });
 
   test("pan-x type renders a pan-x preview", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makePanXSection()} />));
 
-    expect(screen.getByTestId("preview-pan-x")).toBeInTheDocument();
-    expect(screen.getByTestId("preview-pan-x")).toHaveAttribute("data-section-type", "pan-x");
+    expect(screen.getByTestId("pan-x-step")).toBeInTheDocument();
+    expect(screen.getByTestId("pan-x-step")).toHaveAttribute("data-section-type", "pan-x");
   });
 
   test("animation type renders an animation preview", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makeAnimationSection()} />));
 
-    expect(screen.getByTestId("preview-animation")).toBeInTheDocument();
-    expect(screen.getByTestId("preview-animation")).toHaveAttribute("data-section-type", "animation");
+    expect(screen.getByTestId("animation-step")).toBeInTheDocument();
+    expect(screen.getByTestId("animation-step")).toHaveAttribute("data-section-type", "animation");
   });
 
   test("pan-x preview at progress 0 shows image at leftmost position", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makePanXSection()} progress={0} />));
 
-    const preview = screen.getByTestId("preview-pan-x");
+    const preview = screen.getByTestId("pan-x-step");
     expect(preview).toBeInTheDocument();
   });
 
@@ -303,7 +308,7 @@ describe("PreviewRenderer — correct component per section type", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makePanXSection()} progress={1} />));
 
-    const preview = screen.getByTestId("preview-pan-x");
+    const preview = screen.getByTestId("pan-x-step");
     expect(preview).toBeInTheDocument();
   });
 
@@ -311,7 +316,7 @@ describe("PreviewRenderer — correct component per section type", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makeAnimationSection()} progress={0} />));
 
-    const preview = screen.getByTestId("preview-animation");
+    const preview = screen.getByTestId("animation-step");
     expect(preview).toBeInTheDocument();
   });
 
@@ -319,7 +324,7 @@ describe("PreviewRenderer — correct component per section type", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makeAnimationSection()} progress={1} />));
 
-    const preview = screen.getByTestId("preview-animation");
+    const preview = screen.getByTestId("animation-step");
     expect(preview).toBeInTheDocument();
   });
 });
@@ -329,14 +334,14 @@ describe("SectionPreview — combines PreviewRenderer + ScrollScrubber", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<SectionPreview section={makePanXSection()} />));
 
-    expect(screen.getByTestId("preview-pan-x")).toBeInTheDocument();
+    expect(screen.getByTestId("pan-x-step")).toBeInTheDocument();
   });
 
   test("renders PreviewRenderer for animation sections", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<SectionPreview section={makeAnimationSection()} />));
 
-    expect(screen.getByTestId("preview-animation")).toBeInTheDocument();
+    expect(screen.getByTestId("animation-step")).toBeInTheDocument();
   });
 
   test("renders ScrollScrubber for pan-x sections", () => {

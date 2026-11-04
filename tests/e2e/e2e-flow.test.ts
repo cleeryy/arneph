@@ -199,8 +199,7 @@ test.describe("E2E Full User Flow", () => {
     await page.goto(`${BASE}/read/${WEBTON_ID}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.locator("[data-testid='reader-container']")).toBeVisible();
-    await expect(page.locator("[data-testid='reader-sections']")).toBeVisible();
+    await expect(page.locator("[data-testid='reader-deck']")).toBeVisible();
 
     // Lecteur du webtoon de démo — la route /read/[webtoonId] attend un UUID,
     // pas un titre : on le résout via l'API.
@@ -214,17 +213,17 @@ test.describe("E2E Full User Flow", () => {
     await page.goto(`${BASE}/read/${demoId}`);
     await page.waitForLoadState("networkidle");
 
-    await expect(page.locator("[data-testid='reader-container']")).toBeVisible();
+    const deck = page.locator("[data-testid='reader-deck']");
+    await expect(deck).toBeVisible();
+    await expect(deck).toHaveAttribute("data-hydrated", "true");
+    await expect(page.getByTestId("image-step")).toBeVisible();
 
-    await expect(page.locator("[data-testid='section-image']").first()).toBeVisible();
-    await expect(page.locator("[data-testid='section-long-y']").first()).toBeVisible();
-    await expect(page.locator("[data-testid='pan-x-section']").first()).toBeVisible();
-    await expect(page.locator("[data-testid='animation-section']").first()).toBeVisible();
+    // Le lecteur est un deck discret : un geste passe à l'étape suivante.
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("long-y-step")).toBeVisible();
 
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(1000);
-
-    const scrollY = await page.evaluate(() => window.scrollY);
-    expect(scrollY).toBeGreaterThan(0);
+    await page.keyboard.press("End");
+    await expect(page.getByTestId("reader-end")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Revoir depuis le début/ })).toBeVisible();
   });
 });

@@ -5,7 +5,7 @@ import { test, expect, type Locator, type Page } from "@playwright/test";
 
 const BASE = "http://localhost:3000";
 const DEMO_TITLE = "Démo";
-const READING_PROGRESS_PREFIX = "arneph:reading-progress:v1";
+const READING_INDEX_PREFIX = "arneph:reader-index:v1";
 
 /**
  * `next dev` lit `.env.local`, pas le process Playwright. On reprend donc les
@@ -103,59 +103,44 @@ async function libraryTitles(page: Page): Promise<string[]> {
 test.describe.configure({ timeout: 90_000 });
 
 test.describe("Produit — lecteur, bibliothèque, éditeur (lecture seule)", () => {
-  test("lecteur : la progression suit le scroll et la reprise ramène dans le webtoon", async ({
-    page,
-  }) => {
+  test("lecteur : navigation discrète, progression et reprise", async ({ page }) => {
     const demo = await resolveDemoWebtoon();
 
     await page.goto(`${BASE}/read/${demo.id}`);
     await page.waitForLoadState("networkidle");
 
-    const progressBar = page.getByTestId("reading-progressbar");
+    const deck = page.getByTestId("reader-deck");
+    const progressBar = page.getByTestId("reader-progress");
+    await expect(deck).toBeVisible();
+    await expect(deck).toHaveAttribute("data-hydrated", "true");
     await expect(progressBar).toBeVisible();
     await expect(progressBar).toHaveAttribute("aria-valuenow", "0");
-    await expect(page.getByTestId("reader-container")).toBeVisible();
+    await expect(page.getByTestId("image-step")).toBeVisible();
 
-    // ~40 % de la zone scrollable : reste dans la fenêtre de reprise (5–95 %).
-    await page.evaluate(() => {
-      const scrollable =
-        document.documentElement.scrollHeight - window.innerHeight;
-      window.scrollTo(0, Math.round(scrollable * 0.4));
-    });
-
+    // Un geste = un écran : le compteur et la progression avancent d'un coup.
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId("long-y-step")).toBeVisible();
     await expect
       .poll(async () => Number(await progressBar.getAttribute("aria-valuenow")))
       .toBeGreaterThan(0);
 
-    // La persistance est débouncée (~200 ms) : on attend la valeur stockée
-    // plutôt qu'un sleep arbitraire.
-    const storageKey = `${READING_PROGRESS_PREFIX}:${demo.id}`;
+    // L'index de lecture est persisté (pas un ratio de pixels).
+    const storageKey = `${READING_INDEX_PREFIX}:${demo.id}`;
     await expect
       .poll(() =>
         page.evaluate((key) => {
           const raw = window.localStorage.getItem(key);
-          return raw === null ? -1 : Number.parseFloat(raw);
+          return raw === null ? -1 : Number.parseInt(raw, 10);
         }, storageKey),
       )
-      .toBeGreaterThan(0.05);
+      .toBeGreaterThan(0);
 
-    // Chromium restaure le scroll au reload : on le neutralise pour pouvoir
-    // constater que « Reprendre » repart bien du haut de page.
-    await page.addInitScript(() => {
-      window.history.scrollRestoration = "manual";
-    });
-    await page.reload();
-    await page.waitForLoadState("networkidle");
+    await page.reload({ waitUntil: "networkidle" });
 
     const resumeButton = page.getByTestId("resume-reading");
     await expect(resumeButton).toBeVisible();
-    await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
-
     await resumeButton.click();
-
-    await expect
-      .poll(() => page.evaluate(() => window.scrollY))
-      .toBeGreaterThan(100);
+    await expect(page.getByTestId("long-y-step")).toBeVisible();
   });
 
   test("bibliothèque : recherche, tri et état sans résultat", async ({ page }) => {

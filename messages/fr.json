@@ -33,7 +33,10 @@
     },
     "readingProgress": "Progression de lecture",
     "resumeAt": "Reprendre à {percent} %",
-    "continueReading": "Continuer la lecture"
+    "continueReading": "Continuer la lecture",
+    "endTitle": "Fin du webtoon",
+    "endRestart": "Revoir depuis le début",
+    "endLibrary": "Retour à la bibliothèque"
   },
   "editor": {
     "title": "Éditeur",

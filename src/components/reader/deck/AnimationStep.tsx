@@ -1,0 +1,130 @@
+"use client";
+
+import { useTranslations } from "next-intl";
+
+import type { SectionWithImages } from "@/lib/db/queries";
+import { spritePositionFromFrame } from "@/lib/scroll/transforms";
+import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
+import type { AnimationSectionConfig } from "@/types/webtoon";
+
+/** Entier ≥ 1 : toute config corrompue retombe sur le repli. */
+function safeInt(value: unknown, fallback = 1): number {
+  const n = typeof value === "number" ? Math.floor(value) : Number.NaN;
+  return Number.isFinite(n) && n >= 1 ? n : fallback;
+}
+
+/** Dimension CSS finie et strictement positive, sinon repli. */
+function safeDimension(value: unknown, fallback = 1): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : fallback;
+}
+
+function clampProgress(progress: number): number {
+  return Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0;
+}
+
+/**
+ * Index de frame instantané : `floor(progress * frameCount)` borné à
+ * `[0, frameCount - 1]`. Aucune interpolation — les frames commutent net.
+ */
+export function animationFrameIndex(progress: number, frameCount: number): number {
+  const count = safeInt(frameCount);
+  const index = Math.floor(clampProgress(progress) * count);
+  return Math.min(count - 1, Math.max(0, index));
+}
+
+/** Premier chemin non vide (les chaînes blanches comptent comme absentes). */
+function firstNonBlank(...candidates: Array<string | undefined | null>): string {
+  for (const candidate of candidates) {
+    const value = typeof candidate === "string" ? candidate.trim() : "";
+    if (value) return value;
+  }
+  return "";
+}
+
+export interface AnimationStepProps {
+  section: SectionWithImages;
+  /** Progression interne de l'étape, 0→1 (pilotée par le deck). */
+  progress: number;
+}
+
+/**
+ * Étape animation : sprite sheet en `background-image`, frame choisie par
+ * `progress`. Une seule frame visible à la fois, commutée sans transition.
+ *
+ * La géométrie est revalidée ici (clamp) : une config corrompue ne doit
+ * jamais produire `NaNpx` dans les styles CSS.
+ */
+export function AnimationStep({ section, progress }: AnimationStepProps) {
+  const t = useTranslations("reader.section");
+  const config = section.config as AnimationSectionConfig;
+
+  const frameWidth = safeDimension(config.frameWidth);
+  const frameHeight = safeDimension(config.frameHeight);
+  const columns = safeInt(config.columns);
+  const rows = safeInt(config.rows);
+  const frameCount = safeInt(config.frameCount);
+  const frameIndex = animationFrameIndex(progress, frameCount);
+
+  const spritePath = firstNonBlank(
+    section.images[0]?.storagePath,
+    config.spritePath,
+  );
+
+  if (!spritePath) {
+    return (
+      <section
+        data-testid="animation-step"
+        data-section-id={section.id}
+        data-section-type={section.type}
+        role="article"
+        aria-label={t("animation")}
+        className="relative h-full w-full overflow-hidden bg-background"
+      >
+        <div
+          data-testid="animation-step-placeholder"
+          className="mx-auto h-40 max-h-[40vh] w-full max-w-3xl overflow-hidden border-b border-border bg-muted/20"
+        />
+      </section>
+    );
+  }
+
+  const { x, y } = spritePositionFromFrame(
+    frameIndex,
+    columns,
+    frameWidth,
+    frameHeight,
+  );
+  const backgroundImage = getSupabasePublicObjectUrl(spritePath);
+  const backgroundSize = `${columns * frameWidth}px ${rows * frameHeight}px`;
+
+  return (
+    <section
+      data-testid="animation-step"
+      data-section-id={section.id}
+      data-section-type={section.type}
+      role="article"
+      aria-label={t("animation")}
+      className="relative grid h-full w-full place-items-center overflow-hidden bg-background"
+    >
+      <div
+        data-testid="animation-step-frame"
+        data-frame-index={frameIndex}
+        data-frame-count={frameCount}
+        aria-hidden="true"
+        className="bg-muted/20 select-none"
+        style={{
+          width: frameWidth,
+          height: frameHeight,
+          backgroundImage: `url("${backgroundImage}")`,
+          backgroundSize,
+          backgroundRepeat: "no-repeat",
+          backgroundPosition: `${-x}px ${-y}px`,
+        }}
+      />
+    </section>
+  );
+}
+
+export default AnimationStep;

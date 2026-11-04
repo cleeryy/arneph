@@ -162,7 +162,7 @@ test.describe("E2E Editor FX Flow", () => {
     await page.reload();
     await page.waitForURL(new RegExp(`/editor/${WEBTON_ID}`));
 
-    const panXPreview = page.locator("[data-testid='preview-pan-x']").first();
+    const panXPreview = page.locator("[data-testid='pan-x-step']").first();
     await expect(panXPreview).toBeVisible();
 
     const gifBuffer = createMinimalAnimatedGif();
@@ -246,7 +246,12 @@ test.describe("E2E Editor FX Flow", () => {
     await page.goto(`${BASE}/read/${WEBTON_ID}`);
     await page.waitForLoadState("networkidle");
 
+    const deck = page.locator("[data-testid='reader-deck']");
+    await expect(deck).toHaveAttribute("data-hydrated", "true");
     await expect(page.locator("[data-testid='fx-overlay']")).toBeVisible();
-    await expect(page.locator("[data-testid='pan-x-section']").first()).toBeVisible();
+
+    // Le panoramique est la deuxième étape (l'image FX a été réordonnée avant).
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("[data-testid='pan-x-step']").first()).toBeVisible();
   });
 });
