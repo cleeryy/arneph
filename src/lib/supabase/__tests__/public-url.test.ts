@@ -30,3 +30,19 @@ describe("getSupabasePublicObjectUrl", () => {
     expect(() => getSupabasePublicObjectUrl("a.png")).toThrow(/NEXT_PUBLIC_SUPABASE_URL/);
   });
 });
+
+describe("getSupabaseRenderUrl", () => {
+  test("construit une URL imgproxy avec largeur, qualité et version", async () => {
+    const { getSupabaseRenderUrl } = await import("../public-url");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://supabase.example.com");
+    vi.stubEnv("NEXT_PUBLIC_ASSET_VERSION", "3");
+
+    const url = new URL(getSupabaseRenderUrl("webtoons/a b/é.webp", { width: 640 }));
+    expect(url.pathname).toBe(
+      "/storage/v1/render/image/public/webtoon-images/webtoons/a%20b/%C3%A9.webp",
+    );
+    expect(url.searchParams.get("width")).toBe("640");
+    expect(url.searchParams.get("quality")).toBe("80");
+    expect(url.searchParams.get("v")).toBe("3");
+  });
+});

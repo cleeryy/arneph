@@ -3,7 +3,10 @@
 import * as React from "react";
 
 import type { ReaderStep } from "@/lib/reader/steps";
-import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
+import {
+  getSupabasePublicObjectUrl,
+  getSupabaseRenderUrl,
+} from "@/lib/supabase/public-url";
 
 /** Images à précharger pour une étape (média principal + replis). */
 export function stepImageUrls(step: ReaderStep): string[] {
@@ -27,7 +30,11 @@ export function stepImageUrls(step: ReaderStep): string[] {
     paths.push(config.spritePath);
   }
 
-  return dedupe(paths).map((path) => getSupabasePublicObjectUrl(path));
+  // Les images statiques passent par imgproxy : on précharge la variante
+  // ~960 px utilisée par le srcset, pas l'original de 1600 px.
+  return dedupe(paths).map((path) =>
+    getSupabaseRenderUrl(path, { width: 960 }),
+  );
 }
 
 function dedupe(paths: Array<string | undefined>): string[] {

@@ -5,7 +5,7 @@ import type * as React from "react";
 
 import type { SectionWithImages } from "@/lib/db/queries";
 import { isAnimatedMime } from "@/lib/image/animated";
-import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
+import { getSupabaseRenderUrl } from "@/lib/supabase/public-url";
 
 /** Dimension entière strictement positive, sinon repli à 1 (jamais NaNpx). */
 function safeDimension(value: number): number {
@@ -46,10 +46,10 @@ export function StepImage({
     typeof image.storagePath === "string" ? image.storagePath.trim() : "";
   if (!storagePath) return null;
 
-  const src = getSupabasePublicObjectUrl(storagePath);
+  const src = storagePath;
   const width = safeDimension(image.width);
   const height = safeDimension(image.height);
-  const loading = priority ? "eager" : "lazy";
+  const loading = "eager";
   const animated =
     isAnimatedMime(image.mimeType) || storagePath.toLowerCase().endsWith(".gif");
 
@@ -58,7 +58,7 @@ export function StepImage({
       <img
         data-testid={testId}
         data-image-variant="native"
-        src={src}
+        src={getSupabaseRenderUrl(src, { width: Math.min(1600, Math.max(640, width)) })}
         alt={alt}
         width={width}
         height={height}
@@ -76,6 +76,10 @@ export function StepImage({
       data-testid={testId}
       data-image-variant="next"
       src={src}
+      loader={({ src: path, width: targetWidth }) =>
+        getSupabaseRenderUrl(path, { width: targetWidth })
+      }
+      sizes="(max-width: 900px) 100vw, 860px"
       alt={alt}
       width={width}
       height={height}
@@ -84,7 +88,6 @@ export function StepImage({
       loading={loading}
       decoding="async"
       draggable={false}
-      unoptimized
       className={className}
       style={style}
     />

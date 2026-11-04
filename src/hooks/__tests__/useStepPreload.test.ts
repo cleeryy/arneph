@@ -58,9 +58,8 @@ describe("stepImageUrls", () => {
     const steps = buildReaderSteps([
       section("image", { type: "image", imagePath: "webtoons/s1/page.webp", width: 800, height: 1200 }),
     ]);
-    expect(stepImageUrls(steps[0])).toEqual([
-      "https://supabase.example.com/storage/v1/object/public/webtoon-images/webtoons/s1/page.webp",
-    ]);
+    expect(stepImageUrls(steps[0])[0]).toContain("/render/image/public/");
+    expect(stepImageUrls(steps[0])[0]).toContain("width=960");
   });
 
   test("animation en frames : précharge la première frame", () => {

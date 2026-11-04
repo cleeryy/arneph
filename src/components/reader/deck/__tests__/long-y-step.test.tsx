@@ -142,7 +142,6 @@ describe("LongYStep — conteneur de scroll", () => {
     const img = screen.getByTestId("long-y-step-image");
     expect(img.className).toContain("w-full");
     expect(img.className).toContain("h-auto");
-    expect(img).toHaveAttribute("data-unoptimized", "true");
     expect(img).toHaveAttribute("alt", "Section défilement long");
   });
 

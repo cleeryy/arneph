@@ -33,16 +33,23 @@ function clampProgress(progress: number): number {
 const ANIMATION_LEAD_IN = 0.12;
 const ANIMATION_LEAD_OUT = 0.12;
 
-export function animationFrameIndex(progress: number, frameCount: number): number {
+export function animationFrameIndex(
+  progress: number,
+  frameCount: number,
+  gestureZones = true,
+): number {
   const count = safeInt(frameCount);
   const clamped = clampProgress(progress);
-  const effective = Math.min(
-    1,
-    Math.max(
-      0,
-      (clamped - ANIMATION_LEAD_IN) / (1 - ANIMATION_LEAD_IN - ANIMATION_LEAD_OUT),
-    ),
-  );
+  const effective = gestureZones
+    ? Math.min(
+        1,
+        Math.max(
+          0,
+          (clamped - ANIMATION_LEAD_IN) /
+            (1 - ANIMATION_LEAD_IN - ANIMATION_LEAD_OUT),
+        ),
+      )
+    : clamped;
   const index = Math.floor(effective * count);
   return Math.min(count - 1, Math.max(0, index));
 }
@@ -60,6 +67,8 @@ export interface AnimationStepProps {
   section: SectionWithImages;
   /** Progression interne de l'étape, 0→1 (pilotée par le deck). */
   progress: number;
+  /** Zones mortes de geste (lecteur) ; désactivées dans l'aperçu éditeur. */
+  gestureZones?: boolean;
 }
 
 /**
@@ -69,7 +78,11 @@ export interface AnimationStepProps {
  * La géométrie est revalidée ici (clamp) : une config corrompue ne doit
  * jamais produire `NaNpx` dans les styles CSS.
  */
-export function AnimationStep({ section, progress }: AnimationStepProps) {
+export function AnimationStep({
+  section,
+  progress,
+  gestureZones = true,
+}: AnimationStepProps) {
   const t = useTranslations("reader.section");
   const config = section.config as AnimationSectionConfig;
 
@@ -78,7 +91,7 @@ export function AnimationStep({ section, progress }: AnimationStepProps) {
   const columns = safeInt(config.columns);
   const rows = safeInt(config.rows);
   const frameCount = safeInt(config.frameCount);
-  const frameIndex = animationFrameIndex(progress, frameCount);
+  const frameIndex = animationFrameIndex(progress, frameCount, gestureZones);
 
   const framePaths = Array.isArray(config.framePaths)
     ? config.framePaths.filter((path): path is string => Boolean(path && path.trim()))

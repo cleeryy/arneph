@@ -7,6 +7,33 @@
  * utilisateur utilisent déjà des chemins horodatés ; ce levier couvre les
  * assets stables (seed, corrections) sans renommer de fichier en base.
  */
+/**
+ * URL de transformation d'image servie par imgproxy (stack Supabase).
+ * Permet des `srcset` responsives : on ne télécharge que la largeur utile.
+ */
+export function getSupabaseRenderUrl(
+  storagePath: string,
+  options: { width: number; quality?: number },
+): string {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!base) throw new Error("NEXT_PUBLIC_SUPABASE_URL is not configured");
+
+  const normalizedBase = base.replace(/\/$/, "");
+  const encodedPath = storagePath
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+
+  const params = new URLSearchParams({
+    width: String(Math.max(1, Math.round(options.width))),
+    quality: String(options.quality ?? 80),
+  });
+  const version = process.env.NEXT_PUBLIC_ASSET_VERSION?.trim();
+  if (version) params.set("v", version);
+
+  return `${normalizedBase}/storage/v1/render/image/public/webtoon-images/${encodedPath}?${params.toString()}`;
+}
+
 export function getSupabasePublicObjectUrl(storagePath: string): string {
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
 

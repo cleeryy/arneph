@@ -32,9 +32,9 @@ export function PreviewRenderer({ section, progress = 0.5 }: PreviewRendererProp
       ) : section.type === "long-y" ? (
         <LongYStep section={section} onBoundary={() => {}} />
       ) : section.type === "pan-x" ? (
-        <PanXStep section={section} progress={progress} />
+        <PanXStep section={section} progress={progress} gestureZones={false} />
       ) : (
-        <AnimationStep section={section} progress={progress} />
+        <AnimationStep section={section} progress={progress} gestureZones={false} />
       )}
     </div>
   );

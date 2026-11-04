@@ -34,9 +34,11 @@ Server Actions, le self-hosting et le déploiement avant de modifier une route.
 - Un chemin Storage est un chemin relatif, jamais une URL complète en base.
 - Utiliser `getSupabasePublicObjectUrl()` pour construire une URL Storage.
   Ne pas recréer de concaténation locale dans un composant.
-- Les assets Supabase sont rendus avec `unoptimized` sur les composants
-  `next/image` concernés. Ne pas retirer cette option sans avoir vérifié
-  l'optimiseur Next 16 sur le domaine Supabase de production.
+- Les assets Supabase statiques passent par `next/image` avec un `loader`
+  personnalisé qui pointe vers imgproxy (`/storage/v1/render/image/...`) et un
+  `srcset` responsive : l'optimiseur Next n'est jamais utilisé sur ce domaine.
+  Les GIF animés gardent un `<img>` natif pour préserver l'animation.
+  Ne pas revenir à `unoptimized` sans vérifier le rendu et le poids réseau.
 - Après traitement, une image doit avoir des dimensions strictement positives.
   Ne jamais utiliser `Blob.size` comme largeur ou hauteur.
 - Une nouvelle section peut avoir un UUID client temporaire avant sauvegarde.

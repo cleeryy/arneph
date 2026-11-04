@@ -18,6 +18,8 @@ vi.mock("next/image", () => ({
       loading,
       priority,
       unoptimized,
+      sizes,
+      loader,
       className,
       style,
       ...rest
@@ -29,6 +31,8 @@ vi.mock("next/image", () => ({
       loading?: "eager" | "lazy";
       priority?: boolean;
       unoptimized?: boolean;
+      sizes?: string;
+      loader?: (args: { src: string; width: number }) => string;
       className?: string;
       style?: CSSProperties;
     };
@@ -43,6 +47,9 @@ vi.mock("next/image", () => ({
         style={style}
         data-priority={String(priority)}
         data-unoptimized={String(unoptimized)}
+        data-src={String(src)}
+        data-sizes={String(sizes)}
+        data-loader-url={String(loader?.({ src: String(src), width: 640 }))}
         {...rest}
       />
     );
@@ -149,15 +156,17 @@ describe("ImageStep — cadrage", () => {
 });
 
 describe("ImageStep — média", () => {
-  test("image statique → next/image avec unoptimized", () => {
+  test("image statique → next/image avec loader imgproxy responsive", () => {
     render(wrap(<ImageStep section={imageSection()} />));
 
     const img = screen.getByTestId("image-step-image");
     expect(img).toHaveAttribute("data-image-variant", "next");
-    expect(img).toHaveAttribute("data-unoptimized", "true");
+    expect(img).toHaveAttribute("data-src", "test/asset.webp");
+    expect(img).toHaveAttribute("data-sizes", "(max-width: 900px) 100vw, 860px");
+    expect(img).toHaveAttribute("data-loader-url", expect.stringContaining("/render/image/public/"));
     expect(img).toHaveAttribute("width", "800");
     expect(img).toHaveAttribute("height", "1200");
-    expect(img).toHaveAttribute("loading", "lazy");
+    expect(img).toHaveAttribute("loading", "eager");
     expect(img).toHaveAttribute("alt", "Section image");
   });
 
@@ -176,7 +185,6 @@ describe("ImageStep — média", () => {
     const img = screen.getByTestId("image-step-image");
     expect(img).toHaveAttribute("data-image-variant", "native");
     expect(img).toHaveAttribute("src", expect.stringContaining("test/anim.gif"));
-    expect(img).not.toHaveAttribute("data-unoptimized");
   });
 
   test("GIF détecté par extension (.gif) → <img> natif", () => {

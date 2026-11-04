@@ -20,14 +20,17 @@ const LEAD_IN = 0.12;
 const LEAD_OUT = 0.12;
 
 /** Coefficient de pan arrondi pour éviter les `0.30000000000004` en CSS. */
-function panCoefficient(progress: number, direction: "ltr" | "rtl"): number {
+function panCoefficient(
+  progress: number,
+  direction: "ltr" | "rtl",
+  gestureZones: boolean,
+): number {
   const clamped = Number.isFinite(progress)
     ? Math.min(1, Math.max(0, progress))
     : 0;
-  const effective = Math.min(
-    1,
-    Math.max(0, (clamped - LEAD_IN) / (1 - LEAD_IN - LEAD_OUT)),
-  );
+  const effective = gestureZones
+    ? Math.min(1, Math.max(0, (clamped - LEAD_IN) / (1 - LEAD_IN - LEAD_OUT)))
+    : clamped;
   const raw = direction === "rtl" ? 1 - effective : effective;
   return Number(raw.toFixed(5));
 }
@@ -45,8 +48,9 @@ function panCoefficient(progress: number, direction: "ltr" | "rtl"): number {
 export function panXStepTransform(
   progress: number,
   direction: "ltr" | "rtl",
+  gestureZones = true,
 ): string {
-  const coefficient = panCoefficient(progress, direction);
+  const coefficient = panCoefficient(progress, direction, gestureZones);
   const centering = `max(0px, ${VIEWPORT_DELTA} / 2)`;
   const pan = `min(0px, ${VIEWPORT_DELTA} * ${coefficient})`;
   return `translateX(calc(${centering} + ${pan}))`;
@@ -73,6 +77,11 @@ export interface PanXStepProps {
   progress: number;
   /** Interpole visuellement entre deux crans de molette. */
   smooth?: boolean;
+  /**
+   * Zones mortes de geste (lecteur). Désactivées dans l'aperçu éditeur pour
+   * que le slider couvre immédiatement toute la course.
+   */
+  gestureZones?: boolean;
 }
 
 /**
@@ -84,7 +93,12 @@ export interface PanXStepProps {
  * Une image déjà plus étroite que l'écran reste statique et centrée (calcul
  * CSS `min`/`max`).
  */
-export function PanXStep({ section, progress, smooth = true }: PanXStepProps) {
+export function PanXStep({
+  section,
+  progress,
+  smooth = true,
+  gestureZones = true,
+}: PanXStepProps) {
   const t = useTranslations("reader.section");
   const config = section.config as PanXSectionConfig;
   const image = section.images[0];
@@ -115,7 +129,7 @@ export function PanXStep({ section, progress, smooth = true }: PanXStepProps) {
   }
 
   const src = getSupabasePublicObjectUrl(storagePath);
-  const transform = panXStepTransform(progress, direction);
+  const transform = panXStepTransform(progress, direction, gestureZones);
 
   return (
     <section {...sectionData} className="relative h-full w-full overflow-hidden bg-background">
