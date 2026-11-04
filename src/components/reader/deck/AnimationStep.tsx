@@ -107,7 +107,7 @@ export function AnimationStep({ section, progress }: AnimationStepProps) {
           aria-hidden="true"
           width={frameWidth}
           height={frameHeight}
-          className="block max-h-full max-w-full object-contain select-none"
+          className="block h-full w-auto max-w-full object-contain select-none"
           draggable={false}
         />
         {preload.map(({ path, index }) => (

@@ -17,6 +17,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { SectionPreview } from "./SectionPreview";
 import {
+  AnimationFramesEditor,
+  type AnimationFrameUploadResult,
+  type AnimationFramesValue,
+} from "./AnimationFramesEditor";
+import {
   resizeImage,
   buildSpriteSheet,
   sliceSpriteSheet,
@@ -363,6 +368,60 @@ export function SectionConfigPanel({
     }
   };
 
+  /**
+   * Upload des frames ajoutées depuis l'éditeur : chaque fichier passe par
+   * `resizeImage()` (WebP) puis Storage. La géométrie existante est conservée
+   * et n'est déduite de la première frame que si la section n'en avait pas.
+   */
+  const handleAnimationFrameUpload = async (
+    files: File[],
+  ): Promise<AnimationFrameUploadResult> => {
+    if (section.config.type !== "animation") {
+      throw new Error("Section animation requise pour uploader des frames.");
+    }
+
+    const animationConfig = section.config;
+    const timestamp = Date.now();
+    const uploadedFrames: string[] = [];
+    let frameWidth = animationConfig.frameWidth;
+    let frameHeight = animationConfig.frameHeight;
+
+    for (let index = 0; index < files.length; index += 1) {
+      const resized = await resizeImage(files[index]);
+      if (frameWidth <= 0 || frameHeight <= 0) {
+        const dimensions = await readImageDimensions(resized);
+        frameWidth = dimensions.width;
+        frameHeight = dimensions.height;
+      }
+      uploadedFrames.push(
+        await uploadSectionAsset(
+          `webtoons/sections/${section.id}/frames/${timestamp}-${index}.webp`,
+          resized,
+          "image/webp",
+        ),
+      );
+    }
+
+    return { frames: uploadedFrames, frameWidth, frameHeight };
+  };
+
+  const handleAnimationFramesChange = (next: AnimationFramesValue) => {
+    if (section.config.type !== "animation") return;
+    setError(null);
+    onSectionChange({
+      ...section,
+      config: {
+        ...section.config,
+        framePaths: next.frames,
+        frameCount: next.frames.length,
+        frameWidth: next.frameWidth,
+        frameHeight: next.frameHeight,
+        columns: next.frames.length,
+        rows: 1,
+      },
+    });
+  };
+
   const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -703,6 +762,16 @@ export function SectionConfigPanel({
               </Select>
             </div>
           </>
+        )}
+
+        {isAnimationType && (
+          <AnimationFramesEditor
+            frames={animationConfig?.framePaths ?? []}
+            frameWidth={animationConfig?.frameWidth ?? 0}
+            frameHeight={animationConfig?.frameHeight ?? 0}
+            onChange={handleAnimationFramesChange}
+            onUploadFiles={handleAnimationFrameUpload}
+          />
         )}
 
         {isAnimationType && (

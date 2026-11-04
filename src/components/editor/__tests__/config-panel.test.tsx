@@ -1212,3 +1212,102 @@ describe("SectionConfigPanel — animation individual frames", () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 });
+
+describe("SectionConfigPanel — animation frames editor", () => {
+  const FRAMES = [
+    "webtoons/sections/sec-1/frames/a.webp",
+    "webtoons/sections/sec-1/frames/b.webp",
+    "webtoons/sections/sec-1/frames/c.webp",
+  ];
+
+  function animationWithFrames(framePaths: string[]): SectionWithImages {
+    return makeSection({
+      type: "animation",
+      config: {
+        type: "animation",
+        spritePath: "uploaded/sprite.webp",
+        framePaths,
+        frameWidth: 64,
+        frameHeight: 64,
+        columns: framePaths.length,
+        rows: 1,
+        frameCount: framePaths.length,
+      },
+    });
+  }
+
+  test("renders the frames editor for animation and persists reordered framePaths", () => {
+    const onChange = vi.fn();
+    render(
+      wrap(
+        <SectionConfigPanel
+          section={animationWithFrames(FRAMES)}
+          onSectionChange={onChange}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.getByText("Frames", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getAllByTestId("animation-frame")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Déplacer à droite 1" }));
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({
+      type: "animation",
+      framePaths: [FRAMES[1], FRAMES[0], FRAMES[2]],
+      frameCount: 3,
+      columns: 3,
+      rows: 1,
+      frameWidth: 64,
+      frameHeight: 64,
+    });
+    // Le chemin sprite de repli n'est pas perdu.
+    expect(updated.config).toMatchObject({ spritePath: "uploaded/sprite.webp" });
+  });
+
+  test("does not render the frames editor for non-animation sections", () => {
+    render(
+      wrap(
+        <SectionConfigPanel section={makeSection()} onSectionChange={vi.fn()} onClose={vi.fn()} />,
+      ),
+    );
+
+    expect(screen.queryByLabelText("Ajouter des frames")).not.toBeInTheDocument();
+  });
+
+  test("uploading frames from the editor appends storage paths and keeps geometry", async () => {
+    const onChange = vi.fn();
+    render(
+      wrap(
+        <SectionConfigPanel
+          section={animationWithFrames([])}
+          onSectionChange={onChange}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+
+    fireEvent.change(screen.getByLabelText("Ajouter des frames"), {
+      target: { files: [new File(["frame"], "frame.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+
+    const uploadedPath = uploadSpy.mock.calls[0][0] as string;
+    expect(uploadedPath).toMatch(/^webtoons\/sections\/sec-1\/frames\/\d+-0\.webp$/);
+    expect(resizeImage).toHaveBeenCalledWith(expect.any(File));
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({
+      type: "animation",
+      framePaths: ["uploaded/path.webp"],
+      frameCount: 1,
+      columns: 1,
+      rows: 1,
+      frameWidth: 64,
+      frameHeight: 64,
+    });
+  });
+});

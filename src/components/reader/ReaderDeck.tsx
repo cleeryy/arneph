@@ -126,6 +126,13 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
 
   React.useEffect(() => () => pauseCurrent(), [pauseCurrent]);
 
+  /** Le geste vers l'avant masque le header et le bouton « Reprendre ». */
+  const dismissChrome = React.useCallback(() => {
+    setHeaderVisible(false);
+    setResumeDismissed(true);
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+  }, []);
+
   const revealHeader = React.useCallback(() => {
     setHeaderVisible(true);
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -144,15 +151,16 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
-      revealHeader();
       if (isInteractiveTarget(event.target)) return;
+      if (event.deltaY > 0) dismissChrome();
+      else revealHeader();
       if (stepKindRef.current === "long-y") return;
       event.preventDefault();
       navRef.current.handleWheel(event.deltaY);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, [revealHeader]);
+  }, [revealHeader, dismissChrome]);
 
   // Tactile : même logique, seuil géré par l'accumulateur du hook.
   React.useEffect(() => {
@@ -169,6 +177,8 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       const delta = touchStartY.current - current;
       touchStartY.current = current;
       if (Math.abs(delta) < 6) return;
+      if (delta > 0) dismissChrome();
+      else revealHeader();
       event.preventDefault();
       navRef.current.handleWheel(delta);
     };
@@ -178,7 +188,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
     };
-  }, [revealHeader]);
+  }, [revealHeader, dismissChrome]);
 
   // Clavier.
   React.useEffect(() => {
@@ -190,7 +200,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       // la navigation ne prend le relais qu'en butée.
       if (stepKindRef.current === "long-y") {
         const el = containerRef.current?.querySelector<HTMLElement>(
-          "[data-testid='long-y-step']",
+          "[data-testid='long-y-scroll']",
         );
         const forward = event.key === "ArrowDown" || event.key === "PageDown";
         const backward = event.key === "ArrowUp" || event.key === "PageUp";
@@ -213,7 +223,11 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
 
       if (navRef.current.handleKey(event.key)) {
         event.preventDefault();
-        revealHeader();
+        if (event.key === "ArrowUp" || event.key === "ArrowLeft" || event.key === "PageUp") {
+          revealHeader();
+        } else {
+          dismissChrome();
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);

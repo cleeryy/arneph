@@ -71,6 +71,15 @@ function longSection(
   });
 }
 
+/** Le contenu doit être marqué comme décodé pour autoriser les gestes. */
+function markImageReady(root: HTMLElement = document.body) {
+  const img = root.querySelector("img");
+  if (!img) return;
+  Object.defineProperty(img, "complete", { value: true, configurable: true });
+  Object.defineProperty(img, "naturalHeight", { value: 4000, configurable: true });
+  Object.defineProperty(img, "naturalWidth", { value: 800, configurable: true });
+}
+
 /** jsdom n'implémente pas le scroll : on fixe les métriques du conteneur. */
 function setScrollMetrics(
   el: HTMLElement,
@@ -159,6 +168,7 @@ describe("LongYStep — frontières", () => {
     const onBoundary = vi.fn();
     render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
 
+    markImageReady();
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
 
@@ -172,6 +182,7 @@ describe("LongYStep — frontières", () => {
     const onBoundary = vi.fn();
     render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
 
+    markImageReady();
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 3200, clientHeight: 800, scrollHeight: 4000 });
 
@@ -185,6 +196,7 @@ describe("LongYStep — frontières", () => {
     const onBoundary = vi.fn();
     render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
 
+    markImageReady();
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 1200, clientHeight: 800, scrollHeight: 4000 });
 
@@ -198,6 +210,7 @@ describe("LongYStep — frontières", () => {
     const onBoundary = vi.fn();
     render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
 
+    markImageReady();
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
 
@@ -213,17 +226,18 @@ describe("LongYStep — frontières", () => {
     const onBoundary = vi.fn();
     render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
 
+    markImageReady();
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
 
-    fireEvent.wheel(scroller, { deltaY: -80 });
+    fireEvent.wheel(scroller, { deltaY: -120 });
     expect(onBoundary).toHaveBeenCalledTimes(1);
 
     // L'utilisateur redescend dans le contenu : la butée haute est réarmée,
     // puis un nouveau geste vers le haut en butée repasse la frontière.
-    fireEvent.wheel(scroller, { deltaY: 80 });
-    fireEvent.wheel(scroller, { deltaY: -80 });
-    fireEvent.wheel(scroller, { deltaY: -80 });
+    fireEvent.wheel(scroller, { deltaY: 120 });
+    fireEvent.wheel(scroller, { deltaY: -120 });
+    fireEvent.wheel(scroller, { deltaY: -120 });
 
     expect(onBoundary).toHaveBeenCalledTimes(2);
   });
@@ -232,6 +246,7 @@ describe("LongYStep — frontières", () => {
     const onBoundary = vi.fn();
     render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
 
+    markImageReady();
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
 

@@ -15,12 +15,20 @@ import type { PanXSectionConfig } from "@/types/webtoon";
  */
 const VIEWPORT_DELTA = "(100cqw - 100%)";
 
+/** Zones mortes en début et fin : on voit le bord avant que ça n'enchaîne. */
+const LEAD_IN = 0.08;
+const LEAD_OUT = 0.08;
+
 /** Coefficient de pan arrondi pour éviter les `0.30000000000004` en CSS. */
 function panCoefficient(progress: number, direction: "ltr" | "rtl"): number {
   const clamped = Number.isFinite(progress)
     ? Math.min(1, Math.max(0, progress))
     : 0;
-  const raw = direction === "rtl" ? 1 - clamped : clamped;
+  const effective = Math.min(
+    1,
+    Math.max(0, (clamped - LEAD_IN) / (1 - LEAD_IN - LEAD_OUT)),
+  );
+  const raw = direction === "rtl" ? 1 - effective : effective;
   return Number(raw.toFixed(5));
 }
 

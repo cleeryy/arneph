@@ -29,6 +29,9 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Geste supplémentaire (en fraction d'écran) avant de quitter une butée. */
+const EDGE_HOLD_RATIO = 0.12;
+
 /**
  * Étape image longue : défilement **piloté** (pas de scroll natif).
  *
@@ -54,6 +57,7 @@ export function LongYStep({
   const scrollerRef = React.useRef<HTMLDivElement>(null);
   const latchedRef = React.useRef<LongYBoundaryEdge | null>(null);
   const momentumRef = React.useRef<number | null>(null);
+  const edgeAccumulatorRef = React.useRef(0);
   const callbacksRef = React.useRef({ onBoundary, onScrollTopChange, onScrollProgress });
 
   React.useEffect(() => {
@@ -76,10 +80,19 @@ export function LongYStep({
     callbacksRef.current.onBoundary(edge);
   }, []);
 
+  /** L'image doit être décodée avant de décider qu'on est « en butée ». */
+  const isContentReady = React.useCallback((): boolean => {
+    const el = scrollerRef.current;
+    if (!el) return false;
+    const image = el.querySelector("img");
+    return Boolean(image && image.complete && image.naturalHeight > 0);
+  }, []);
+
   const scrollBy = React.useCallback(
     (delta: number): boolean => {
       const el = scrollerRef.current;
       if (!el) return false;
+      if (!isContentReady()) return false;
       const max = el.scrollHeight - el.clientHeight;
       if (max <= 0) return false;
       const next = clamp(el.scrollTop + delta, 0, max);
@@ -116,10 +129,30 @@ export function LongYStep({
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       stopMomentum();
+      if (!isContentReady()) return;
+
+      const el = scrollerRef.current;
+      if (!el) return;
+      const max = el.scrollHeight - el.clientHeight;
       const moved = scrollBy(event.deltaY);
+
+      // En butée (ou contenu plus court que l'écran), il faut insister un peu
+      // avant de quitter l'étape : sinon on saute sans voir la fin.
       if (!moved) {
-        notify(event.deltaY > 0 ? "bottom" : "top");
+        const atEdge =
+          max <= 0 ||
+          (event.deltaY > 0
+            ? el.scrollTop >= max
+            : el.scrollTop <= 0);
+        if (!atEdge) return;
+        edgeAccumulatorRef.current += Math.abs(event.deltaY);
+        if (edgeAccumulatorRef.current >= el.clientHeight * EDGE_HOLD_RATIO) {
+          edgeAccumulatorRef.current = 0;
+          notify(event.deltaY > 0 ? "bottom" : "top");
+        }
+        return;
       }
+      edgeAccumulatorRef.current = 0;
     };
 
     let touchY: number | null = null;
@@ -186,7 +219,7 @@ export function LongYStep({
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [publish, scrollBy, notify]);
+  }, [publish, scrollBy, notify, isContentReady]);
 
   return (
     <section

@@ -5,140 +5,97 @@ import { ArrowUpRight, BookOpen, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Révélation d'entrée : déplacement seul, sans opacité — le contenu reste
- * lisible dès le premier rendu. Désactivée avec `prefers-reduced-motion`
- * (motion-safe).
+ * Accueil « une seule page » : une déclaration, deux portes.
+ *
+ * Parti pris visuel : le studio d'impression. Trame de points, repères de
+ * calage aux angles, titre avec un léger décalage CMJN (cyan/magenta) qui se
+ * recale à l'arrivée. Aucune image : la typographie et la trame suffisent.
  */
-const REVEAL =
-  "motion-safe:animate-in motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both motion-safe:duration-500 motion-safe:ease-out";
-
 export default async function Home() {
   const t = await getTranslations("home");
 
-  const entries = [
-    {
-      href: "/read",
-      label: t("readerLink"),
-      index: "01",
-      primary: true,
-      Icon: BookOpen,
-    },
-    {
-      href: "/editor",
-      label: t("editorLink"),
-      index: "02",
-      primary: false,
-      Icon: PenLine,
-    },
-  ];
-
   return (
-    <main className="relative flex flex-1 flex-col overflow-hidden bg-background">
-      {/* Trame de points, fondue vers le haut : profondeur sans image. */}
+    <main className="relative flex min-h-dvh flex-col overflow-hidden bg-background">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(color-mix(in oklch, var(--foreground) 14%, transparent) 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
-          maskImage:
-            "radial-gradient(ellipse 80% 70% at 50% 0%, #000 10%, transparent 70%)",
-          WebkitMaskImage:
-            "radial-gradient(ellipse 80% 70% at 50% 0%, #000 10%, transparent 70%)",
-        }}
+        className="pointer-events-none absolute inset-0 opacity-60 [background-image:radial-gradient(circle_at_1px_1px,color-mix(in_oklab,var(--foreground)_18%,transparent)_1px,transparent_0)] [background-size:22px_22px]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-4 border border-foreground/10 sm:inset-6"
       />
 
-      <div className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col justify-center px-5 py-16 sm:px-6 sm:py-20 lg:py-24">
-        <div className="grid items-center gap-10 lg:grid-cols-12 lg:gap-14">
-          <header className="lg:col-span-7">
-            <p
-              className={cn(
-                "font-mono text-[11px] font-medium tracking-[0.28em] text-muted-foreground uppercase",
-                REVEAL,
-              )}
-            >
-              Arneph
-            </p>
-            <h1
-              className={cn(
-                "mt-5 max-w-xl font-heading text-4xl leading-[1.04] font-semibold tracking-tight text-balance text-foreground sm:text-5xl lg:text-6xl",
-                REVEAL,
-                "motion-safe:delay-75",
-              )}
-            >
-              {t("title")}
-            </h1>
-            <p
-              className={cn(
-                "mt-5 max-w-lg text-pretty text-base leading-7 text-muted-foreground sm:text-lg sm:leading-8",
-                REVEAL,
-                "motion-safe:delay-150",
-              )}
-            >
-              {t("subtitle")}
-            </p>
-          </header>
+      {/* Repères de calage, comme sur une planche à imprimer. */}
+      {[
+        "left-3 top-3 border-l border-t sm:left-5 sm:top-5",
+        "right-3 top-3 border-r border-t sm:right-5 sm:top-5",
+        "bottom-3 left-3 border-b border-l sm:bottom-5 sm:left-5",
+        "bottom-3 right-3 border-b border-r sm:bottom-5 sm:right-5",
+      ].map((position) => (
+        <span
+          key={position}
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute size-4 border-foreground/30",
+            position,
+          )}
+        />
+      ))}
 
-          <nav
-            className={cn(
-              "grid gap-3 sm:grid-cols-2 lg:col-span-5 lg:grid-cols-1",
-              REVEAL,
-              "motion-safe:delay-200",
-            )}
-          >
-            {entries.map(({ href, label, index, primary, Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "group relative flex min-h-32 flex-col justify-between gap-8 rounded-xl p-5 outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-foreground/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:min-h-36",
-                  primary
-                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                    : "border border-border bg-card text-card-foreground hover:bg-muted/60",
-                )}
-              >
-                <span className="flex items-start justify-between gap-3">
-                  <span
-                    className={cn(
-                      "inline-flex size-9 items-center justify-center rounded-lg",
-                      primary
-                        ? "bg-primary-foreground/10 text-primary-foreground"
-                        : "border border-border bg-background text-foreground",
-                    )}
-                  >
-                    <Icon aria-hidden="true" className="size-4" />
-                  </span>
-                  <span
-                    className={cn(
-                      "font-mono text-[11px] tracking-[0.2em]",
-                      primary
-                        ? "text-primary-foreground/70"
-                        : "text-muted-foreground",
-                    )}
-                    aria-hidden="true"
-                  >
-                    {index}
-                  </span>
-                </span>
+      <header className="relative z-10 flex items-baseline justify-between px-6 pt-6 sm:px-10 sm:pt-8">
+        <span className="font-heading text-sm font-semibold tracking-[0.28em] uppercase">
+          Arneph
+        </span>
+        <span className="text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
+          Webtoon studio
+        </span>
+      </header>
 
-                <span className="flex items-end justify-between gap-3">
-                  <span className="font-heading text-lg font-medium tracking-tight">
-                    {label}
-                  </span>
-                  <ArrowUpRight
-                    aria-hidden="true"
-                    className={cn(
-                      "size-5 shrink-0 transition-[transform,opacity] duration-200 group-hover:opacity-100 motion-safe:group-hover:-translate-y-0.5 motion-safe:group-hover:translate-x-0.5",
-                      primary ? "opacity-70" : "text-muted-foreground opacity-70",
-                    )}
-                  />
-                </span>
-              </Link>
-            ))}
-          </nav>
-        </div>
-      </div>
+      <section className="relative z-10 flex flex-1 flex-col justify-end px-6 pb-10 pt-20 sm:px-10 sm:pb-14">
+        <h1 className="home-title max-w-4xl text-balance font-heading text-[clamp(2.6rem,8.5vw,6.5rem)] font-semibold leading-[0.94] tracking-[-0.035em] text-foreground">
+          {t("title")}
+        </h1>
+        <p className="mt-6 max-w-md text-pretty text-sm leading-6 text-muted-foreground sm:text-base sm:leading-7">
+          {t("subtitle")}
+        </p>
+      </section>
+
+      <nav
+        aria-label={t("title")}
+        className="relative z-10 grid border-t border-foreground/15 sm:grid-cols-2"
+      >
+        <Link
+          href="/read"
+          className="home-entry group flex items-center justify-between gap-4 border-b border-foreground/15 bg-foreground px-6 py-7 text-background outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/60 focus-visible:ring-inset sm:border-b-0 sm:border-r sm:px-10 sm:py-9"
+        >
+          <span className="flex items-center gap-3">
+            <BookOpen aria-hidden="true" className="size-5 opacity-80" />
+            <span className="font-heading text-xl font-medium sm:text-2xl">
+              {t("readerLink")}
+            </span>
+          </span>
+          <ArrowUpRight
+            aria-hidden="true"
+            className="size-5 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 motion-reduce:transition-none"
+          />
+        </Link>
+
+        <Link
+          href="/editor"
+          className="home-entry group flex items-center justify-between gap-4 px-6 py-7 text-foreground outline-none transition-colors hover:bg-foreground hover:text-background focus-visible:ring-3 focus-visible:ring-ring/60 focus-visible:ring-inset sm:px-10 sm:py-9"
+        >
+          <span className="flex items-center gap-3">
+            <PenLine aria-hidden="true" className="size-5 opacity-80" />
+            <span className="font-heading text-xl font-medium sm:text-2xl">
+              {t("editorLink")}
+            </span>
+          </span>
+          <ArrowUpRight
+            aria-hidden="true"
+            className="size-5 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 motion-reduce:transition-none"
+          />
+        </Link>
+      </nav>
     </main>
   );
 }

@@ -34,7 +34,11 @@ function panSection(
  * que l'écran ; le terme `min` borne le pan à 0 dans ce même cas.
  */
 function expectedTransform(progress: number, direction: "ltr" | "rtl"): string {
-  const coefficient = Number((direction === "rtl" ? 1 - progress : progress).toFixed(5));
+  // Zones mortes de 8 % en entrée et en sortie : le pan ne commence qu'après
+  // la première et se termine avant la seconde.
+  const lead = 0.08;
+  const effective = Math.min(1, Math.max(0, (progress - lead) / (1 - lead * 2)));
+  const coefficient = Number((direction === "rtl" ? 1 - effective : effective).toFixed(5));
   return `translateX(calc(max(0px, (100cqw - 100%) / 2) + min(0px, (100cqw - 100%) * ${coefficient})))`;
 }
 
