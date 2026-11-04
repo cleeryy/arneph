@@ -12,6 +12,7 @@ import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { ReaderPageData } from "@/app/read/[webtoonId]/page";
 import { ReaderSettings } from "./ReaderSettings";
 import { useReaderPreferences } from "@/hooks/useReaderPreferences";
+import { useStepPreload } from "@/hooks/useStepPreload";
 import { ImageStep } from "./deck/ImageStep";
 import { PanXStep } from "./deck/PanXStep";
 import { AnimationStep } from "./deck/AnimationStep";
@@ -58,6 +59,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     () => false,
   );
   const { preferences } = useReaderPreferences();
+  useStepPreload(steps, nav.index);
   const [headerVisible, setHeaderVisible] = React.useState(true);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [longYProgress, setLongYProgress] = React.useState(0);

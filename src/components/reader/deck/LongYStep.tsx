@@ -25,22 +25,20 @@ export interface LongYStepProps {
   onScrollProgress?: (progress: number) => void;
 }
 
-function isAtTop(el: HTMLElement): boolean {
-  return el.scrollTop <= 0;
-}
-
-function isAtBottom(el: HTMLElement): boolean {
-  return el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
 
 /**
- * Étape image longue : son PROPRE conteneur de défilement (`100dvh`,
- * `overscroll-contain`). L'image garde sa hauteur naturelle, l'overlay FX
- * défile avec elle.
+ * Étape image longue : défilement **piloté** (pas de scroll natif).
  *
- * Les butées sont détectées localement (wheel + touch) : chaque geste en
- * butée ne prévient le deck qu'une fois, puis le verrou est relâché dès que
- * l'utilisateur repart dans le contenu.
+ * Le conteneur reste en `overflow-hidden` et les gestes (molette, tactile) sont
+ * interceptés pour déplacer `scrollTop` nous-mêmes. C'est ce qui évite les
+ * comportements natifs capricieux sur iOS/Android (rebond, barre d'adresse,
+ * overscroll) et garantit un rendu identique partout.
+ *
+ * Un léger momentum est appliqué au tactile pour conserver la sensation
+ * naturelle.
  */
 export function LongYStep({
   section,
@@ -54,71 +52,141 @@ export function LongYStep({
   const fxPath = typeof config.fxPath === "string" ? config.fxPath.trim() : "";
 
   const scrollerRef = React.useRef<HTMLDivElement>(null);
-  const restoreRef = React.useRef(initialScrollTop);
   const latchedRef = React.useRef<LongYBoundaryEdge | null>(null);
-  const touchStartYRef = React.useRef<number | null>(null);
+  const momentumRef = React.useRef<number | null>(null);
+  const callbacksRef = React.useRef({ onBoundary, onScrollTopChange, onScrollProgress });
 
-  // Restaure la position au montage : revenir sur une image longue doit
-  // retrouver l'endroit quitté (souvent le bas), pas le haut.
+  React.useEffect(() => {
+    callbacksRef.current = { onBoundary, onScrollTopChange, onScrollProgress };
+  });
+
+  const publish = React.useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    callbacksRef.current.onScrollTopChange?.(el.scrollTop);
+    const range = el.scrollHeight - el.clientHeight;
+    callbacksRef.current.onScrollProgress?.(
+      range > 0 ? clamp(el.scrollTop / range, 0, 1) : 1,
+    );
+  }, []);
+
+  const notify = React.useCallback((edge: LongYBoundaryEdge) => {
+    if (latchedRef.current === edge) return;
+    latchedRef.current = edge;
+    callbacksRef.current.onBoundary(edge);
+  }, []);
+
+  const scrollBy = React.useCallback(
+    (delta: number): boolean => {
+      const el = scrollerRef.current;
+      if (!el) return false;
+      const max = el.scrollHeight - el.clientHeight;
+      if (max <= 0) return false;
+      const next = clamp(el.scrollTop + delta, 0, max);
+      if (next === el.scrollTop) return false;
+      el.scrollTop = next;
+      latchedRef.current = null;
+      publish();
+      return true;
+    },
+    [publish],
+  );
+
+  // Restaure la position au montage (retour arrière) et publie la progression.
   React.useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    const target = Math.max(0, restoreRef.current);
-    if (target > 0) el.scrollTop = target;
-
-    const range = el.scrollHeight - el.clientHeight;
-    onScrollProgress?.(range > 0 ? Math.min(1, Math.max(0, target / range)) : 1);
+    el.scrollTop = Math.max(0, initialScrollTop);
+    publish();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    const el = event.currentTarget;
-    onScrollTopChange?.(el.scrollTop);
-    const range = el.scrollHeight - el.clientHeight;
-    onScrollProgress?.(range > 0 ? Math.min(1, Math.max(0, el.scrollTop / range)) : 1);
-  };
+  // Gestes : listeners natifs non passifs pour pouvoir bloquer le scroll natif.
+  React.useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
 
-  const notify = React.useCallback(
-    (edge: LongYBoundaryEdge) => {
-      if (latchedRef.current === edge) return;
-      latchedRef.current = edge;
-      onBoundary(edge);
-    },
-    [onBoundary],
-  );
+    const stopMomentum = () => {
+      if (momentumRef.current !== null) {
+        cancelAnimationFrame(momentumRef.current);
+        momentumRef.current = null;
+      }
+    };
 
-  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    const el = event.currentTarget;
-    if (event.deltaY < 0) {
-      if (isAtTop(el)) notify("top");
-      else latchedRef.current = null;
-      return;
-    }
-    if (event.deltaY > 0) {
-      if (isAtBottom(el)) notify("bottom");
-      else latchedRef.current = null;
-    }
-  };
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      stopMomentum();
+      const moved = scrollBy(event.deltaY);
+      if (!moved) {
+        notify(event.deltaY > 0 ? "bottom" : "top");
+      }
+    };
 
-  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
-    touchStartYRef.current = event.touches[0]?.clientY ?? null;
-    latchedRef.current = null;
-  };
+    let touchY: number | null = null;
+    let touchScroll = 0;
+    let velocity = 0;
+    let lastTime = 0;
 
-  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
-    const startY = touchStartYRef.current;
-    const currentY = event.touches[0]?.clientY;
-    if (startY === null || currentY === undefined) return;
+    const onTouchStart = (event: TouchEvent) => {
+      stopMomentum();
+      touchY = event.touches[0]?.clientY ?? null;
+      touchScroll = el.scrollTop;
+      velocity = 0;
+      lastTime = performance.now();
+      latchedRef.current = null;
+    };
 
-    const el = event.currentTarget;
-    const deltaY = currentY - startY;
-    if (deltaY > 0 && isAtTop(el)) notify("top");
-    else if (deltaY < 0 && isAtBottom(el)) notify("bottom");
-  };
+    const onTouchMove = (event: TouchEvent) => {
+      const current = event.touches[0]?.clientY;
+      if (current === undefined || touchY === null) return;
+      event.preventDefault();
+      const max = el.scrollHeight - el.clientHeight;
+      const next = clamp(touchScroll - (current - touchY), 0, max);
+      const now = performance.now();
+      const dt = Math.max(1, now - lastTime);
+      velocity = (next - el.scrollTop) / dt;
+      lastTime = now;
+      el.scrollTop = next;
+      latchedRef.current = null;
+      publish();
+    };
 
-  const handleTouchEnd = () => {
-    touchStartYRef.current = null;
-  };
+    const onTouchEnd = () => {
+      if (touchY === null) return;
+      touchY = null;
+      const max = el.scrollHeight - el.clientHeight;
+      if (Math.abs(velocity) < 0.05 || max <= 0) return;
+
+      let momentum = clamp(velocity * 16, -80, 80);
+      const step = () => {
+        momentum *= 0.94;
+        const next = clamp(el.scrollTop + momentum, 0, max);
+        if (next === el.scrollTop || Math.abs(momentum) < 0.4) {
+          momentumRef.current = null;
+          return;
+        }
+        el.scrollTop = next;
+        publish();
+        momentumRef.current = requestAnimationFrame(step);
+      };
+      momentumRef.current = requestAnimationFrame(step);
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+
+    return () => {
+      stopMomentum();
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+  }, [publish, scrollBy, notify]);
 
   return (
     <section
@@ -132,13 +200,8 @@ export function LongYStep({
       <div
         ref={scrollerRef}
         data-testid="long-y-scroll"
-        onScroll={handleScroll}
-        className="h-full w-full overflow-y-auto overscroll-contain"
-        onWheel={handleWheel}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
+        onScroll={publish}
+        className="h-full w-full overflow-hidden"
       >
         <div className="relative w-full">
           <StepImage

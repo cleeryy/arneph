@@ -115,7 +115,7 @@ describe("LongYStep — restauration de position", () => {
 });
 
 describe("LongYStep — conteneur de scroll", () => {
-  test("écran plein avec son propre défilement borné (overscroll-contain)", () => {
+  test("écran plein, défilement piloté (pas de scroll natif)", () => {
     render(wrap(<LongYStep section={longSection()} onBoundary={vi.fn()} />));
 
     const root = screen.getByTestId("long-y-step");
@@ -123,8 +123,8 @@ describe("LongYStep — conteneur de scroll", () => {
 
     const scroller = screen.getByTestId("long-y-scroll");
     expect(scroller.className).toContain("h-full");
-    expect(scroller.className).toContain("overflow-y-auto");
-    expect(scroller.className).toContain("overscroll-contain");
+    expect(scroller.className).toContain("overflow-hidden");
+    expect(scroller.className).not.toContain("overflow-y-auto");
   });
 
   test("image pleine largeur, hauteur naturelle (pas de recadrage)", () => {
@@ -219,8 +219,10 @@ describe("LongYStep — frontières", () => {
     fireEvent.wheel(scroller, { deltaY: -80 });
     expect(onBoundary).toHaveBeenCalledTimes(1);
 
-    // L'utilisateur redescend dans le contenu : la butée haute est réarmée.
+    // L'utilisateur redescend dans le contenu : la butée haute est réarmée,
+    // puis un nouveau geste vers le haut en butée repasse la frontière.
     fireEvent.wheel(scroller, { deltaY: 80 });
+    fireEvent.wheel(scroller, { deltaY: -80 });
     fireEvent.wheel(scroller, { deltaY: -80 });
 
     expect(onBoundary).toHaveBeenCalledTimes(2);
