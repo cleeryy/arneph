@@ -262,6 +262,25 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
 
   const innerProgress =
     step?.kind === "long-y" ? longYProgress : nav.inner;
+  const preloadLayers = React.useMemo(() => {
+    if (nav.isEnd) return null;
+    return steps.map((candidate, index) =>
+      index !== nav.index && Math.abs(index - nav.index) <= 2 ? (
+        <div
+          key={candidate.section.id}
+          aria-hidden="true"
+          style={{ display: "none" }}
+          data-preload-step={index}
+        >
+          {stepImageUrls(candidate).map((url) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={url} src={url} alt="" loading="eager" decoding="async" />
+          ))}
+        </div>
+      ) : null,
+    );
+  }, [steps, nav.index, nav.isEnd]);
+
   const progress = globalProgress(steps, nav.index, innerProgress);
   const total = steps.length;
 
@@ -391,25 +410,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
         </div>
       )}
 
-      {/* Images des sections voisines, montées mais invisibles : elles sont
-          déjà téléchargées et décodées quand on change d'écran. */}
-      {!nav.isEnd
-        ? steps.map((candidate, index) =>
-            index !== nav.index && Math.abs(index - nav.index) <= 2 ? (
-              <div
-                key={candidate.section.id}
-                aria-hidden="true"
-                style={{ display: "none" }}
-                data-preload-step={index}
-              >
-                {stepImageUrls(candidate).map((url) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img key={url} src={url} alt="" loading="eager" decoding="async" />
-                ))}
-              </div>
-            ) : null,
-          )
-        : null}
+      {preloadLayers}
 
       {!nav.isEnd && step?.kind === "long-y" ? (
         <button

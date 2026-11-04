@@ -42,7 +42,7 @@ describe("getSupabaseRenderUrl", () => {
       "/storage/v1/render/image/public/webtoon-images/webtoons/a%20b/%C3%A9.webp",
     );
     expect(url.searchParams.get("width")).toBe("640");
-    expect(url.searchParams.get("quality")).toBe("80");
+    expect(url.searchParams.get("quality")).toBe("75");
     expect(url.searchParams.get("v")).toBe("3");
   });
 });

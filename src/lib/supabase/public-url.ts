@@ -26,7 +26,7 @@ export function getSupabaseRenderUrl(
 
   const params = new URLSearchParams({
     width: String(Math.max(1, Math.round(options.width))),
-    quality: String(options.quality ?? 80),
+    quality: String(options.quality ?? 75),
   });
   const version = process.env.NEXT_PUBLIC_ASSET_VERSION?.trim();
   if (version) params.set("v", version);
