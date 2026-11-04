@@ -18,11 +18,16 @@ export const fxOverlayConfigSchema = z.object({
   opacity: z.number().min(0).max(1),
 });
 
+export const imageFitSchema = z.enum(['contain', 'cover', 'width']);
+export const imageFocusSchema = z.enum(['top', 'center', 'bottom']);
+
 export const imageSectionConfigSchema = z.object({
   type: z.literal('image'),
   imagePath: z.string().min(1),
   width: z.number().positive(),
   height: z.number().positive(),
+  fit: imageFitSchema.optional(),
+  focus: imageFocusSchema.optional(),
   audioPath: z.string().optional(),
   fxPath: z.string().optional(),
   fxConfig: fxOverlayConfigSchema.optional(),
@@ -43,6 +48,9 @@ export const panXSectionConfigSchema = z.object({
   imagePath: z.string().min(1),
   width: z.number().positive(),
   height: z.number().positive(),
+  panDistance: z.number().min(100).max(400).optional(),
+  direction: z.enum(['ltr', 'rtl']).optional(),
+  /** @deprecated Conservé pour relire les anciennes données. */
   panSpeed: z.number().positive().optional(),
   audioPath: z.string().optional(),
 });

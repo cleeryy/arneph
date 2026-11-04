@@ -13,12 +13,21 @@ export interface FxOverlayConfig {
   opacity: number;
 }
 
+/** Cadrage d'une image simple dans son écran plein. */
+export type ImageFit = 'contain' | 'cover' | 'width';
+/** Point focal vertical, utilisé par le mode `cover`. */
+export type ImageFocus = 'top' | 'center' | 'bottom';
+
 /** Affichage statique. */
 export interface ImageSectionConfig {
   type: 'image';
   imagePath: string;
   width: number;
   height: number;
+  /** Cadrage dans l'écran (défaut `contain`). */
+  fit?: ImageFit;
+  /** Point focal vertical pour `cover` (défaut `center`). */
+  focus?: ImageFocus;
   audioPath?: string;
   /** Overlay GIF/WebP animé (positionné par fxConfig). */
   fxPath?: string;
@@ -45,7 +54,14 @@ export interface PanXSectionConfig {
   imagePath: string;
   width: number;
   height: number;
-  /** Distance de scroll en vh ; défaut : SCROLL_DISTANCES['pan-x']. */
+  /**
+   * Longueur d'épinglage en vh (100–400, défaut 150). Remplace `panSpeed`,
+   * conservé uniquement pour relire les anciennes données.
+   */
+  panDistance?: number;
+  /** Sens du glissement (défaut `ltr`). */
+  direction?: 'ltr' | 'rtl';
+  /** @deprecated Ignoré, remplacé par `panDistance`. */
   panSpeed?: number;
   audioPath?: string;
 }
