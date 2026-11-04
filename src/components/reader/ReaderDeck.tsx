@@ -234,6 +234,26 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [revealHeader]);
 
+  // Image de l'étape précédente, affichée sous l'étape courante : pendant le
+  // décodage de la nouvelle image, on voit l'ancienne au lieu du fond blanc.
+  const backdropIndex =
+    nav.direction === 0 ? -1 : nav.index - nav.direction;
+  const backdropStep =
+    backdropIndex >= 0 && backdropIndex < steps.length
+      ? steps[backdropIndex]
+      : undefined;
+  const backdropUrl =
+    backdropStep && backdropStep.kind !== "long-y"
+      ? stepImageUrls(backdropStep)[0]
+      : undefined;
+
+  // Entre deux images simples, toute animation laisse voir le fond une frame :
+  // on échange donc instantanément (les deux images sont déjà préchargées).
+  const previousStep =
+    nav.index - nav.direction >= 0 ? steps[nav.index - nav.direction] : undefined;
+  const isImageSwap =
+    step?.kind === "image" && previousStep?.kind === "image";
+
   const innerProgress =
     step?.kind === "long-y" ? longYProgress : nav.inner;
   const progress = globalProgress(steps, nav.index, innerProgress);
@@ -292,6 +312,21 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
         </div>
       </header>
 
+      {backdropUrl && !nav.isEnd ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={backdropUrl}
+            alt=""
+            className="max-h-full max-w-full object-contain opacity-60"
+            draggable={false}
+          />
+        </div>
+      ) : null}
+
       {nav.isEnd ? (
         <section
           data-testid="reader-end"
@@ -330,7 +365,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
           data-step-kind={step?.kind}
           className={
             "h-full " +
-            (preferences.smoothY && nav.direction !== 0
+            (preferences.smoothY && nav.direction !== 0 && !isImageSwap
               ? nav.direction > 0
                 ? "reader-step-forward"
                 : "reader-step-backward"

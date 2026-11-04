@@ -172,7 +172,7 @@ describe("LongYStep — frontières", () => {
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
 
-    fireEvent.wheel(scroller, { deltaY: -120 });
+    fireEvent.wheel(scroller, { deltaY: -240 });
 
     expect(onBoundary).toHaveBeenCalledTimes(1);
     expect(onBoundary).toHaveBeenCalledWith("top");
@@ -186,7 +186,7 @@ describe("LongYStep — frontières", () => {
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 3200, clientHeight: 800, scrollHeight: 4000 });
 
-    fireEvent.wheel(scroller, { deltaY: 120 });
+    fireEvent.wheel(scroller, { deltaY: 240 });
 
     expect(onBoundary).toHaveBeenCalledTimes(1);
     expect(onBoundary).toHaveBeenCalledWith("bottom");
@@ -200,8 +200,8 @@ describe("LongYStep — frontières", () => {
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 1200, clientHeight: 800, scrollHeight: 4000 });
 
-    fireEvent.wheel(scroller, { deltaY: 120 });
-    fireEvent.wheel(scroller, { deltaY: -120 });
+    fireEvent.wheel(scroller, { deltaY: 240 });
+    fireEvent.wheel(scroller, { deltaY: -240 });
 
     expect(onBoundary).not.toHaveBeenCalled();
   });
@@ -230,14 +230,14 @@ describe("LongYStep — frontières", () => {
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
 
-    fireEvent.wheel(scroller, { deltaY: -120 });
+    fireEvent.wheel(scroller, { deltaY: -240 });
     expect(onBoundary).toHaveBeenCalledTimes(1);
 
     // L'utilisateur redescend dans le contenu : la butée haute est réarmée,
     // puis un nouveau geste vers le haut en butée repasse la frontière.
-    fireEvent.wheel(scroller, { deltaY: 120 });
-    fireEvent.wheel(scroller, { deltaY: -120 });
-    fireEvent.wheel(scroller, { deltaY: -120 });
+    fireEvent.wheel(scroller, { deltaY: 240 });
+    fireEvent.wheel(scroller, { deltaY: -240 });
+    fireEvent.wheel(scroller, { deltaY: -240 });
 
     expect(onBoundary).toHaveBeenCalledTimes(2);
   });
@@ -280,7 +280,7 @@ describe("LongYStep — frontières", () => {
     const scroller = screen.getByTestId("long-y-scroll");
     setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
 
-    fireEvent.wheel(scroller, { deltaY: 120 });
+    fireEvent.wheel(scroller, { deltaY: 240 });
     expect(onBoundary).not.toHaveBeenCalled();
   });
 });

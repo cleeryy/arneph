@@ -110,7 +110,7 @@ describe("AnimationStep — frame pilotée par la progression", () => {
     expect(frameIndex()).toBe(0);
 
     rerender(wrap(<AnimationStep section={animationSection()} progress={0.34} />));
-    expect(frameIndex()).toBe(2); // floor(2.04)
+    expect(frameIndex()).toBe(1); // zone morte de 12 % en entrée
 
     rerender(wrap(<AnimationStep section={animationSection()} progress={0.5} />));
     expect(frameIndex()).toBe(3); // floor(3.0)

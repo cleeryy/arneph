@@ -30,7 +30,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /** Geste supplémentaire (en fraction d'écran) avant de quitter une butée. */
-const EDGE_HOLD_RATIO = 0.12;
+const EDGE_HOLD_RATIO = 0.2;
 
 /**
  * Étape image longue : défilement **piloté** (pas de scroll natif).

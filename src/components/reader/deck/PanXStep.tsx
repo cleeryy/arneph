@@ -16,8 +16,8 @@ import type { PanXSectionConfig } from "@/types/webtoon";
 const VIEWPORT_DELTA = "(100cqw - 100%)";
 
 /** Zones mortes en début et fin : on voit le bord avant que ça n'enchaîne. */
-const LEAD_IN = 0.08;
-const LEAD_OUT = 0.08;
+const LEAD_IN = 0.12;
+const LEAD_OUT = 0.12;
 
 /** Coefficient de pan arrondi pour éviter les `0.30000000000004` en CSS. */
 function panCoefficient(progress: number, direction: "ltr" | "rtl"): number {

@@ -29,9 +29,21 @@ function clampProgress(progress: number): number {
  * Index de frame instantané : `floor(progress * frameCount)` borné à
  * `[0, frameCount - 1]`. Aucune interpolation — les frames commutent net.
  */
+/** Zones mortes en entrée/sortie : on voit la première et la dernière frame. */
+const ANIMATION_LEAD_IN = 0.12;
+const ANIMATION_LEAD_OUT = 0.12;
+
 export function animationFrameIndex(progress: number, frameCount: number): number {
   const count = safeInt(frameCount);
-  const index = Math.floor(clampProgress(progress) * count);
+  const clamped = clampProgress(progress);
+  const effective = Math.min(
+    1,
+    Math.max(
+      0,
+      (clamped - ANIMATION_LEAD_IN) / (1 - ANIMATION_LEAD_IN - ANIMATION_LEAD_OUT),
+    ),
+  );
+  const index = Math.floor(effective * count);
   return Math.min(count - 1, Math.max(0, index));
 }
 

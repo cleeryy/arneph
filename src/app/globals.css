@@ -130,13 +130,14 @@
 }
 
 /* Lecteur : transition verticale optionnelle entre deux écrans. */
+/* Pas de translation : elle découvrait le fond (bande blanche d'une frame). */
 @keyframes reader-step-forward {
-  from { transform: translateY(24px); opacity: 0.98; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: scale(1.015); opacity: 0.92; }
+  to { transform: scale(1); opacity: 1; }
 }
 @keyframes reader-step-backward {
-  from { transform: translateY(-24px); opacity: 0.98; }
-  to { transform: translateY(0); opacity: 1; }
+  from { transform: scale(0.99); opacity: 0.92; }
+  to { transform: scale(1); opacity: 1; }
 }
 .reader-step-forward { animation: reader-step-forward 220ms ease-out; }
 .reader-step-backward { animation: reader-step-backward 220ms ease-out; }
