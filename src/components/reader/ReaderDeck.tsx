@@ -60,6 +60,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
   const { preferences } = useReaderPreferences();
   const [headerVisible, setHeaderVisible] = React.useState(true);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [longYProgress, setLongYProgress] = React.useState(0);
   const settingsOpenRef = React.useRef(false);
   const [resumeDismissed, setResumeDismissed] = React.useState(false);
   const hideTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,7 +218,9 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [revealHeader]);
 
-  const progress = globalProgress(steps, nav.index, nav.inner);
+  const innerProgress =
+    step?.kind === "long-y" ? longYProgress : nav.inner;
+  const progress = globalProgress(steps, nav.index, innerProgress);
   const total = steps.length;
 
   if (steps.length === 0) {
@@ -338,6 +341,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
               onScrollTopChange={(top) =>
                 longYScrollPositions.set(step.section.id, top)
               }
+              onScrollProgress={setLongYProgress}
               onBoundary={(edge) => (edge === "bottom" ? nav.goNext() : nav.goPrev())}
             />
           ) : null}
@@ -383,8 +387,8 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
         style={{ marginBottom: "env(safe-area-inset-bottom)" }}
       >
         <div
-          className="h-full bg-primary"
-          style={{ width: `${Math.round(progress * 100)}%` }}
+          className="h-full bg-primary transition-[width] duration-150 ease-out motion-reduce:transition-none"
+          style={{ width: `${(progress * 100).toFixed(2)}%` }}
         />
       </div>
     </main>

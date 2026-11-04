@@ -147,15 +147,18 @@ describe("globalProgress", () => {
   });
 
   test("inclut la progression interne d'une étape épinglée", () => {
-    expect(globalProgress(steps, 1, 0.5)).toBeCloseTo(1.5 / 3);
+    // pan-x = 150 vh = 1.5 écran ; total = 1 + 1.5 + 2.4 = 4.9
+    expect(globalProgress(steps, 1, 0.5)).toBeCloseTo((1 + 0.75) / 4.9, 3);
   });
 
-  test("une étape long-y ne compte pas de progression interne", () => {
+  test("une image longue pèse sa hauteur réelle et compte sa progression", () => {
     const withLong = buildReaderSteps([
       section(1, "long-y", { type: "long-y", imagePath: "c.webp", width: 800, height: 4000 }),
       image(2),
     ]);
-    expect(globalProgress(withLong, 0, 0.9)).toBe(0);
+    // 4000 px pour un écran de 800 → poids 5 ; total 6.
+    expect(globalProgress(withLong, 0, 0.5, 800)).toBeCloseTo(2.5 / 6, 3);
+    expect(globalProgress(withLong, 1, 0, 800)).toBeCloseTo(5 / 6, 3);
   });
 
   test("borne les index et la progression", () => {

@@ -58,6 +58,7 @@ export const panXSectionConfigSchema = z.object({
 export const animationSectionConfigSchema = z.object({
   type: z.literal('animation'),
   spritePath: z.string().min(1),
+  framePaths: z.array(z.string().min(1)).optional(),
   frameWidth: z.number().positive(),
   frameHeight: z.number().positive(),
   columns: z.number().int().positive(),

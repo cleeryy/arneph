@@ -19,6 +19,7 @@ import { SectionPreview } from "./SectionPreview";
 import {
   resizeImage,
   buildSpriteSheet,
+  sliceSpriteSheet,
   readImageDimensions,
   ImageProcessingError,
 } from "@/lib/image/process";
@@ -289,8 +290,39 @@ export function SectionConfigPanel({
     setUploading(true);
     try {
       const spriteSheet = await buildSpriteSheet(fileArray);
+
+      // Le lecteur consomme les frames individuelles : la feuille n'est
+      // uploadée que comme repli pour les données migrées côté serveur.
+      const sliced = await sliceSpriteSheet(spriteSheet.spriteBlob, {
+        columns: spriteSheet.columns,
+        rows: spriteSheet.rows,
+        frameWidth: spriteSheet.frameWidth,
+        frameHeight: spriteSheet.frameHeight,
+        frameCount: spriteSheet.frameCount,
+      });
+
       const path = generateStoragePath(section.id, `sprite-${Date.now()}.webp`);
       const storagePath = await uploadSectionAsset(path, spriteSheet.spriteBlob, "image/webp");
+
+      // Une frame = un asset : aucun écran ne rend plus une grille géante.
+      // Upload séquentiel pour que `framePaths` suive l'ordre de lecture et
+      // qu'un échec stoppe avant toute écriture dans la section.
+      const framePaths: string[] = [];
+      for (let index = 0; index < sliced.frames.length; index += 1) {
+        framePaths.push(
+          await uploadSectionAsset(
+            `webtoons/sections/${section.id}/frames/${index}.webp`,
+            sliced.frames[index],
+            "image/webp",
+          ),
+        );
+      }
+
+      const frameCount = sliced.frames.length;
+      const scrollHeight =
+        section.config.type === "animation"
+          ? section.config.scrollHeight
+          : undefined;
 
       const spriteRecord: ImageRecord = {
         id: crypto.randomUUID(),
@@ -309,11 +341,13 @@ export function SectionConfigPanel({
         config: {
           type: "animation",
           spritePath: storagePath,
-          frameWidth: spriteSheet.frameWidth,
-          frameHeight: spriteSheet.frameHeight,
-          columns: spriteSheet.columns,
-          rows: spriteSheet.rows,
-          frameCount: spriteSheet.frameCount,
+          framePaths,
+          frameWidth: sliced.frameWidth,
+          frameHeight: sliced.frameHeight,
+          frameCount,
+          columns: frameCount,
+          rows: 1,
+          ...(scrollHeight !== undefined ? { scrollHeight } : {}),
         },
       };
       onSectionChange(updatedSection);

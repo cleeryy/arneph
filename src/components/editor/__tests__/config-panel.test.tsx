@@ -77,10 +77,24 @@ vi.mock("@/lib/image/process", async () => {
       rows: 3,
       frameCount: 10,
     }),
+    sliceSpriteSheet: vi.fn().mockResolvedValue({
+      frames: Array.from(
+        { length: 10 },
+        (_, index) => new Blob([`slice-${index}`], { type: "image/webp" }),
+      ),
+      frameWidth: 100,
+      frameHeight: 100,
+    }),
   };
 });
 
-import { resizeImage, toWebP, readImageDimensions, buildSpriteSheet } from "@/lib/image/process";
+import {
+  resizeImage,
+  toWebP,
+  readImageDimensions,
+  buildSpriteSheet,
+  sliceSpriteSheet,
+} from "@/lib/image/process";
 
 afterEach(() => {
   cleanup();
@@ -1032,6 +1046,169 @@ describe("SectionConfigPanel — animation scroll settings", () => {
 
     fireEvent.change(input, { target: { value: "-10" } });
 
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("SectionConfigPanel — animation individual frames", () => {
+  const DEFAULT_UPLOAD = { data: { path: "uploaded/path.webp" }, error: null };
+
+  // `vi.clearAllMocks()` ne restaure pas les implémentations : on remet le
+  // spy d'upload par défaut pour ne pas polluer les autres suites.
+  afterEach(() => {
+    uploadSpy.mockResolvedValue(DEFAULT_UPLOAD);
+  });
+
+  function animationSection(): SectionWithImages {
+    return makeSection({
+      type: "animation",
+      config: {
+        type: "animation",
+        spritePath: "old/sprite.webp",
+        frameWidth: 50,
+        frameHeight: 50,
+        columns: 2,
+        rows: 2,
+        frameCount: 4,
+      },
+    });
+  }
+
+  function frameBlobs(count: number): Blob[] {
+    return Array.from(
+      { length: count },
+      (_, index) => new Blob([`frame-${index}`], { type: "image/webp" }),
+    );
+  }
+
+  test("slices the sheet and uploads one asset per frame, framePaths in order", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
+    const frames = frameBlobs(10);
+    vi.mocked(buildSpriteSheet).mockResolvedValue({
+      spriteBlob: new Blob(["sprite"], { type: "image/webp" }),
+      frameWidth: 100,
+      frameHeight: 100,
+      columns: 4,
+      rows: 3,
+      frameCount: 10,
+    });
+    vi.mocked(sliceSpriteSheet).mockResolvedValue({
+      frames,
+      frameWidth: 120,
+      frameHeight: 90,
+    });
+    uploadSpy.mockImplementation(async (path: string) => ({
+      data: { path },
+      error: null,
+    }));
+
+    const onChange = vi.fn();
+    render(
+      wrap(
+        <SectionConfigPanel
+          section={animationSection()}
+          onSectionChange={onChange}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+
+    const fileInput = screen.getByLabelText("Uploader les frames d'animation");
+    const file = new File(["frame"], "frame.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+
+    // La feuille est découpée avec la géométrie renvoyée par buildSpriteSheet.
+    expect(sliceSpriteSheet).toHaveBeenCalledWith(expect.any(Blob), {
+      columns: 4,
+      rows: 3,
+      frameWidth: 100,
+      frameHeight: 100,
+      frameCount: 10,
+    });
+
+    const uploadedPaths = uploadSpy.mock.calls.map(
+      ([path]) => path as string,
+    );
+    const expectedFramePaths = frames.map(
+      (_, index) => `webtoons/sections/sec-1/frames/${index}.webp`,
+    );
+
+    // Feuille (repli) uploadée d'abord, puis une frame par index.
+    expect(uploadedPaths[0]).toMatch(
+      /^webtoons\/sections\/sec-1\/\d+-sprite-\d+\.webp$/,
+    );
+    expect(uploadedPaths.slice(1)).toEqual(expectedFramePaths);
+
+    // Chaque frame uploadée est le Blob découpé correspondant, en WebP.
+    frames.forEach((frame, index) => {
+      const [, blob, options] = uploadSpy.mock.calls[index + 1] as [
+        string,
+        Blob,
+        { contentType: string; upsert: boolean },
+      ];
+      expect(blob).toBe(frame);
+      expect(options).toEqual({ contentType: "image/webp", upsert: false });
+    });
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({
+      type: "animation",
+      spritePath: uploadedPaths[0],
+      framePaths: expectedFramePaths,
+      frameWidth: 120,
+      frameHeight: 90,
+      frameCount: 10,
+      columns: 10,
+      rows: 1,
+    });
+    // Le repli sprite reste le premier média de la section.
+    expect(updated.images).toHaveLength(1);
+    expect(updated.images[0].storagePath).toBe(uploadedPaths[0]);
+  });
+
+  test("a frame upload failure surfaces the error and leaves the section unchanged", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
+    vi.mocked(buildSpriteSheet).mockResolvedValue({
+      spriteBlob: new Blob(["sprite"], { type: "image/webp" }),
+      frameWidth: 100,
+      frameHeight: 100,
+      columns: 4,
+      rows: 3,
+      frameCount: 10,
+    });
+    vi.mocked(sliceSpriteSheet).mockResolvedValue({
+      frames: frameBlobs(10),
+      frameWidth: 100,
+      frameHeight: 100,
+    });
+    uploadSpy.mockImplementation(async (path: string) =>
+      path.includes("/frames/")
+        ? { data: null, error: new Error("frame upload failed") }
+        : { data: { path }, error: null },
+    );
+
+    const onChange = vi.fn();
+    render(
+      wrap(
+        <SectionConfigPanel
+          section={animationSection()}
+          onSectionChange={onChange}
+          onClose={vi.fn()}
+        />,
+      ),
+    );
+
+    const fileInput = screen.getByLabelText("Uploader les frames d'animation");
+    const file = new File(["frame"], "frame.png", { type: "image/png" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(
+      await screen.findByText("Erreur lors de la création de la sprite sheet."),
+    ).toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
   });
 });

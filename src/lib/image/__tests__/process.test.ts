@@ -6,6 +6,7 @@ import {
   createBrowserFactory,
   readImageDimensions,
   resizeImage,
+  sliceSpriteSheet,
   toWebP,
   type CanvasFactory,
   type CanvasLike,
@@ -39,8 +40,23 @@ interface ToBlobCall {
   quality: number | undefined;
 }
 
+interface RegionDrawCall {
+  image: DecodedImage;
+  sx: number;
+  sy: number;
+  sw: number;
+  sh: number;
+  dx: number;
+  dy: number;
+  dw: number;
+  dh: number;
+}
+
 class MockContext implements ImageContext2D {
-  constructor(private readonly draws: DrawCall[]) {}
+  constructor(
+    private readonly draws: DrawCall[],
+    private readonly regionDraws: RegionDrawCall[],
+  ) {}
 
   drawImage(
     image: DecodedImage,
@@ -51,10 +67,25 @@ class MockContext implements ImageContext2D {
   ): void {
     this.draws.push({ image, dx, dy, dw, dh });
   }
+
+  drawImageRegion(
+    image: DecodedImage,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ): void {
+    this.regionDraws.push({ image, sx, sy, sw, sh, dx, dy, dw, dh });
+  }
 }
 
 class MockCanvas implements CanvasLike {
   readonly draws: DrawCall[] = [];
+  readonly regionDraws: RegionDrawCall[] = [];
   readonly toBlobCalls: ToBlobCall[] = [];
 
   constructor(
@@ -63,7 +94,7 @@ class MockCanvas implements CanvasLike {
   ) {}
 
   getContext2D(): ImageContext2D | null {
-    return new MockContext(this.draws);
+    return new MockContext(this.draws, this.regionDraws);
   }
 
   toBlob(
@@ -374,6 +405,125 @@ describe("buildSpriteSheet(files, {maxColumns=10})", () => {
     await expect(
       buildSpriteSheet([animatedBlob], { factory }),
     ).rejects.toThrow("le type animation attend des frames statiques, pas un fichier animé");
+  });
+});
+
+describe("sliceSpriteSheet(sprite, geometry)", () => {
+  const GRID = { columns: 4, rows: 3, frameWidth: 100, frameHeight: 100, frameCount: 10 };
+
+  test("découpe la grille en frames WebP dans l'ordre de lecture", async () => {
+    const factory = mockFactory([img("sheet", 400, 300)]);
+    const sliced = await sliceSpriteSheet(factory.file("sheet"), GRID, { factory });
+
+    // La feuille n'est décodée qu'une seule fois, quelles que soient les frames.
+    expect(factory.decodeCalls).toEqual(["sheet"]);
+
+    expect(sliced.frameWidth).toBe(100);
+    expect(sliced.frameHeight).toBe(100);
+    expect(sliced.frames).toHaveLength(10);
+    expect(sliced.frames.every((frame) => frame.type === "image/webp")).toBe(
+      true,
+    );
+
+    // Une toile par frame, toutes aux dimensions uniformes de la cellule.
+    expect(factory.canvases).toHaveLength(10);
+    expect(
+      factory.canvases.every(
+        (canvas) => canvas.width === 100 && canvas.height === 100,
+      ),
+    ).toBe(true);
+
+    // Lecture gauche → droite, puis haut → bas, limitée à frameCount.
+    const regions = factory.canvases.map((canvas) => canvas.regionDraws[0]);
+    expect(regions.map(({ sx, sy }) => [sx, sy])).toEqual([
+      [0, 0],
+      [100, 0],
+      [200, 0],
+      [300, 0],
+      [0, 100],
+      [100, 100],
+      [200, 100],
+      [300, 100],
+      [0, 200],
+      [100, 200],
+    ]);
+    for (const region of regions) {
+      expect(region).toMatchObject({
+        sw: 100,
+        sh: 100,
+        dx: 0,
+        dy: 0,
+        dw: 100,
+        dh: 100,
+      });
+    }
+    expect(regions[0].image).toMatchObject({ width: 400, height: 300 });
+    expect(regions.every((region) => region.image === regions[0].image)).toBe(
+      true,
+    );
+  });
+
+  test("s'arrête à frameCount et ignore le reste de la grille", async () => {
+    const factory = mockFactory([img("sheet", 400, 300)]);
+    const sliced = await sliceSpriteSheet(
+      factory.file("sheet"),
+      { ...GRID, frameCount: 3 },
+      { factory },
+    );
+
+    expect(sliced.frames).toHaveLength(3);
+    expect(factory.canvases).toHaveLength(3);
+    expect(factory.canvases.map((canvas) => canvas.regionDraws[0].sx)).toEqual([
+      0, 100, 200,
+    ]);
+  });
+
+  test("encode chaque frame en WebP avec la qualité demandée", async () => {
+    const factory = mockFactory([img("sheet", 200, 100)]);
+    await sliceSpriteSheet(
+      factory.file("sheet"),
+      { columns: 2, rows: 1, frameWidth: 100, frameHeight: 100, frameCount: 2 },
+      { factory, quality: 0.5 },
+    );
+
+    expect(factory.canvases[0].toBlobCalls).toEqual([
+      { type: "image/webp", quality: 0.5 },
+    ]);
+    expect(factory.canvases[1].toBlobCalls).toEqual([
+      { type: "image/webp", quality: 0.5 },
+    ]);
+  });
+
+  test("rejette une géométrie invalide avant tout décodage", async () => {
+    const factory = mockFactory([img("sheet", 400, 300)]);
+    await expect(
+      sliceSpriteSheet(
+        factory.file("sheet"),
+        { ...GRID, frameCount: 13 },
+        { factory },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_TARGET" });
+
+    await expect(
+      sliceSpriteSheet(
+        factory.file("sheet"),
+        { ...GRID, columns: 0 },
+        { factory },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_TARGET" });
+
+    expect(factory.decodeCalls).toEqual([]);
+  });
+
+  test("rejette une feuille trop petite pour la grille annoncée", async () => {
+    const factory = mockFactory([img("sheet", 150, 100)]);
+    await expect(
+      sliceSpriteSheet(
+        factory.file("sheet"),
+        { columns: 2, rows: 1, frameWidth: 100, frameHeight: 100, frameCount: 2 },
+        { factory },
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_IMAGE" });
   });
 });
 

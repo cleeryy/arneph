@@ -53,6 +53,22 @@ export interface ImageContext2D {
     dw: number,
     dh: number,
   ): void;
+  /**
+   * Dessine une région source de l'image dans la toile de destination.
+   * Utilisé par le découpage de sprite sheet : `drawImage` seul ne permet pas
+   * de choisir la cellule lue.
+   */
+  drawImageRegion(
+    image: DecodedImage,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ): void;
 }
 
 export interface DecodedImage {
@@ -94,6 +110,22 @@ export interface SpriteSheet {
   columns: number;
   rows: number;
   frameCount: number;
+}
+
+/** Géométrie d'une grille déjà assemblée, telle que renvoyée par `buildSpriteSheet`. */
+export interface SpriteSliceGeometry {
+  columns: number;
+  rows: number;
+  frameWidth: number;
+  frameHeight: number;
+  frameCount: number;
+}
+
+/** Frames individuelles extraites d'une sprite sheet. */
+export interface SlicedSpriteFrames {
+  frames: Blob[];
+  frameWidth: number;
+  frameHeight: number;
 }
 
 function getFactory(factory: CanvasFactory | undefined): CanvasFactory {
@@ -322,6 +354,82 @@ export async function buildSpriteSheet(
   };
 }
 
+function assertSliceGeometry(geometry: SpriteSliceGeometry): void {
+  const { columns, rows, frameWidth, frameHeight, frameCount } = geometry;
+  const positiveIntegers = [columns, rows, frameCount].every(
+    (value) => Number.isInteger(value) && value > 0,
+  );
+  const positiveDimensions = [frameWidth, frameHeight].every(
+    (value) => Number.isFinite(value) && value > 0,
+  );
+  if (
+    !positiveIntegers ||
+    !positiveDimensions ||
+    frameCount > columns * rows
+  ) {
+    throw new ImageProcessingError(
+      "INVALID_TARGET",
+      `Géométrie de sprite invalide : ${columns}×${rows} cellules de ${frameWidth}×${frameHeight}px pour ${frameCount} frame(s).`,
+    );
+  }
+}
+
+/**
+ * Découpe une sprite sheet en frames individuelles WebP, en ordre de lecture
+ * (gauche → droite, puis haut → bas), limitées à `frameCount`.
+ *
+ * La feuille n'est décodée qu'une seule fois ; chaque frame est dessinée dans
+ * une toile aux dimensions de la cellule puis encodée séparément. Aucun accès
+ * DOM direct : tout passe par le `CanvasFactory` injecté.
+ */
+export async function sliceSpriteSheet(
+  sprite: Blob,
+  geometry: SpriteSliceGeometry,
+  options: ProcessOptions = {},
+): Promise<SlicedSpriteFrames> {
+  assertSliceGeometry(geometry);
+
+  const canvasFactory = getFactory(options.factory);
+  const quality = options.quality ?? DEFAULT_WEBP_QUALITY;
+  const { columns, frameWidth, frameHeight, frameCount } = geometry;
+
+  const image = await canvasFactory.decodeImage(sprite);
+  assertValidDimensions(image.width, image.height);
+
+  const usedRows = Math.ceil(frameCount / columns);
+  if (
+    frameWidth * columns > image.width ||
+    frameHeight * usedRows > image.height
+  ) {
+    throw new ImageProcessingError(
+      "INVALID_IMAGE",
+      `Sprite ${image.width}×${image.height}px trop petite pour une grille de ${columns}×${usedRows} cellules de ${frameWidth}×${frameHeight}px.`,
+    );
+  }
+
+  const frames: Blob[] = [];
+  for (let index = 0; index < frameCount; index += 1) {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const canvas = canvasFactory.createCanvas(frameWidth, frameHeight);
+    const context = requireContext(canvas);
+    context.drawImageRegion(
+      image,
+      column * frameWidth,
+      row * frameHeight,
+      frameWidth,
+      frameHeight,
+      0,
+      0,
+      frameWidth,
+      frameHeight,
+    );
+    frames.push(await toBlobAsync(canvas, "image/webp", quality));
+  }
+
+  return { frames, frameWidth, frameHeight };
+}
+
 class BrowserCanvas implements CanvasLike {
   constructor(private readonly element: HTMLCanvasElement) {}
 
@@ -348,6 +456,19 @@ class BrowserCanvas implements CanvasLike {
       drawImage(image, dx, dy, dw, dh) {
         context.drawImage(
           image as unknown as CanvasImageSource,
+          dx,
+          dy,
+          dw,
+          dh,
+        );
+      },
+      drawImageRegion(image, sx, sy, sw, sh, dx, dy, dw, dh) {
+        context.drawImage(
+          image as unknown as CanvasImageSource,
+          sx,
+          sy,
+          sw,
+          sh,
           dx,
           dy,
           dw,

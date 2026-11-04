@@ -68,10 +68,62 @@ export function AnimationStep({ section, progress }: AnimationStepProps) {
   const frameCount = safeInt(config.frameCount);
   const frameIndex = animationFrameIndex(progress, frameCount);
 
+  const framePaths = Array.isArray(config.framePaths)
+    ? config.framePaths.filter((path): path is string => Boolean(path && path.trim()))
+    : [];
   const spritePath = firstNonBlank(
     section.images[0]?.storagePath,
     config.spritePath,
   );
+
+  // Une image par frame : on ne décode que la frame courante, plus quelques
+  // voisines cachées pour éviter un flash au changement.
+  if (framePaths.length > 0) {
+    const current = framePaths[Math.min(frameIndex, framePaths.length - 1)];
+    const preloadRadius = 3;
+    const preload = framePaths
+      .map((path, index) => ({ path, index }))
+      .filter(
+        ({ index }) =>
+          index !== frameIndex && Math.abs(index - frameIndex) <= preloadRadius,
+      );
+
+    return (
+      <section
+        data-testid="animation-step"
+        data-section-id={section.id}
+        data-section-type={section.type}
+        role="article"
+        aria-label={t("animation")}
+        className="relative grid h-full w-full place-items-center overflow-hidden bg-background"
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          data-testid="animation-step-frame"
+          data-frame-index={frameIndex}
+          data-frame-count={framePaths.length}
+          src={getSupabasePublicObjectUrl(current)}
+          alt=""
+          aria-hidden="true"
+          width={frameWidth}
+          height={frameHeight}
+          className="block max-h-full max-w-full object-contain select-none"
+          draggable={false}
+        />
+        {preload.map(({ path, index }) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={`${index}-${path}`}
+            src={getSupabasePublicObjectUrl(path)}
+            alt=""
+            aria-hidden="true"
+            data-preload-frame={index}
+            style={{ display: "none" }}
+          />
+        ))}
+      </section>
+    );
+  }
 
   if (!spritePath) {
     return (

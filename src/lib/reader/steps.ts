@@ -97,17 +97,49 @@ export function buildReaderSteps(sections: SectionWithImages[]): ReaderStep[] {
   });
 }
 
-/** Progression globale 0→1 d'un webtoon, étape courante incluse. */
+/**
+ * Poids d'une étape dans la progression globale, exprimé en « écrans ».
+ * Une image vaut 1, un panoramique/animation sa durée épinglée, et une image
+ * longue sa hauteur réelle — sinon la barre resterait figée pendant qu'on la
+ * parcourt.
+ */
+export function stepWeight(step: ReaderStep, viewportHeight = 800): number {
+  const vh = Math.max(1, viewportHeight);
+  switch (step.kind) {
+    case "long-y": {
+      const config = step.section.config as { height?: number };
+      const height =
+        typeof config.height === "number" && Number.isFinite(config.height)
+          ? config.height
+          : 0;
+      return Math.max(1, height / vh);
+    }
+    case "image":
+      return 1;
+    default:
+      return Math.max(1, step.lengthVh / 100);
+  }
+}
+
+/**
+ * Progression globale 0→1 d'un webtoon, pondérée par le contenu réel de
+ * chaque étape et incluant la progression interne de l'étape courante.
+ */
 export function globalProgress(
   steps: ReaderStep[],
   stepIndex: number,
   innerProgress: number,
+  viewportHeight = 800,
 ): number {
   if (steps.length === 0) return 0;
   if (stepIndex < 0) return 0;
   if (stepIndex > steps.length - 1) return 1;
+
   const index = Math.floor(stepIndex);
-  const inner =
-    steps[index].kind === "long-y" ? 0 : clamp(innerProgress, 0, 1);
-  return clamp((index + inner) / steps.length, 0, 1);
+  const weights = steps.map((step) => stepWeight(step, viewportHeight));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const before = weights.slice(0, index).reduce((sum, weight) => sum + weight, 0);
+  const current = weights[index] * clamp(innerProgress, 0, 1);
+
+  return clamp((before + current) / Math.max(1e-6, total), 0, 1);
 }

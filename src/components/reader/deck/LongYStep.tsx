@@ -21,6 +21,8 @@ export interface LongYStepProps {
   initialScrollTop?: number;
   /** Remonte la position courante pour la mémoriser entre deux visites. */
   onScrollTopChange?: (scrollTop: number) => void;
+  /** Progression interne 0→1, utilisée par la barre globale. */
+  onScrollProgress?: (progress: number) => void;
 }
 
 function isAtTop(el: HTMLElement): boolean {
@@ -45,6 +47,7 @@ export function LongYStep({
   onBoundary,
   initialScrollTop = 0,
   onScrollTopChange,
+  onScrollProgress,
 }: LongYStepProps) {
   const t = useTranslations("reader.section");
   const config = section.config as LongYSectionConfig;
@@ -62,10 +65,17 @@ export function LongYStep({
     if (!el) return;
     const target = Math.max(0, restoreRef.current);
     if (target > 0) el.scrollTop = target;
+
+    const range = el.scrollHeight - el.clientHeight;
+    onScrollProgress?.(range > 0 ? Math.min(1, Math.max(0, target / range)) : 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    onScrollTopChange?.(event.currentTarget.scrollTop);
+    const el = event.currentTarget;
+    onScrollTopChange?.(el.scrollTop);
+    const range = el.scrollHeight - el.clientHeight;
+    onScrollProgress?.(range > 0 ? Math.min(1, Math.max(0, el.scrollTop / range)) : 1);
   };
 
   const notify = React.useCallback(

@@ -40,6 +40,46 @@ function frameIndex(): number {
   return Number(screen.getByTestId("animation-step-frame").dataset.frameIndex);
 }
 
+describe("AnimationStep — frames individuelles", () => {
+  const frames = Array.from({ length: 10 }, (_, i) => `sprites/f${i}.webp`);
+
+  test("affiche une seule frame et précharge les voisines", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://supabase.example.com");
+    render(
+      wrap(
+        <AnimationStep
+          section={animationSection({ framePaths: frames, frameCount: 10 })}
+          progress={0.5}
+        />,
+      ),
+    );
+
+    const frame = screen.getByTestId("animation-step-frame");
+    expect(frame).toHaveAttribute("src", getSupabasePublicObjectUrl("sprites/f5.webp"));
+    expect(frame).toHaveAttribute("data-frame-index", "5");
+
+    const preloads = document.querySelectorAll("[data-preload-frame]");
+    expect(preloads).toHaveLength(6);
+    for (const node of preloads) {
+      expect((node as HTMLElement).style.display).toBe("none");
+    }
+  });
+
+  test("aux extrémités, seules les frames existantes sont préchargées", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://supabase.example.com");
+    render(
+      wrap(
+        <AnimationStep
+          section={animationSection({ framePaths: frames, frameCount: 10 })}
+          progress={0}
+        />,
+      ),
+    );
+
+    expect(document.querySelectorAll("[data-preload-frame]")).toHaveLength(3);
+  });
+});
+
 describe("AnimationStep — garde-fou mémoire", () => {
   test("une sprite démesurée affiche un placeholder au lieu de planter", () => {
     render(

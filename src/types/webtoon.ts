@@ -69,6 +69,11 @@ export interface PanXSectionConfig {
 /** Sprite sheet 2D animée par scroll. */
 export interface AnimationSectionConfig {
   type: 'animation';
+  /**
+   * Frames individuelles (recommandé) : une image par frame, chargées à la
+   * demande. Prioritaire sur `spritePath` quand la liste est non vide.
+   */
+  framePaths?: string[];
   spritePath: string;
   frameWidth: number;
   frameHeight: number;
