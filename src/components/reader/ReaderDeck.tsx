@@ -303,6 +303,10 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       ) : (
         <div
           key={nav.index}
+          data-testid="reader-frame"
+          className="mx-auto h-full w-full max-w-[860px] px-2 [container-type:inline-size] sm:px-4"
+        >
+        <div
           data-testid="reader-step"
           data-step-kind={step?.kind}
           className={
@@ -337,6 +341,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
               onBoundary={(edge) => (edge === "bottom" ? nav.goNext() : nav.goPrev())}
             />
           ) : null}
+        </div>
         </div>
       )}
 

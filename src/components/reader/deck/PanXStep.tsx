@@ -8,11 +8,12 @@ import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { PanXSectionConfig } from "@/types/webtoon";
 
 /**
- * Base du calcul de translation : `100%` = largeur rendue de l'image (hauteur
- * plein écran) et `100vw` = largeur du viewport. Le pan utile est donc
- * `100vw - 100%`, négatif dès que l'image est plus large que l'écran.
+ * Base du calcul de translation : `100%` = largeur rendue de l'image et
+ * `100cqw` = largeur du cadre de lecture (container query). Le pan utile est
+ * donc `100cqw - 100%`, négatif dès que l'image est plus large que le cadre.
+ * Le cadre porte `container-type: inline-size` (voir ReaderDeck).
  */
-const VIEWPORT_DELTA = "(100vw - 100%)";
+const VIEWPORT_DELTA = "(100cqw - 100%)";
 
 /** Coefficient de pan arrondi pour éviter les `0.30000000000004` en CSS. */
 function panCoefficient(progress: number, direction: "ltr" | "rtl"): number {

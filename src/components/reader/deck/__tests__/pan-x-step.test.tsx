@@ -30,12 +30,12 @@ function panSection(
 
 /**
  * Formule attendue : `100%` = largeur rendue de l'image (hauteur plein écran),
- * `100vw` = largeur du viewport. Le terme `max` recentre une image plus étroite
+ * `100cqw` = largeur du viewport. Le terme `max` recentre une image plus étroite
  * que l'écran ; le terme `min` borne le pan à 0 dans ce même cas.
  */
 function expectedTransform(progress: number, direction: "ltr" | "rtl"): string {
   const coefficient = Number((direction === "rtl" ? 1 - progress : progress).toFixed(5));
-  return `translateX(calc(max(0px, (100vw - 100%) / 2) + min(0px, (100vw - 100%) * ${coefficient})))`;
+  return `translateX(calc(max(0px, (100cqw - 100%) / 2) + min(0px, (100cqw - 100%) * ${coefficient})))`;
 }
 
 describe("PanXStep — sens du panoramique", () => {

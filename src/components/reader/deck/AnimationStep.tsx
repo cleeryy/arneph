@@ -142,6 +142,8 @@ export function AnimationStep({ section, progress }: AnimationStepProps) {
         style={{
           width: frameWidth,
           height: frameHeight,
+          maxWidth: "100%",
+          maxHeight: "100%",
           backgroundImage: `url("${backgroundImage}")`,
           backgroundSize,
           backgroundRepeat: "no-repeat",
