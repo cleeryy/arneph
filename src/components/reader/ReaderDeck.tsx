@@ -12,7 +12,7 @@ import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { ReaderPageData } from "@/app/read/[webtoonId]/page";
 import { ReaderSettings } from "./ReaderSettings";
 import { useReaderPreferences } from "@/hooks/useReaderPreferences";
-import { useStepPreload } from "@/hooks/useStepPreload";
+import { stepImageUrls, useStepPreload } from "@/hooks/useStepPreload";
 import { ImageStep } from "./deck/ImageStep";
 import { PanXStep } from "./deck/PanXStep";
 import { AnimationStep } from "./deck/AnimationStep";
@@ -364,6 +364,26 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
         </div>
         </div>
       )}
+
+      {/* Images des sections voisines, montées mais invisibles : elles sont
+          déjà téléchargées et décodées quand on change d'écran. */}
+      {!nav.isEnd
+        ? steps.map((candidate, index) =>
+            index !== nav.index && Math.abs(index - nav.index) <= 2 ? (
+              <div
+                key={candidate.section.id}
+                aria-hidden="true"
+                style={{ display: "none" }}
+                data-preload-step={index}
+              >
+                {stepImageUrls(candidate).map((url) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={url} src={url} alt="" loading="eager" decoding="async" />
+                ))}
+              </div>
+            ) : null,
+          )
+        : null}
 
       {!nav.isEnd && step?.kind === "long-y" ? (
         <button
