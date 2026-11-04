@@ -159,12 +159,15 @@ export function LongYStep({
     let touchScroll = 0;
     let velocity = 0;
     let lastTime = 0;
+    /** Dépassement cumulé hors butée pendant le geste courant. */
+    let overscroll = 0;
 
     const onTouchStart = (event: TouchEvent) => {
       stopMomentum();
       touchY = event.touches[0]?.clientY ?? null;
       touchScroll = el.scrollTop;
       velocity = 0;
+      overscroll = 0;
       lastTime = performance.now();
       latchedRef.current = null;
     };
@@ -174,7 +177,14 @@ export function LongYStep({
       if (current === undefined || touchY === null) return;
       event.preventDefault();
       const max = el.scrollHeight - el.clientHeight;
-      const next = clamp(touchScroll - (current - touchY), 0, max);
+      const raw = touchScroll - (current - touchY);
+      const next = clamp(raw, 0, max);
+
+      // Dépassement au-delà d'une butée : on le mémorise pour décider, au
+      // relâchement, si l'utilisateur veut vraiment quitter l'étape.
+      if (raw > max) overscroll = Math.max(overscroll, raw - max);
+      if (raw < 0) overscroll = Math.min(overscroll, raw);
+
       const now = performance.now();
       const dt = Math.max(1, now - lastTime);
       velocity = (next - el.scrollTop) / dt;
@@ -188,6 +198,22 @@ export function LongYStep({
       if (touchY === null) return;
       touchY = null;
       const max = el.scrollHeight - el.clientHeight;
+      const threshold = Math.max(24, el.clientHeight * EDGE_HOLD_RATIO);
+
+      // Sortie de butée : le geste a dépassé le contenu de ~12 % d'écran.
+      if (overscroll >= threshold) {
+        stopMomentum();
+        overscroll = 0;
+        notify("bottom");
+        return;
+      }
+      if (overscroll <= -threshold) {
+        stopMomentum();
+        overscroll = 0;
+        notify("top");
+        return;
+      }
+
       if (Math.abs(velocity) < 0.05 || max <= 0) return;
 
       let momentum = clamp(velocity * 16, -80, 80);

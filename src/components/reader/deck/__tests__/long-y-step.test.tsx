@@ -242,6 +242,36 @@ describe("LongYStep — frontières", () => {
     expect(onBoundary).toHaveBeenCalledTimes(2);
   });
 
+  test("tactile : un geste qui dépasse le bas quitte l'étape", () => {
+    const onBoundary = vi.fn();
+    render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
+
+    markImageReady();
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, { scrollTop: 3200, clientHeight: 800, scrollHeight: 4000 });
+
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 700 }] });
+    fireEvent.touchMove(scroller, { touches: [{ clientY: 200 }] });
+    fireEvent.touchEnd(scroller, { changedTouches: [] });
+
+    expect(onBoundary).toHaveBeenCalledWith("bottom");
+  });
+
+  test("tactile : un geste qui dépasse le haut revient en arrière", () => {
+    const onBoundary = vi.fn();
+    render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
+
+    markImageReady();
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
+
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 200 }] });
+    fireEvent.touchMove(scroller, { touches: [{ clientY: 700 }] });
+    fireEvent.touchEnd(scroller, { changedTouches: [] });
+
+    expect(onBoundary).toHaveBeenCalledWith("top");
+  });
+
   test("direction opposée à la butée → aucun appel", () => {
     const onBoundary = vi.fn();
     render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
