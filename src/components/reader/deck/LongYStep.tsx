@@ -64,7 +64,9 @@ export function LongYStep({
     callbacksRef.current = { onBoundary, onScrollTopChange, onScrollProgress };
   });
 
-  const publish = React.useCallback(() => {
+  const publishFrame = React.useRef<number | null>(null);
+
+  const publishNow = React.useCallback(() => {
     const el = scrollerRef.current;
     if (!el) return;
     callbacksRef.current.onScrollTopChange?.(el.scrollTop);
@@ -73,6 +75,17 @@ export function LongYStep({
       range > 0 ? clamp(el.scrollTop / range, 0, 1) : 1,
     );
   }, []);
+
+  // Coalesce les événements de scroll en un seul rendu par frame.
+  const publish = React.useCallback(() => {
+    const el = scrollerRef.current;
+    if (el) callbacksRef.current.onScrollTopChange?.(el.scrollTop);
+    if (publishFrame.current !== null) return;
+    publishFrame.current = requestAnimationFrame(() => {
+      publishFrame.current = null;
+      publishNow();
+    });
+  }, [publishNow]);
 
   const notify = React.useCallback((edge: LongYBoundaryEdge) => {
     if (latchedRef.current === edge) return;
@@ -110,7 +123,7 @@ export function LongYStep({
     const el = scrollerRef.current;
     if (!el) return;
     el.scrollTop = Math.max(0, initialScrollTop);
-    publish();
+    publishNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

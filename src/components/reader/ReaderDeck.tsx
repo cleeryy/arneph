@@ -67,6 +67,8 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
   const [resumeDismissed, setResumeDismissed] = React.useState(false);
   const hideTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartY = React.useRef<number | null>(null);
+  const wheelAccumulator = React.useRef(0);
+  const wheelFrame = React.useRef<number | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const navRef = React.useRef(nav);
   const stepKindRef = React.useRef<ReaderStep["kind"] | undefined>(undefined);
@@ -156,10 +158,27 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       else revealHeader();
       if (stepKindRef.current === "long-y") return;
       event.preventDefault();
-      navRef.current.handleWheel(event.deltaY);
+
+      // Un seul rendu par frame : les trackpads émettent des dizaines
+      // d'événements par seconde.
+      wheelAccumulator.current += event.deltaY;
+      if (wheelFrame.current === null) {
+        wheelFrame.current = requestAnimationFrame(() => {
+          wheelFrame.current = null;
+          const delta = wheelAccumulator.current;
+          wheelAccumulator.current = 0;
+          navRef.current.handleWheel(delta);
+        });
+      }
     };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      if (wheelFrame.current !== null) {
+        cancelAnimationFrame(wheelFrame.current);
+        wheelFrame.current = null;
+      }
+    };
   }, [revealHeader, dismissChrome]);
 
   // Tactile : même logique, seuil géré par l'accumulateur du hook.
@@ -234,21 +253,8 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [revealHeader]);
 
-  // Image de l'étape précédente, affichée sous l'étape courante : pendant le
-  // décodage de la nouvelle image, on voit l'ancienne au lieu du fond blanc.
-  const backdropIndex =
-    nav.direction === 0 ? -1 : nav.index - nav.direction;
-  const backdropStep =
-    backdropIndex >= 0 && backdropIndex < steps.length
-      ? steps[backdropIndex]
-      : undefined;
-  const backdropUrl =
-    backdropStep && backdropStep.kind !== "long-y"
-      ? stepImageUrls(backdropStep)[0]
-      : undefined;
-
-  // Entre deux images simples, toute animation laisse voir le fond une frame :
-  // on échange donc instantanément (les deux images sont déjà préchargées).
+  // Entre deux images simples, l'échange doit être instantané : toute
+  // animation laisserait voir le fond une frame.
   const previousStep =
     nav.index - nav.direction >= 0 ? steps[nav.index - nav.direction] : undefined;
   const isImageSwap =
@@ -311,21 +317,6 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
           </div>
         </div>
       </header>
-
-      {backdropUrl && !nav.isEnd ? (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={backdropUrl}
-            alt=""
-            className="max-h-full max-w-full object-contain opacity-60"
-            draggable={false}
-          />
-        </div>
-      ) : null}
 
       {nav.isEnd ? (
         <section
