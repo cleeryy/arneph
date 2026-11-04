@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useLocale, useTranslations } from "next-intl";
+import { useTranslations } from "next-intl";
 import { X, Upload, Trash2, FileAudio, AlertCircle } from "lucide-react";
 import {
   Select,
@@ -30,6 +30,9 @@ import type { SectionWithImages } from "@/lib/db/queries";
 import type {
   SectionType,
   ImageRecord,
+  ImageFit,
+  ImageFocus,
+  ImageSectionConfig,
   FxOverlayConfig,
   PanXSectionConfig,
   AnimationSectionConfig,
@@ -63,16 +66,40 @@ function mediaModelOf(type: SectionType): "page" | "sprite" {
   return type === "animation" ? "sprite" : "page";
 }
 
-/**
- * Les réglages de scroll n'ont pas encore de clés i18n dédiées dans
- * `messages/*.json` : libellés localisés inline en attendant.
- */
-const SCROLL_SETTING_LABELS = {
-  fr: { panSpeed: "Durée du panoramique (vh)", scrollHeight: "Hauteur du défilement (vh)" },
-  en: { panSpeed: "Pan duration (vh)", scrollHeight: "Scroll height (vh)" },
-} as const;
+/** Cadrage et point focal : valeurs par défaut du schéma, exposées par l'UI. */
+const IMAGE_FIT_DEFAULT: ImageFit = "contain";
+const IMAGE_FOCUS_DEFAULT: ImageFocus = "center";
 
-/** `panSpeed`/`scrollHeight` sont `positive()` dans le schéma Zod : jamais 0/NaN. */
+/**
+ * Longueur d'épinglage d'un panoramique, en vh. La valeur est bornée à
+ * [100, 400] pour rester dans le domaine accepté par `panXSectionConfigSchema`.
+ */
+const PAN_DISTANCE_MIN = 100;
+const PAN_DISTANCE_MAX = 400;
+const PAN_DISTANCE_DEFAULT = 150;
+const PAN_DIRECTION_DEFAULT: "ltr" | "rtl" = "ltr";
+
+function parsePanDistance(value: string): number | null {
+  if (value.trim() === "") return null;
+  const next = Number(value);
+  if (!Number.isFinite(next)) return null;
+  return Math.min(PAN_DISTANCE_MAX, Math.max(PAN_DISTANCE_MIN, next));
+}
+
+/**
+ * Réglages pan-x : `panSpeed` est déprécié et ignoré par le lecteur dès que
+ * `panDistance` existe. Toute écriture le retire pour ne jamais le réintroduire.
+ */
+function withPanSettings(
+  config: PanXSectionConfig,
+  updates: Partial<Pick<PanXSectionConfig, "panDistance" | "direction">>,
+): PanXSectionConfig {
+  const next: PanXSectionConfig = { ...config, ...updates };
+  delete next.panSpeed;
+  return next;
+}
+
+/** `scrollHeight` est `positive()` dans le schéma Zod : jamais 0/NaN. */
 function parsePositiveNumber(value: string): number | null {
   const next = Number(value);
   if (!Number.isFinite(next) || next <= 0) return null;
@@ -91,7 +118,8 @@ export function createDefaultConfig(type: SectionType): SectionWithImages["confi
         imagePath: "",
         width: 0,
         height: 0,
-        panSpeed: SCROLL_DISTANCES["pan-x"],
+        panDistance: PAN_DISTANCE_DEFAULT,
+        direction: PAN_DIRECTION_DEFAULT,
       };
     case "animation":
       return {
@@ -127,8 +155,6 @@ export function SectionConfigPanel({
   onClose,
 }: SectionConfigPanelProps) {
   const t = useTranslations("editor");
-  const locale = useLocale();
-  const scrollLabels = SCROLL_SETTING_LABELS[locale.startsWith("fr") ? "fr" : "en"];
   const [error, setError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -450,13 +476,42 @@ export function SectionConfigPanel({
   const panXConfig = section.config.type === "pan-x" ? (section.config as PanXSectionConfig) : null;
   const animationConfig =
     section.config.type === "animation" ? (section.config as AnimationSectionConfig) : null;
+  const imageConfig =
+    section.config.type === "image" ? (section.config as ImageSectionConfig) : null;
 
-  const handlePanSpeedChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const panSpeed = parsePositiveNumber(e.target.value);
-    if (panSpeed === null || section.config.type !== "pan-x") return;
+  const imageFit = imageConfig?.fit ?? IMAGE_FIT_DEFAULT;
+  const imageFocus = imageConfig?.focus ?? IMAGE_FOCUS_DEFAULT;
+
+  const handleImageFitChange = (value: string | null) => {
+    if (!value || section.config.type !== "image") return;
     onSectionChange({
       ...section,
-      config: { ...section.config, panSpeed },
+      config: { ...section.config, fit: value as ImageFit },
+    });
+  };
+
+  const handleImageFocusChange = (value: string | null) => {
+    if (!value || section.config.type !== "image") return;
+    onSectionChange({
+      ...section,
+      config: { ...section.config, focus: value as ImageFocus },
+    });
+  };
+
+  const handlePanDistanceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const panDistance = parsePanDistance(e.target.value);
+    if (panDistance === null || section.config.type !== "pan-x") return;
+    onSectionChange({
+      ...section,
+      config: withPanSettings(section.config, { panDistance }),
+    });
+  };
+
+  const handlePanDirectionChange = (value: string | null) => {
+    if (!value || section.config.type !== "pan-x") return;
+    onSectionChange({
+      ...section,
+      config: withPanSettings(section.config, { direction: value as "ltr" | "rtl" }),
     });
   };
 
@@ -519,6 +574,44 @@ export function SectionConfigPanel({
           </div>
         )}
 
+        {section.type === "image" && (
+          <>
+            <div className="space-y-2">
+              <label htmlFor="image-fit" className="text-sm font-medium text-foreground">
+                {t("imageFit")}
+              </label>
+              <Select value={imageFit} onValueChange={handleImageFitChange}>
+                <SelectTrigger id="image-fit" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="contain">{t("imageFitContain")}</SelectItem>
+                  <SelectItem value="cover">{t("imageFitCover")}</SelectItem>
+                  <SelectItem value="width">{t("imageFitWidth")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {imageFit === "cover" && (
+              <div className="space-y-2">
+                <label htmlFor="image-focus" className="text-sm font-medium text-foreground">
+                  {t("imageFocus")}
+                </label>
+                <Select value={imageFocus} onValueChange={handleImageFocusChange}>
+                  <SelectTrigger id="image-focus" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="top">{t("imageFocusTop")}</SelectItem>
+                    <SelectItem value="center">{t("imageFocusCenter")}</SelectItem>
+                    <SelectItem value="bottom">{t("imageFocusBottom")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </>
+        )}
+
         {isAnimationType && (
           <div className="space-y-2">
             <label htmlFor="animation-upload" className="text-sm font-medium text-foreground">{t("animationUpload")}</label>
@@ -541,26 +634,47 @@ export function SectionConfigPanel({
         )}
 
         {section.type === "pan-x" && (
-          <div className="space-y-2">
-            <label htmlFor="pan-speed" className="text-sm font-medium text-foreground">
-              {scrollLabels.panSpeed}
-            </label>
-            <Input
-              id="pan-speed"
-              type="number"
-              min={1}
-              step={1}
-              inputMode="numeric"
-              value={panXConfig?.panSpeed ?? SCROLL_DISTANCES["pan-x"]}
-              onChange={handlePanSpeedChange}
-            />
-          </div>
+          <>
+            <div className="space-y-2">
+              <label htmlFor="pan-distance" className="text-sm font-medium text-foreground">
+                {t("panDistance")}
+              </label>
+              <Input
+                id="pan-distance"
+                type="number"
+                min={PAN_DISTANCE_MIN}
+                max={PAN_DISTANCE_MAX}
+                step={10}
+                inputMode="numeric"
+                value={panXConfig?.panDistance ?? PAN_DISTANCE_DEFAULT}
+                onChange={handlePanDistanceChange}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="pan-direction" className="text-sm font-medium text-foreground">
+                {t("panDirection")}
+              </label>
+              <Select
+                value={panXConfig?.direction ?? PAN_DIRECTION_DEFAULT}
+                onValueChange={handlePanDirectionChange}
+              >
+                <SelectTrigger id="pan-direction" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ltr">{t("panLtr")}</SelectItem>
+                  <SelectItem value="rtl">{t("panRtl")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </>
         )}
 
         {isAnimationType && (
           <div className="space-y-2">
             <label htmlFor="animation-scroll-height" className="text-sm font-medium text-foreground">
-              {scrollLabels.scrollHeight}
+              {t("animationScrollHeight")}
             </label>
             <Input
               id="animation-scroll-height"

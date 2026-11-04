@@ -6,6 +6,7 @@ import { NextIntlClientProvider } from "next-intl";
 
 import { SectionConfigPanel } from "../SectionConfigPanel";
 import type { SectionWithImages } from "@/lib/db/queries";
+import type { PanXSectionConfig } from "@/types/webtoon";
 import frMessages from "../../../../messages/fr.json";
 
 vi.mock("next/image", () => ({
@@ -161,7 +162,7 @@ describe("SectionConfigPanel — T25", () => {
     const trigger = screen.getByRole("combobox", { name: "Type de section" });
     await userEvent.click(trigger);
 
-    const animationOption = screen.getByRole("option", { name: "Animation" });
+    const animationOption = await screen.findByRole("option", { name: "Animation" });
     await userEvent.click(animationOption);
 
     expect(onChange).toHaveBeenCalledWith(
@@ -191,7 +192,7 @@ describe("SectionConfigPanel — T25", () => {
     const trigger = screen.getByRole("combobox", { name: "Type de section" });
     await userEvent.click(trigger);
 
-    const panXOption = screen.getByRole("option", { name: "Panoramique" });
+    const panXOption = await screen.findByRole("option", { name: "Panoramique" });
     await userEvent.click(panXOption);
 
     expect(onChange).toHaveBeenCalledWith(
@@ -469,7 +470,7 @@ describe("SectionConfigPanel — media replacement", () => {
 
     const trigger = screen.getByRole("combobox", { name: "Type de section" });
     await userEvent.click(trigger);
-    const longYOption = screen.getByRole("option", { name: "Défilement long" });
+    const longYOption = await screen.findByRole("option", { name: "Défilement long" });
     await userEvent.click(longYOption);
 
     expect(onChange).toHaveBeenCalledWith(
@@ -801,44 +802,189 @@ describe("SectionConfigPanel — type switching keeps media model consistent", (
   });
 });
 
-describe("SectionConfigPanel — scroll settings", () => {
-  test("pan-x exposes an editable panSpeed defaulting to SCROLL_DISTANCES", () => {
-    const section = makeSection({
+function makePanX(config: Partial<PanXSectionConfig> = {}): SectionWithImages {
+  return makeSection({
+    type: "pan-x",
+    config: {
       type: "pan-x",
-      config: { type: "pan-x", imagePath: "uploaded/page.webp", width: 1600, height: 600 },
+      imagePath: "uploaded/page.webp",
+      width: 1600,
+      height: 600,
+      ...config,
+    },
+  });
+}
+
+describe("SectionConfigPanel — image framing", () => {
+  test("image section defaults to contain framing with no focal point control", () => {
+    const section = makeSection();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    expect(screen.getByRole("combobox", { name: "Cadrage" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Point focal" })).not.toBeInTheDocument();
+  });
+
+  test("choosing cover reveals the focal point and keeps the rest of the config intact", async () => {
+    const section = makeSection({
+      type: "image",
+      audioPath: "audio/sec-1.mp3",
+      config: {
+        type: "image",
+        imagePath: "uploaded/page.webp",
+        width: 800,
+        height: 1200,
+        audioPath: "audio/config.mp3",
+        fxPath: "fx/overlay.gif",
+        fxConfig: { ...FX_CONFIG, position: { ...FX_CONFIG.position }, size: { ...FX_CONFIG.size } },
+      },
+    });
+    const onChange = vi.fn();
+    const { rerender } = render(
+      wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />),
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Cadrage" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Couvrir" }));
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({
+      type: "image",
+      fit: "cover",
+      imagePath: "uploaded/page.webp",
+      width: 800,
+      height: 1200,
+      audioPath: "audio/config.mp3",
+      fxPath: "fx/overlay.gif",
+      fxConfig: FX_CONFIG,
+    });
+    expect(updated.audioPath).toBe("audio/sec-1.mp3");
+
+    rerender(wrap(<SectionConfigPanel section={updated} onSectionChange={onChange} onClose={vi.fn()} />));
+    expect(screen.getByRole("combobox", { name: "Point focal" })).toBeInTheDocument();
+  });
+
+  test("changing the focal point keeps the framing mode and the rest of the config", async () => {
+    const section = makeSection({
+      type: "image",
+      config: {
+        type: "image",
+        imagePath: "uploaded/page.webp",
+        width: 800,
+        height: 1200,
+        fit: "cover",
+        focus: "top",
+      },
     });
     const onChange = vi.fn();
     render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
 
-    const input = screen.getByLabelText("Durée du panoramique (vh)");
-    expect(input).toHaveValue(300);
-    expect(screen.queryByLabelText("Hauteur du défilement (vh)")).not.toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: "450" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Point focal" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Bas" }));
 
     const updated = lastCall(onChange);
-    expect(updated.config).toMatchObject({ type: "pan-x", panSpeed: 450 });
+    expect(updated.config).toEqual({ ...section.config, focus: "bottom" });
+  });
+
+  test("focal point is hidden when framing is not cover", () => {
+    const section = makeSection({
+      type: "image",
+      config: {
+        type: "image",
+        imagePath: "uploaded/page.webp",
+        width: 800,
+        height: 1200,
+        fit: "width",
+        focus: "bottom",
+      },
+    });
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    expect(screen.queryByRole("combobox", { name: "Point focal" })).not.toBeInTheDocument();
+  });
+
+  test("long-y sections do not expose image framing", () => {
+    const section = makeSection({
+      type: "long-y",
+      config: { type: "long-y", imagePath: "uploaded/page.webp", width: 800, height: 2400 },
+    });
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    expect(screen.queryByRole("combobox", { name: "Cadrage" })).not.toBeInTheDocument();
+  });
+});
+
+describe("SectionConfigPanel — pan-x settings", () => {
+  test("pan-x exposes panDistance defaulting to 150 and a direction select", () => {
+    const section = makePanX();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    expect(screen.getByLabelText("Distance du panoramique (vh)")).toHaveValue(150);
+    expect(screen.getByRole("combobox", { name: "Sens" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Durée du panoramique (vh)")).not.toBeInTheDocument();
+  });
+
+  test("editing panDistance writes the value, clamps to 100–400 and never writes panSpeed", () => {
+    const section = makePanX({ panSpeed: 320 });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const input = screen.getByLabelText("Distance du panoramique (vh)");
+
+    fireEvent.change(input, { target: { value: "220" } });
+    expect(lastCall(onChange).config).toMatchObject({ type: "pan-x", panDistance: 220 });
+
+    fireEvent.change(input, { target: { value: "50" } });
+    expect(lastCall(onChange).config).toMatchObject({ type: "pan-x", panDistance: 100 });
+
+    fireEvent.change(input, { target: { value: "900" } });
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({ type: "pan-x", panDistance: 400 });
+    expect(updated.config).not.toHaveProperty("panSpeed");
     expect(updated.images).toEqual(section.images);
   });
 
-  test("panSpeed ignores non-positive values so the config stays Zod-valid", () => {
-    const section = makeSection({
-      type: "pan-x",
-      config: { type: "pan-x", imagePath: "uploaded/page.webp", width: 1600, height: 600, panSpeed: 320 },
-    });
+  test("empty or non-numeric panDistance does not call onSectionChange", () => {
+    const section = makePanX({ panDistance: 240 });
     const onChange = vi.fn();
     render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
 
-    const input = screen.getByLabelText("Durée du panoramique (vh)");
-    expect(input).toHaveValue(320);
+    const input = screen.getByLabelText("Distance du panoramique (vh)");
+    expect(input).toHaveValue(240);
 
-    fireEvent.change(input, { target: { value: "0" } });
     fireEvent.change(input, { target: { value: "" } });
+    fireEvent.change(input, { target: { value: "abc" } });
 
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  test("animation exposes an editable scrollHeight defaulting to SCROLL_DISTANCES", () => {
+  test("changing the pan direction writes direction and keeps panDistance", async () => {
+    const section = makePanX({ panDistance: 240 });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Sens" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Droite → gauche" }));
+
+    expect(lastCall(onChange).config).toEqual({ ...section.config, direction: "rtl" });
+  });
+
+  test("switching the section type to pan-x seeds the panDistance/direction defaults", async () => {
+    const section = makeSection({ type: "image" });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    await selectSectionType("Panoramique");
+
+    expect(lastCall(onChange).config).toMatchObject({
+      type: "pan-x",
+      panDistance: 150,
+      direction: "ltr",
+    });
+  });
+});
+
+describe("SectionConfigPanel — animation scroll settings", () => {
+  test("animation exposes a total scroll length defaulting to SCROLL_DISTANCES", () => {
     const section = makeSection({
       type: "animation",
       config: {
@@ -854,9 +1000,9 @@ describe("SectionConfigPanel — scroll settings", () => {
     const onChange = vi.fn();
     render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
 
-    const input = screen.getByLabelText("Hauteur du défilement (vh)");
+    const input = screen.getByLabelText("Longueur totale du défilement (vh)");
     expect(input).toHaveValue(200);
-    expect(screen.queryByLabelText("Durée du panoramique (vh)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Distance du panoramique (vh)")).not.toBeInTheDocument();
 
     fireEvent.change(input, { target: { value: "350" } });
 
@@ -881,7 +1027,7 @@ describe("SectionConfigPanel — scroll settings", () => {
     const onChange = vi.fn();
     render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
 
-    const input = screen.getByLabelText("Hauteur du défilement (vh)");
+    const input = screen.getByLabelText("Longueur totale du défilement (vh)");
     expect(input).toHaveValue(250);
 
     fireEvent.change(input, { target: { value: "-10" } });
