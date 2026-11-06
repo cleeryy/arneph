@@ -13,6 +13,7 @@ import { revalidatePath } from "next/cache";
 import { supabase } from "@/lib/db/server";
 import type { WebtoonWithSections } from "@/lib/db/queries";
 import type { Webtoon } from "@/types/webtoon";
+import { requireUser } from "@/lib/auth/require-user";
 import {
   createWebtoon,
   deleteSection,
@@ -24,6 +25,18 @@ import {
   reorderSections,
   updateWebtoon,
 } from "@/lib/db/queries";
+
+const TEST_USER_ID = "11111111-1111-4111-8111-111111111111";
+
+vi.mock("@/lib/auth/require-user", () => ({
+  requireUser: vi.fn(async () => ({
+    ok: true,
+    user: {
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "test@example.com",
+    },
+  })),
+}));
 
 vi.mock("@/lib/db/server", () => ({
   supabase: {
@@ -125,6 +138,11 @@ beforeEach(() => {
   vi.mocked(deleteWebtoon).mockResolvedValue(true);
   vi.mocked(getWebtoonCoverPath).mockReset();
   vi.mocked(getWebtoonCoverPath).mockResolvedValue(null);
+  vi.mocked(requireUser).mockReset();
+  vi.mocked(requireUser).mockResolvedValue({
+    ok: true,
+    user: { id: TEST_USER_ID, email: "test@example.com" },
+  });
 });
 
 /**
@@ -1541,6 +1559,7 @@ describe("createWebtoonAction", () => {
       expect.objectContaining({
         title: "Nouveau webtoon",
         visibility: "draft",
+        ownerId: TEST_USER_ID,
       }),
     );
     expect(revalidatePath).toHaveBeenCalledWith("/editor");
@@ -1619,10 +1638,14 @@ describe("updateWebtoonMetadataAction", () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(updateWebtoon).toHaveBeenCalledWith("w1", {
-      title: "Titre renommé",
-      description: "Nouvelle description",
-    });
+    expect(updateWebtoon).toHaveBeenCalledWith(
+      "w1",
+      {
+        title: "Titre renommé",
+        description: "Nouvelle description",
+      },
+      TEST_USER_ID,
+    );
     expect(revalidatePath).toHaveBeenCalledWith("/editor");
     expect(revalidatePath).toHaveBeenCalledWith("/read");
   });
@@ -1670,11 +1693,15 @@ describe("updateWebtoonMetadataAction — coverPath", () => {
     });
 
     expect(result).toEqual({ ok: true });
-    expect(updateWebtoon).toHaveBeenCalledWith("w1", {
-      title: "Titre",
-      description: "Desc",
-      coverPath: COVER_PATH,
-    });
+    expect(updateWebtoon).toHaveBeenCalledWith(
+      "w1",
+      {
+        title: "Titre",
+        description: "Desc",
+        coverPath: COVER_PATH,
+      },
+      TEST_USER_ID,
+    );
     expect(revalidatePath).toHaveBeenCalledWith("/read");
   });
 
@@ -1690,6 +1717,7 @@ describe("updateWebtoonMetadataAction — coverPath", () => {
     expect(updateWebtoon).toHaveBeenCalledWith(
       "w1",
       expect.objectContaining({ title: "Titre", coverPath: null }),
+      TEST_USER_ID,
     );
     expect(revalidatePath).toHaveBeenCalledWith("/read");
   });
@@ -1820,6 +1848,7 @@ describe("updateWebtoonMetadataAction — coverPath", () => {
     expect(updateWebtoon).toHaveBeenCalledWith(
       "w1",
       expect.objectContaining({ description: null }),
+      TEST_USER_ID,
     );
   });
 });
@@ -1998,7 +2027,11 @@ describe("publishWebtoon — publication guards", () => {
     const result = await publishWebtoon("w1");
 
     expect(result).toEqual({ ok: true });
-    expect(updateWebtoon).toHaveBeenCalledWith("w1", { visibility: "published" });
+    expect(updateWebtoon).toHaveBeenCalledWith(
+      "w1",
+      { visibility: "published" },
+      TEST_USER_ID,
+    );
     expect(revalidatePath).toHaveBeenCalledWith("/read");
     expect(revalidatePath).toHaveBeenCalledWith("/read/w1");
     expect(revalidatePath).toHaveBeenCalledWith("/editor/w1");
@@ -2040,7 +2073,7 @@ describe("deleteWebtoonAction — storage cleanup resilience", () => {
     const result = await deleteWebtoonAction("w1");
 
     expect(result).toEqual({ ok: true });
-    expect(deleteWebtoon).toHaveBeenCalledWith("w1");
+    expect(deleteWebtoon).toHaveBeenCalledWith("w1", TEST_USER_ID);
     expect(revalidatePath).toHaveBeenCalledWith("/editor");
     expect(revalidatePath).toHaveBeenCalledWith("/read");
   });
@@ -2135,8 +2168,7 @@ describe("deleteWebtoonAction — DB before Storage (DATA-4) and cover cleanup",
   });
 });
 
-describe("saveWebtoon — compensating cleanup on failure", () => {
-  const baseTimestamps = {
+describe("saveWebtoon — compensating cleanup on failure", () => {  const baseTimestamps = {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
@@ -2235,5 +2267,56 @@ describe("saveWebtoon — compensating cleanup on failure", () => {
     expect(result.ok).toBe(true);
     expect(result.sectionIds).toEqual({ "temp-1": "new-id" });
     expect(deleteSection).not.toHaveBeenCalled();
+  });
+});
+
+describe("editor actions — authentication guard (P0-2)", () => {
+  test("createWebtoonAction refuses an unauthenticated caller", async () => {
+    vi.mocked(requireUser).mockResolvedValueOnce({
+      ok: false,
+      error: "unauthenticated",
+    });
+
+    const result = await createWebtoonAction();
+
+    expect(result).toEqual({ ok: false, error: "unauthenticated" });
+    expect(createWebtoon).not.toHaveBeenCalled();
+  });
+
+  test("saveWebtoon refuses an unauthenticated caller before reading the webtoon", async () => {
+    vi.mocked(requireUser).mockResolvedValueOnce({
+      ok: false,
+      error: "unauthenticated",
+    });
+
+    const result = await saveWebtoon("w1", []);
+
+    expect(result).toEqual({ ok: false, error: "unauthenticated" });
+    expect(getWebtoon).not.toHaveBeenCalled();
+    expect(reorderSections).not.toHaveBeenCalled();
+  });
+
+  test("deleteWebtoonAction refuses an unauthenticated caller", async () => {
+    vi.mocked(requireUser).mockResolvedValueOnce({
+      ok: false,
+      error: "unauthenticated",
+    });
+
+    const result = await deleteWebtoonAction("w1");
+
+    expect(result).toEqual({ ok: false, error: "unauthenticated" });
+    expect(deleteWebtoon).not.toHaveBeenCalled();
+  });
+
+  test("publishWebtoon refuses an unauthenticated caller", async () => {
+    vi.mocked(requireUser).mockResolvedValueOnce({
+      ok: false,
+      error: "unauthenticated",
+    });
+
+    const result = await publishWebtoon("w1");
+
+    expect(result).toEqual({ ok: false, error: "unauthenticated" });
+    expect(updateWebtoon).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,8 @@
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
 
+import { signOut } from "@/lib/auth/actions";
+
 export default async function EditorLayout({
   children,
 }: {
@@ -30,6 +32,14 @@ export default async function EditorLayout({
             >
               {t("readerLink")}
             </Link>
+            <form action={signOut}>
+              <button
+                type="submit"
+                className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+              >
+                {t("signOut")}
+              </button>
+            </form>
           </div>
         </div>
       </header>

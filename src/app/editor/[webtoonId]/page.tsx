@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 
 import { getWebtoon } from "@/lib/db/queries";
+import { requireUserOrRedirect } from "@/lib/auth/require-user";
 import { EditorCanvasClient } from "@/components/editor/EditorCanvasClient";
 import { SectionLayersPanelClient } from "@/components/editor/SectionLayersPanelClient";
 
@@ -13,9 +14,10 @@ export default async function EditorWebtoonPage({
   params: Promise<{ webtoonId: string }>;
 }) {
   const { webtoonId } = await params;
+  const user = await requireUserOrRedirect(`/editor/${webtoonId}`);
   const t = await getTranslations("editor");
 
-  const webtoon = await getWebtoon(webtoonId);
+  const webtoon = await getWebtoon(webtoonId, user.id);
 
   if (!webtoon) {
     notFound();

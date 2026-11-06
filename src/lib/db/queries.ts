@@ -20,6 +20,7 @@ interface WebtoonRow {
   cover_path: string | null;
   visibility: SectionVisibility;
   settings: Record<string, unknown>;
+  owner_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -108,6 +109,16 @@ export function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value);
 }
 
+/**
+ * Filtre PostgREST « webtoon de l'utilisateur ou legacy sans propriétaire ».
+ *
+ * `ownerId` doit déjà être validé comme UUID par l'appelant : il est interpolé
+ * dans une expression PostgREST (`.or(...)`), jamais passé comme valeur brute.
+ */
+function ownerOrLegacyFilter(ownerId: string): string {
+  return `owner_id.eq.${ownerId},owner_id.is.null`;
+}
+
 function throwDbError(
   operation: string,
   error: { message?: string; code?: string },
@@ -131,6 +142,8 @@ export interface CreateWebtoonData {
   coverPath?: string;
   visibility?: SectionVisibility;
   settings?: Record<string, unknown>;
+  /** Propriétaire du webtoon. Absent = webtoon legacy sans propriétaire. */
+  ownerId?: string;
 }
 
 /**
@@ -155,6 +168,7 @@ export async function createWebtoon(data: CreateWebtoonData): Promise<Webtoon> {
       cover_path: data.coverPath ?? null,
       visibility: data.visibility ?? "draft",
       settings: data.settings ?? {},
+      owner_id: data.ownerId ?? null,
     })
     .select()
     .single();
@@ -165,8 +179,10 @@ export async function createWebtoon(data: CreateWebtoonData): Promise<Webtoon> {
 export async function updateWebtoon(
   id: string,
   data: UpdateWebtoonData,
+  ownerId?: string,
 ): Promise<Webtoon | null> {
   if (!isUuid(id)) return null;
+  if (ownerId !== undefined && !isUuid(ownerId)) return null;
 
   const patch: Database["public"]["Tables"]["webtoons"]["Update"] = {};
   if (data.title !== undefined) patch.title = data.title;
@@ -175,38 +191,47 @@ export async function updateWebtoon(
   if (data.visibility !== undefined) patch.visibility = data.visibility;
   if (data.settings !== undefined) patch.settings = data.settings;
 
-  const { data: row, error } = await supabase
-    .from("webtoons")
-    .update(patch)
-    .eq("id", id)
-    .select()
-    .maybeSingle();
+  let query = supabase.from("webtoons").update(patch).eq("id", id);
+  if (ownerId !== undefined) {
+    query = query.or(ownerOrLegacyFilter(ownerId));
+  }
+
+  const { data: row, error } = await query.select().maybeSingle();
   if (error) throwDbError("updateWebtoon", error);
   return row ? mapWebtoon(row as WebtoonRow) : null;
 }
 
-export async function deleteWebtoon(id: string): Promise<boolean> {
+export async function deleteWebtoon(
+  id: string,
+  ownerId?: string,
+): Promise<boolean> {
   if (!isUuid(id)) return false;
+  if (ownerId !== undefined && !isUuid(ownerId)) return false;
 
-  const { data, error } = await supabase
-    .from("webtoons")
-    .delete()
-    .eq("id", id)
-    .select("id")
-    .maybeSingle();
+  let query = supabase.from("webtoons").delete().eq("id", id);
+  if (ownerId !== undefined) {
+    query = query.or(ownerOrLegacyFilter(ownerId));
+  }
+
+  const { data, error } = await query.select("id").maybeSingle();
   if (error) throwDbError("deleteWebtoon", error);
   return data !== null;
 }
 
 /** Chemin Storage de la couverture, ou `null` si absente / introuvable. */
-export async function getWebtoonCoverPath(id: string): Promise<string | null> {
+export async function getWebtoonCoverPath(
+  id: string,
+  ownerId?: string,
+): Promise<string | null> {
   if (!isUuid(id)) return null;
+  if (ownerId !== undefined && !isUuid(ownerId)) return null;
 
-  const { data, error } = await supabase
-    .from("webtoons")
-    .select("cover_path")
-    .eq("id", id)
-    .maybeSingle();
+  let query = supabase.from("webtoons").select("cover_path").eq("id", id);
+  if (ownerId !== undefined) {
+    query = query.or(ownerOrLegacyFilter(ownerId));
+  }
+
+  const { data, error } = await query.maybeSingle();
   if (error) throwDbError("getWebtoonCoverPath", error);
   return (data as { cover_path: string | null } | null)?.cover_path ?? null;
 }
@@ -222,23 +247,35 @@ export async function listPublishedWebtoons(): Promise<Webtoon[]> {
 }
 
 /** Tous les webtoons (drafts inclus) — utilisé par l'éditeur. */
-export async function listWebtoons(): Promise<Webtoon[]> {
-  const { data, error } = await supabase
-    .from("webtoons")
-    .select("*")
-    .order("updated_at", { ascending: false });
+export async function listWebtoons(ownerId?: string): Promise<Webtoon[]> {
+  if (ownerId !== undefined && !isUuid(ownerId)) return [];
+
+  let query = supabase.from("webtoons").select("*");
+  if (ownerId !== undefined) {
+    query = query.or(ownerOrLegacyFilter(ownerId));
+  }
+
+  const { data, error } = await query.order("updated_at", {
+    ascending: false,
+  });
   if (error) throwDbError("listWebtoons", error);
   return (data ?? []).map((row: WebtoonRow) => mapWebtoon(row));
 }
 
-export async function getWebtoon(id: string): Promise<WebtoonWithSections | null> {
+export async function getWebtoon(
+  id: string,
+  ownerId?: string,
+): Promise<WebtoonWithSections | null> {
   if (!isUuid(id)) return null;
+  if (ownerId !== undefined && !isUuid(ownerId)) return null;
 
-  const { data: webtoonRow, error: webtoonError } = await supabase
-    .from("webtoons")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  let webtoonQuery = supabase.from("webtoons").select("*").eq("id", id);
+  if (ownerId !== undefined) {
+    webtoonQuery = webtoonQuery.or(ownerOrLegacyFilter(ownerId));
+  }
+
+  const { data: webtoonRow, error: webtoonError } =
+    await webtoonQuery.maybeSingle();
   if (webtoonError) throwDbError("getWebtoon.webtoon", webtoonError);
   if (!webtoonRow) return null;
 

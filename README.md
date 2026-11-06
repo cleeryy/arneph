@@ -99,6 +99,29 @@ A seeded demo webtoon **« Démo »** (id `98ed65b1-833f-4dac-ae8f-77d5789d986f`
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase URL (`http://127.0.0.1:54321` for local, `https://<project-ref>.supabase.co` for production) |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key for client-side operations (uploads, storage). `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` acceptée en remplacement. |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key for server-side operations. `SUPABASE_SECRET_KEY` acceptée en remplacement. |
+| `NEXT_PUBLIC_SITE_URL` | (Optionnel) URL publique canonique utilisée dans les magic links, ex. `https://arneph.cleeryy.cloud`. Fallback : origine de la requête courante. Doit figurer dans l'allowlist Supabase (Auth → URL Configuration). |
+
+## Authentication (magic link)
+
+`/editor` exige une session Supabase Auth. La connexion se fait par lien
+magique (`/login` → `/auth/confirm`) et chaque webtoon porte un `owner_id`.
+
+Configuration manuelle dans le dashboard Supabase (non versionnable ici) :
+
+1. **Auth → URL Configuration** : ajouter `https://arneph.cleeryy.cloud` (et
+   `http://localhost:3000` en local) à la *Site URL* / *Redirect URLs*.
+2. **Auth → Emails → Magic Link** : remplacer le template par
+   `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`
+   (ajouter `&next=/editor` si vous voulez forcer la destination).
+3. **Auth → SMTP** : configurer un SMTP réel ; sans lui, aucun e-mail n'est
+   délivré en production.
+4. Appliquer `supabase/migrations/20261106_auth_owner.sql` (colonne
+   `owner_id`, GRANTs et policies RLS).
+
+Les webtoons créés avant l'introduction de `owner_id` restent lisibles et
+modifiables par tout utilisateur authentifié (`owner_id is null`) : ce sont des
+données legacy sans propriétaire connu. Les nouvelles créations portent
+toujours l'UUID de leur auteur.
 
 Les URLs Storage sont construites par `src/lib/supabase/public-url.ts`. Les
 images Supabase dynamiques sont servies directement (`unoptimized`) après

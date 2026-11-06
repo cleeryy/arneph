@@ -158,7 +158,19 @@
     "duplicateSection": "Duplicate section",
     "undo": "Undo",
     "redo": "Redo",
-    "unsavedConfirm": "You have unsaved changes. Leave anyway?"
+    "unsavedConfirm": "You have unsaved changes. Leave anyway?",
+    "signOut": "Sign out"
+  },
+  "auth": {
+    "title": "Sign in to the editor",
+    "subtitle": "Get a sign-in link by email. No password to remember.",
+    "email": "Email address",
+    "emailPlaceholder": "you@example.com",
+    "submit": "Send the link",
+    "submitting": "Sending…",
+    "success": "If this address is valid, a sign-in link has just been sent.",
+    "error": "Could not send the link right now.",
+    "backHome": "Back to home"
   },
   "errors": {
     "notFound": "Page not found",

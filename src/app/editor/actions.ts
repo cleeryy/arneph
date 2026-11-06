@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 
 import { supabase } from "@/lib/db/server";
+import { requireUser } from "@/lib/auth/require-user";
 import { sectionSchema } from "@/lib/schemas";
 import {
   type SectionWithImages,
@@ -152,7 +153,8 @@ function titleWithSuffix(title: string, attempt: number): string {
  */
 async function createWebtoonWithUniqueTitle(
   title: string,
-  description?: string,
+  description: string | undefined,
+  ownerId: string,
 ) {
   for (let attempt = 1; attempt <= MAX_UNIQUE_TITLE_ATTEMPTS; attempt += 1) {
     try {
@@ -160,6 +162,7 @@ async function createWebtoonWithUniqueTitle(
         title: titleWithSuffix(title, attempt),
         description,
         visibility: "draft",
+        ownerId,
       });
     } catch (error) {
       if (attempt === MAX_UNIQUE_TITLE_ATTEMPTS || !isDuplicateTitleError(error)) {
@@ -321,6 +324,9 @@ async function rollbackCreatedSections(
 export async function createWebtoonAction(
   input?: { title?: string; description?: string },
 ): Promise<{ ok: boolean; error?: string; webtoonId?: string }> {
+  const auth = await requireUser();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
   const parse = createWebtoonSchema.safeParse(input ?? {});
   if (!parse.success) {
     return {
@@ -333,6 +339,7 @@ export async function createWebtoonAction(
     const webtoon = await createWebtoonWithUniqueTitle(
       parse.data.title ?? DEFAULT_WEBTOON_TITLE,
       parse.data.description,
+      auth.user.id,
     );
 
     revalidatePath("/editor");
@@ -353,6 +360,9 @@ export async function updateWebtoonMetadataAction(
     coverPath?: string | null;
   },
 ): Promise<{ ok: boolean; error?: string }> {
+  const auth = await requireUser();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
   const idParse = publishWebtoonSchema.safeParse({ webtoonId });
   if (!idParse.success) {
     return {
@@ -379,7 +389,7 @@ export async function updateWebtoonMetadataAction(
     let previousCoverPath: string | null = null;
     if (parse.data.coverPath !== undefined) {
       try {
-        previousCoverPath = await getWebtoonCoverPath(webtoonId);
+        previousCoverPath = await getWebtoonCoverPath(webtoonId, auth.user.id);
       } catch (coverError) {
         console.warn(
           `updateWebtoonMetadataAction cover lookup failed for ${webtoonId}:`,
@@ -400,7 +410,7 @@ export async function updateWebtoonMetadataAction(
       patch.coverPath = parse.data.coverPath === "" ? null : parse.data.coverPath;
     }
 
-    const updated = await updateWebtoon(webtoonId, patch);
+    const updated = await updateWebtoon(webtoonId, patch, auth.user.id);
     if (!updated) {
       return { ok: false, error: "Webtoon introuvable." };
     }
@@ -434,6 +444,9 @@ export async function saveWebtoon(
   webtoonId: string,
   sections: SectionWithImages[],
 ): Promise<{ ok: boolean; error?: string; sectionIds?: Record<string, string> }> {
+  const auth = await requireUser();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
   const parse = saveWebtoonSchema.safeParse({ webtoonId, sections });
   if (!parse.success) {
     return {
@@ -446,7 +459,7 @@ export async function saveWebtoon(
 
   try {
     const { webtoonId: wid, sections: incomingSections } = parse.data;
-    const current = await getWebtoon(wid);
+    const current = await getWebtoon(wid, auth.user.id);
     if (!current) {
       // Ne jamais créer de sections orphelines pour un webtoon inexistant.
       return { ok: false, error: "Webtoon introuvable." };
@@ -624,6 +637,9 @@ async function syncImages(
 export async function publishWebtoon(
   webtoonId: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const auth = await requireUser();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
   const parse = publishWebtoonSchema.safeParse({ webtoonId });
   if (!parse.success) {
     return {
@@ -633,7 +649,7 @@ export async function publishWebtoon(
   }
 
   try {
-    const current = await getWebtoon(webtoonId);
+    const current = await getWebtoon(webtoonId, auth.user.id);
     if (!current) {
       return { ok: false, error: "Webtoon introuvable." };
     }
@@ -644,9 +660,11 @@ export async function publishWebtoon(
       };
     }
 
-    const result = await updateWebtoon(webtoonId, {
-      visibility: "published",
-    });
+    const result = await updateWebtoon(
+      webtoonId,
+      { visibility: "published" },
+      auth.user.id,
+    );
     if (!result) {
       return { ok: false, error: "Webtoon introuvable." };
     }
@@ -664,6 +682,9 @@ export async function publishWebtoon(
 export async function unpublishWebtoon(
   webtoonId: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const auth = await requireUser();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
   const parse = publishWebtoonSchema.safeParse({ webtoonId });
   if (!parse.success) {
     return {
@@ -673,9 +694,11 @@ export async function unpublishWebtoon(
   }
 
   try {
-    const result = await updateWebtoon(webtoonId, {
-      visibility: "draft",
-    });
+    const result = await updateWebtoon(
+      webtoonId,
+      { visibility: "draft" },
+      auth.user.id,
+    );
     if (!result) throw new Error("Webtoon not found");
 
     revalidatePath(`/editor/${webtoonId}`);
@@ -690,6 +713,9 @@ export async function unpublishWebtoon(
 export async function deleteWebtoonAction(
   webtoonId: string,
 ): Promise<{ ok: boolean; error?: string }> {
+  const auth = await requireUser();
+  if (!auth.ok) return { ok: false, error: auth.error };
+
   const parse = publishWebtoonSchema.safeParse({ webtoonId });
   if (!parse.success) {
     return {
@@ -701,12 +727,12 @@ export async function deleteWebtoonAction(
   try {
     // Lire les chemins AVANT la suppression : après le delete en cascade,
     // plus rien ne permet de retrouver les objets Storage.
-    const current = await getWebtoon(webtoonId);
+    const current = await getWebtoon(webtoonId, auth.user.id);
     const knownPaths = current ? collectWebtoonStoragePaths(current) : [];
 
     // DB d'abord : si le delete échoue, aucun fichier n'est supprimé.
     // Un objet Storage orphelin est récupérable, un webtoon sans médias non.
-    const deleted = await deleteWebtoon(webtoonId);
+    const deleted = await deleteWebtoon(webtoonId, auth.user.id);
     if (!deleted) {
       return { ok: false, error: "Webtoon introuvable." };
     }

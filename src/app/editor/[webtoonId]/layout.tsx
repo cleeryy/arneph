@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { getWebtoon } from "@/lib/db/queries";
+import { requireUserOrRedirect } from "@/lib/auth/require-user";
 import { EditorStateProvider } from "@/components/editor/EditorStateContext";
 import { EditorDetailLayoutContent } from "@/components/editor/EditorDetailShell";
 
@@ -14,7 +15,8 @@ export default async function EditorDetailLayout({
   params: Promise<{ webtoonId: string }>;
 }) {
   const { webtoonId } = await params;
-  const webtoon = await getWebtoon(webtoonId);
+  const user = await requireUserOrRedirect(`/editor/${webtoonId}`);
+  const webtoon = await getWebtoon(webtoonId, user.id);
 
   return (
     <EditorStateProvider

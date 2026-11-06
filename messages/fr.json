@@ -158,7 +158,19 @@
     "duplicateSection": "Dupliquer la section",
     "undo": "Annuler",
     "redo": "Rétablir",
-    "unsavedConfirm": "Des modifications ne sont pas enregistrées. Quitter quand même ?"
+    "unsavedConfirm": "Des modifications ne sont pas enregistrées. Quitter quand même ?",
+    "signOut": "Se déconnecter"
+  },
+  "auth": {
+    "title": "Connexion à l'éditeur",
+    "subtitle": "Recevez un lien de connexion par e-mail. Aucun mot de passe à retenir.",
+    "email": "Adresse e-mail",
+    "emailPlaceholder": "vous@exemple.com",
+    "submit": "Recevoir le lien",
+    "submitting": "Envoi…",
+    "success": "Si cette adresse est valide, un lien de connexion vient d'être envoyé.",
+    "error": "Impossible d'envoyer le lien pour le moment.",
+    "backHome": "Retour à l'accueil"
   },
   "errors": {
     "notFound": "Page introuvable",
