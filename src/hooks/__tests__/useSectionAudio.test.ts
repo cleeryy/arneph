@@ -11,6 +11,7 @@ class MockAudio {
   static instances: MockAudio[] = []
 
   src = ""
+  muted = false
 
   constructor() {
     MockAudio.instances.push(this)
@@ -259,5 +260,69 @@ describe("useSectionAudio — élément Audio partagé + une piste à la fois", 
     expect(rejections).toHaveLength(0)
 
     window.removeEventListener("unhandledrejection", onUnhandled)
+  })
+})
+
+describe("useSectionAudio — coupure du son (RD-5)", () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.stubGlobal("Audio", MockAudio)
+    MockAudio.instances = []
+    vi.spyOn(MockAudio.prototype, "play").mockResolvedValue(undefined)
+    vi.spyOn(MockAudio.prototype, "pause").mockImplementation(() => {})
+    vi.spyOn(MockAudio.prototype, "load").mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    for (const gesture of ["pointerdown", "touchstart", "scroll", "keydown"]) {
+      window.dispatchEvent(new Event(gesture))
+    }
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  test("muted est faux par défaut et toggleMuted bascule l'état", async () => {
+    const useSectionAudio = await loadHook()
+    const { result } = renderHook(() => useSectionAudio())
+
+    expect(result.current.muted).toBe(false)
+
+    act(() => result.current.toggleMuted())
+    expect(result.current.muted).toBe(true)
+
+    act(() => result.current.toggleMuted())
+    expect(result.current.muted).toBe(false)
+  })
+
+  test("toggleMuted applique `muted` à l'élément média partagé", async () => {
+    const useSectionAudio = await loadHook()
+    const { result } = renderHook(() => useSectionAudio())
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"))
+    })
+    act(() => result.current.playSectionAudio("A", "/audio/a.mp3"))
+    expect(MockAudio.instances).toHaveLength(1)
+
+    act(() => result.current.toggleMuted())
+    expect(MockAudio.instances[0].muted).toBe(true)
+
+    act(() => result.current.toggleMuted())
+    expect(MockAudio.instances[0].muted).toBe(false)
+  })
+
+  test("un mute posé avant le premier geste s'applique à la création de l'élément", async () => {
+    const useSectionAudio = await loadHook()
+    const { result } = renderHook(() => useSectionAudio())
+
+    act(() => result.current.toggleMuted())
+    expect(result.current.muted).toBe(true)
+
+    act(() => {
+      window.dispatchEvent(new Event("pointerdown"))
+    })
+
+    expect(MockAudio.instances).toHaveLength(1)
+    expect(MockAudio.instances[0].muted).toBe(true)
   })
 })

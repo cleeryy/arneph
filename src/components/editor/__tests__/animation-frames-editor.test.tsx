@@ -36,6 +36,7 @@ interface RenderOptions {
   frames?: string[];
   frameWidth?: number;
   frameHeight?: number;
+  disabled?: boolean;
   onChange?: Mock<(next: AnimationFramesValue) => void>;
   onUploadFiles?: Mock<(files: File[]) => Promise<AnimationFrameUploadResult>>;
 }
@@ -56,6 +57,7 @@ function renderEditor(options: RenderOptions = {}) {
         frameHeight={options.frameHeight ?? GEOMETRY.frameHeight}
         onChange={onChange}
         onUploadFiles={onUploadFiles}
+        disabled={options.disabled}
       />,
     ),
   );
@@ -246,6 +248,20 @@ describe("AnimationFramesEditor — uploads", () => {
     expect(
       await screen.findByText("Erreur lors de la création de la sprite sheet."),
     ).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("AnimationFramesEditor — disabled state", () => {
+  test("disables upload, reorder, duplicate and delete while the parent uploads", () => {
+    const { onChange } = renderEditor({ disabled: true });
+
+    expect(screen.getByLabelText("Ajouter des frames")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Déplacer à droite 1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Dupliquer la frame 1" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Supprimer la frame 1" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Supprimer la frame 1" }));
     expect(onChange).not.toHaveBeenCalled();
   });
 });

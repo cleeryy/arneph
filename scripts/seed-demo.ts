@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import WebSocket from "ws";
 import { deflateSync } from "node:zlib";
 
+import { loadLocalEnv } from "./load-env";
+
 const BUCKET = "webtoon-images";
 const FRAME_WIDTH = 800;
 const FRAME_HEIGHT = 1280;
@@ -180,12 +182,64 @@ async function deleteWebtoonAndAssets(
   supabase: SupabaseClient,
   webtoonId: string,
 ): Promise<void> {
-  const prefix = `webtoons/sections/${webtoonId}/`;
-  const { data: files, error: listError } = await supabase.storage.from(BUCKET).list(prefix, { limit: 1000 });
-  if (!listError && files && files.length > 0) {
-    const paths = files.map((f: { name: string }) => `${prefix}${f.name}`);
-    await supabase.storage.from(BUCKET).remove(paths);
+  // Les assets du seed vivent sous `webtoons/seed/<slug>/`, pas sous
+  // `webtoons/sections/<webtoonId>/` : collecter les chemins réellement
+  // référencés (config, images, audio, couverture) puis lister les dossiers
+  // de sections pour les frames orphelines.
+  const paths = new Set<string>();
+
+  const { data: webtoonRow } = await supabase
+    .from("webtoons")
+    .select("cover_path")
+    .eq("id", webtoonId)
+    .maybeSingle();
+  const coverPath = (webtoonRow as { cover_path: string | null } | null)?.cover_path;
+  if (coverPath) paths.add(coverPath);
+
+  const { data: sectionRows } = await supabase
+    .from("sections")
+    .select("id, config, audio_path")
+    .eq("webtoon_id", webtoonId);
+
+  for (const section of (sectionRows as {
+    id: string;
+    config: Record<string, unknown> | null;
+    audio_path: string | null;
+  }[] | null) ?? []) {
+    const config = section.config ?? {};
+    for (const key of ["imagePath", "spritePath", "fxPath", "audioPath"]) {
+      const value = config[key];
+      if (typeof value === "string" && value.length > 0) paths.add(value);
+    }
+    if (Array.isArray(config.framePaths)) {
+      for (const framePath of config.framePaths) {
+        if (typeof framePath === "string" && framePath.length > 0) {
+          paths.add(framePath);
+        }
+      }
+    }
+    if (section.audio_path) paths.add(section.audio_path);
+
+    const prefix = `webtoons/sections/${section.id}/`;
+    const { data: files } = await supabase.storage.from(BUCKET).list(prefix, {
+      limit: 1000,
+    });
+    for (const file of (files as { name: string }[] | null) ?? []) {
+      paths.add(`${prefix}${file.name}`);
+    }
   }
+
+  if (paths.size > 0) {
+    const { error: removeError } = await supabase.storage
+      .from(BUCKET)
+      .remove([...paths]);
+    if (removeError) {
+      throw new Error(
+        `Failed to remove assets of webtoon ${webtoonId}: ${removeError.message}`,
+      );
+    }
+  }
+
   const { error } = await supabase.from("webtoons").delete().eq("id", webtoonId);
   if (error) throw new Error(`Failed to delete webtoon ${webtoonId}: ${error.message}`);
 }
@@ -218,7 +272,7 @@ async function createSectionWithImage(
   if (secError) throw new Error(`Failed to create section: ${secError.message}`);
   const sectionId = (sectionRow as { id: string }).id;
 
-  await supabase.from("images").insert({
+  const { error: imageError } = await supabase.from("images").insert({
     id: crypto.randomUUID(),
     section_id: sectionId,
     webtoon_id: webtoonId,
@@ -228,6 +282,11 @@ async function createSectionWithImage(
     mime_type: mimeType,
     position: 0,
   });
+  if (imageError) {
+    throw new Error(
+      `Failed to create image for section ${sectionId}: ${imageError.message}`,
+    );
+  }
 }
 
 interface SectionDef {
@@ -370,6 +429,9 @@ export async function seedDemo(force: boolean = false): Promise<{ webtoonId: str
 const isMainModule = process.argv[1]?.endsWith("seed-demo.ts");
 
 if (isMainModule) {
+  // `npm run db:seed` ne charge pas `.env.local` (contrairement à Next).
+  loadLocalEnv();
+
   const args = process.argv.slice(2);
   const force = args.includes("--force");
 

@@ -96,6 +96,18 @@ export interface WebtoonWithSections extends Webtoon {
   sections: SectionWithImages[];
 }
 
+/**
+ * Garde d'identifiant Postgres `uuid`.
+ * PostgREST renvoie `22P02` (500) quand on passe une chaîne arbitraire à une
+ * colonne `uuid` ; les helpers publics court-circuitent donc ces appels.
+ */
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
 function throwDbError(
   operation: string,
   error: { message?: string; code?: string },
@@ -121,7 +133,18 @@ export interface CreateWebtoonData {
   settings?: Record<string, unknown>;
 }
 
-export type UpdateWebtoonData = Partial<CreateWebtoonData>;
+/**
+ * Mise à jour partielle d'un webtoon.
+ * `null` est une valeur métier : il efface `description` / `cover_path`
+ * (contrairement à `undefined`, qui laisse le champ inchangé).
+ */
+export type UpdateWebtoonData = {
+  title?: string;
+  description?: string | null;
+  coverPath?: string | null;
+  visibility?: SectionVisibility;
+  settings?: Record<string, unknown>;
+};
 
 export async function createWebtoon(data: CreateWebtoonData): Promise<Webtoon> {
   const { data: row, error } = await supabase
@@ -143,6 +166,8 @@ export async function updateWebtoon(
   id: string,
   data: UpdateWebtoonData,
 ): Promise<Webtoon | null> {
+  if (!isUuid(id)) return null;
+
   const patch: Database["public"]["Tables"]["webtoons"]["Update"] = {};
   if (data.title !== undefined) patch.title = data.title;
   if (data.description !== undefined) patch.description = data.description;
@@ -161,9 +186,29 @@ export async function updateWebtoon(
 }
 
 export async function deleteWebtoon(id: string): Promise<boolean> {
-  const { error } = await supabase.from("webtoons").delete().eq("id", id);
+  if (!isUuid(id)) return false;
+
+  const { data, error } = await supabase
+    .from("webtoons")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
   if (error) throwDbError("deleteWebtoon", error);
-  return true;
+  return data !== null;
+}
+
+/** Chemin Storage de la couverture, ou `null` si absente / introuvable. */
+export async function getWebtoonCoverPath(id: string): Promise<string | null> {
+  if (!isUuid(id)) return null;
+
+  const { data, error } = await supabase
+    .from("webtoons")
+    .select("cover_path")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throwDbError("getWebtoonCoverPath", error);
+  return (data as { cover_path: string | null } | null)?.cover_path ?? null;
 }
 
 export async function listPublishedWebtoons(): Promise<Webtoon[]> {
@@ -187,6 +232,8 @@ export async function listWebtoons(): Promise<Webtoon[]> {
 }
 
 export async function getWebtoon(id: string): Promise<WebtoonWithSections | null> {
+  if (!isUuid(id)) return null;
+
   const { data: webtoonRow, error: webtoonError } = await supabase
     .from("webtoons")
     .select("*")
@@ -282,9 +329,39 @@ export async function updateSection(
 }
 
 export async function deleteSection(id: string): Promise<boolean> {
-  const { error } = await supabase.from("sections").delete().eq("id", id);
+  if (!isUuid(id)) return false;
+
+  const { data, error } = await supabase
+    .from("sections")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
   if (error) throwDbError("deleteSection", error);
-  return true;
+  return data !== null;
+}
+
+/**
+ * Supprime en un seul batch les sections retirées d'un webtoon.
+ * Retourne le nombre de lignes réellement supprimées.
+ */
+export async function deleteSectionsByIds(
+  webtoonId: string,
+  ids: string[],
+): Promise<number> {
+  if (!isUuid(webtoonId)) return 0;
+
+  const validIds = ids.filter(isUuid);
+  if (validIds.length === 0) return 0;
+
+  const { data, error } = await supabase
+    .from("sections")
+    .delete()
+    .eq("webtoon_id", webtoonId)
+    .in("id", validIds)
+    .select("id");
+  if (error) throwDbError("deleteSectionsByIds", error);
+  return data?.length ?? 0;
 }
 
 /** Réordonne les sections par update ciblé de position (pas de réécriture complète). */

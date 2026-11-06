@@ -141,14 +141,31 @@ describe("AnimationStep — frame pilotée par la progression", () => {
     expect(frame.style.backgroundImage).toBe(
       `url("${getSupabasePublicObjectUrl("sprites/walk.webp")}")`,
     );
-    expect(frame.style.backgroundSize).toBe("300px 200px");
-    expect(frame.style.backgroundPosition).toBe("0px 0px");
+    expect(frame.style.backgroundSize).toBe("300% 200%");
+    expect(frame.style.backgroundPosition).toBe("0% 0%");
     expect(frame.style.backgroundRepeat).toBe("no-repeat");
 
     // frame 4 → colonne 1, ligne 1
     rerender(wrap(<AnimationStep section={animationSection()} progress={4 / 6} />));
     expect(frameIndex()).toBe(4);
-    expect(frame.style.backgroundPosition).toBe("-100px -100px");
+    expect(frame.style.backgroundPosition).toBe("50% 100%");
+  });
+
+  test("géométrie relative : le sprite se met à l'échelle du conteneur", () => {
+    const { rerender } = render(
+      wrap(<AnimationStep section={animationSection()} progress={0} />),
+    );
+    const frame = screen.getByTestId("animation-step-frame");
+
+    // La taille de fond est exprimée en pourcentage de la frame rendue, pas en
+    // pixels absolus : une frame réduite par max-width reste entière.
+    expect(frame.style.backgroundSize).toBe("300% 200%");
+    expect(frame.style.backgroundPosition).toContain("%");
+
+    // frame 5 (dernière) → colonne 2, ligne 1
+    rerender(wrap(<AnimationStep section={animationSection()} progress={1} />));
+    expect(frameIndex()).toBe(5);
+    expect(frame.style.backgroundPosition).toBe("100% 100%");
   });
 
   test("changement de frame instantané : aucun transition ni transform", () => {
@@ -195,8 +212,8 @@ describe("AnimationStep — config invalide", () => {
     const frame = screen.getByTestId("animation-step-frame");
     expect(frame.style.width).toBe("1px");
     expect(frame.style.height).toBe("1px");
-    expect(frame.style.backgroundSize).toBe("1px 1px");
-    expect(frame.style.backgroundPosition).toBe("0px 0px");
+    expect(frame.style.backgroundSize).toBe("100% 100%");
+    expect(frame.style.backgroundPosition).toBe("0% 0%");
     expect(frame.style.cssText).not.toContain("NaN");
     expect(frameIndex()).toBe(0);
   });

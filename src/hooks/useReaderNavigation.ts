@@ -6,6 +6,37 @@ import type { ReaderStep } from "@/lib/reader/steps";
 export const WHEEL_THRESHOLD_RATIO = 0.2;
 /** Fenêtre d'inactivité après laquelle l'accumulateur de geste est remis à zéro. */
 export const WHEEL_RESET_MS = 220;
+/**
+ * Délai minimal entre deux navigations issue de la molette. Sans ce verrou,
+ * l'inertie d'un trackpad (0,5-1,5 s) re-remplit le seuil et saute plusieurs
+ * étapes d'affilée.
+ */
+export const NAVIGATION_COOLDOWN_MS = 200;
+/** Hauteur de repli quand `window` n'est pas disponible (SSR, tests). */
+const FALLBACK_VIEWPORT_HEIGHT = 800;
+/** Hauteur d'une ligne pour `DOM_DELTA_LINE` (Firefox renvoie `deltaY = 3`). */
+const LINE_HEIGHT_PX = 16;
+
+/**
+ * Normalise un delta de molette en pixels, quel que soit `deltaMode`.
+ *
+ * - `0` (`DOM_DELTA_PIXEL`) : déjà en pixels ;
+ * - `1` (`DOM_DELTA_LINE`) : multiplié par la hauteur de ligne ;
+ * - `2` (`DOM_DELTA_PAGE`) : multiplié par la hauteur de viewport.
+ */
+export function normalizeWheelDelta(
+  deltaY: number,
+  deltaMode: number,
+  viewportHeight: number,
+): number {
+  if (!Number.isFinite(deltaY)) return 0;
+  if (deltaMode === 1) return deltaY * LINE_HEIGHT_PX;
+  if (deltaMode === 2) {
+    const height = viewportHeight > 0 ? viewportHeight : FALLBACK_VIEWPORT_HEIGHT;
+    return deltaY * height;
+  }
+  return deltaY;
+}
 
 export interface NavigationState {
   /** Index de l'étape courante ; `steps.length` représente l'écran de fin. */
@@ -151,10 +182,11 @@ export function useReaderNavigation(steps: ReaderStep[]): NavigationApi {
   );
   const accumulator = React.useRef(0);
   const lastGestureAt = React.useRef(0);
+  const lastNavigationAt = React.useRef(Number.NEGATIVE_INFINITY);
 
   const viewportHeight = React.useCallback(() => {
-    if (typeof window === "undefined") return 800;
-    return window.innerHeight || 800;
+    if (typeof window === "undefined") return FALLBACK_VIEWPORT_HEIGHT;
+    return window.innerHeight || FALLBACK_VIEWPORT_HEIGHT;
   }, []);
 
   const goNext = React.useCallback(() => {
@@ -194,6 +226,9 @@ export function useReaderNavigation(steps: ReaderStep[]): NavigationApi {
   const handleWheel = React.useCallback(
     (deltaY: number) => {
       const now = Date.now();
+      // Verrou post-navigation : l'inertie du trackpad ne doit pas enchaîner
+      // les étapes. On n'accumule rien tant que le cooldown court.
+      if (now - lastNavigationAt.current < NAVIGATION_COOLDOWN_MS) return;
       if (now - lastGestureAt.current > WHEEL_RESET_MS) accumulator.current = 0;
       lastGestureAt.current = now;
 
@@ -206,6 +241,7 @@ export function useReaderNavigation(steps: ReaderStep[]): NavigationApi {
           accumulator.current,
         );
         accumulator.current = result.accumulated;
+        if (result.navigated) lastNavigationAt.current = now;
         return result.state;
       });
     },

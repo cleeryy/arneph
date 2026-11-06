@@ -44,6 +44,22 @@ function Toggle({
 export function ReaderSettings({ open, onClose }: ReaderSettingsProps) {
   const t = useTranslations("reader");
   const { preferences, update } = useReaderPreferences();
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  const previouslyFocused = React.useRef<HTMLElement | null>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    previouslyFocused.current = active instanceof HTMLElement ? active : null;
+    closeButtonRef.current?.focus();
+    return () => {
+      const target = previouslyFocused.current;
+      previouslyFocused.current = null;
+      if (target && typeof target.focus === "function" && target.isConnected) {
+        target.focus();
+      }
+    };
+  }, [open]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -64,10 +80,22 @@ export function ReaderSettings({ open, onClose }: ReaderSettingsProps) {
       data-testid="reader-settings"
       className="absolute inset-0 z-40 flex items-end justify-center bg-black/40 p-4 sm:items-center"
       onClick={(event) => {
+        // La modale est posée au-dessus du deck : aucun geste ne doit fuir
+        // vers la navigation (clic, molette, tactile).
+        event.stopPropagation();
         if (event.target === event.currentTarget) onClose();
       }}
+      onWheel={(event) => event.stopPropagation()}
+      onTouchStart={(event) => event.stopPropagation()}
+      onTouchMove={(event) => event.stopPropagation()}
     >
-      <div className="w-full max-w-sm rounded-xl border border-border bg-background p-4 shadow-xl">
+      <div
+        className="w-full max-w-sm rounded-xl border border-border bg-background p-4 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+        onWheel={(event) => event.stopPropagation()}
+        onTouchStart={(event) => event.stopPropagation()}
+        onTouchMove={(event) => event.stopPropagation()}
+      >
         <div className="mb-3 flex items-center justify-between">
           <h2
             id="reader-settings-title"
@@ -76,6 +104,7 @@ export function ReaderSettings({ open, onClose }: ReaderSettingsProps) {
             {t("settingsTitle")}
           </h2>
           <button
+            ref={closeButtonRef}
             type="button"
             onClick={onClose}
             aria-label={t("settingsClose")}

@@ -1,10 +1,12 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import type { SectionWithImages } from "@/lib/db/queries";
 import { buildReaderSteps } from "@/lib/reader/steps";
 import type { SectionConfig, SectionType } from "@/types/webtoon";
 import {
+  NAVIGATION_COOLDOWN_MS,
+  normalizeWheelDelta,
   reduceWheel,
   useReaderNavigation,
   WHEEL_THRESHOLD_RATIO,
@@ -155,5 +157,40 @@ describe("useReaderNavigation", () => {
     act(() => result.current.goPrev());
     expect(result.current.index).toBe(steps.length - 1);
     expect(result.current.isEnd).toBe(false);
+  });
+});
+
+describe("normalizeWheelDelta — deltaMode (RD-2)", () => {
+  test("pixels, lignes et pages", () => {
+    expect(normalizeWheelDelta(120, 0, H)).toBe(120);
+    expect(normalizeWheelDelta(3, 1, H)).toBe(48);
+    expect(normalizeWheelDelta(1, 2, H)).toBe(H);
+  });
+
+  test("viewport absent ou invalide → repli sûr", () => {
+    expect(normalizeWheelDelta(1, 2, 0)).toBe(800);
+    expect(normalizeWheelDelta(Number.NaN, 0, H)).toBe(0);
+  });
+});
+
+describe("useReaderNavigation — cooldown post-navigation (RD-1)", () => {
+  const imageSteps = buildReaderSteps([image(1), image(2), image(3)]);
+
+  test("ignore la molette pendant le cooldown, puis la réaccepte", () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    const { result } = renderHook(() => useReaderNavigation(imageSteps));
+
+    act(() => result.current.handleWheel(400));
+    expect(result.current.index).toBe(1);
+
+    // Inertie immédiate : aucune accumulation, aucune navigation.
+    act(() => result.current.handleWheel(400));
+    expect(result.current.index).toBe(1);
+
+    nowSpy.mockReturnValue(1_000 + NAVIGATION_COOLDOWN_MS + 1);
+    act(() => result.current.handleWheel(400));
+    expect(result.current.index).toBe(2);
+
+    nowSpy.mockRestore();
   });
 });

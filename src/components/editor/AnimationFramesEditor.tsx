@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Copy, Pause, Play, Trash2 } from "lucide-rea
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ImageProcessingError } from "@/lib/image/process";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 
 /** Vitesse de lecture de l'aperçu : ~12 images par seconde. */
@@ -37,6 +38,12 @@ interface AnimationFramesEditorProps {
    * Le composant reste présentational : il ne connaît ni Storage ni Supabase.
    */
   onUploadFiles: (files: File[]) => Promise<AnimationFrameUploadResult>;
+  /**
+   * Désactive toutes les actions d'édition pendant qu'un upload parent
+   * (sprite sheet, image, audio) est en cours : évite de réinjecter une liste
+   * de frames périmée par-dessus les changements en vol.
+   */
+  disabled?: boolean;
 }
 
 function isImageFile(file: File): boolean {
@@ -55,6 +62,7 @@ export function AnimationFramesEditor({
   frameHeight,
   onChange,
   onUploadFiles,
+  disabled = false,
 }: AnimationFramesEditorProps) {
   const t = useTranslations("editor");
   const inputId = React.useId();
@@ -63,6 +71,8 @@ export function AnimationFramesEditor({
   const [playing, setPlaying] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const controlsDisabled = disabled || uploading;
 
   // La liste peut rétrécir pendant l'aperçu : l'index affiché est borné au
   // rendu (jamais de setState synchrone dans un effet), et la lecture exige
@@ -132,8 +142,14 @@ export function AnimationFramesEditor({
         frameWidth: uploaded.frameWidth > 0 ? uploaded.frameWidth : frameWidth,
         frameHeight: uploaded.frameHeight > 0 ? uploaded.frameHeight : frameHeight,
       });
-    } catch {
-      setError(t("uploadAnimationErrorGeneric"));
+    } catch (err) {
+      // Les erreurs de validation image portent un message localisé ; les
+      // échecs Storage restent génériques (pas de fuite technique à l'écran).
+      setError(
+        err instanceof ImageProcessingError
+          ? err.message
+          : t("uploadAnimationErrorGeneric"),
+      );
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -171,7 +187,7 @@ export function AnimationFramesEditor({
             variant="outline"
             size="sm"
             onClick={() => setPlaying((value) => !value)}
-            disabled={frames.length < 2}
+            disabled={frames.length < 2 || controlsDisabled}
             aria-label={isPlaying ? t("framePause") : t("framePlay")}
           >
             {isPlaying ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
@@ -205,7 +221,7 @@ export function AnimationFramesEditor({
                   size="icon-xs"
                   className="size-5"
                   onClick={() => moveFrame(index, index - 1)}
-                  disabled={index === 0}
+                  disabled={index === 0 || controlsDisabled}
                   aria-label={`${t("frameMoveLeft")} ${index + 1}`}
                   title={t("frameMoveLeft")}
                 >
@@ -217,7 +233,7 @@ export function AnimationFramesEditor({
                   size="icon-xs"
                   className="size-5"
                   onClick={() => moveFrame(index, index + 1)}
-                  disabled={index === frames.length - 1}
+                  disabled={index === frames.length - 1 || controlsDisabled}
                   aria-label={`${t("frameMoveRight")} ${index + 1}`}
                   title={t("frameMoveRight")}
                 >
@@ -229,6 +245,7 @@ export function AnimationFramesEditor({
                   size="icon-xs"
                   className="size-5"
                   onClick={() => duplicateFrame(index)}
+                  disabled={controlsDisabled}
                   aria-label={`${t("frameDuplicate")} ${index + 1}`}
                   title={t("frameDuplicate")}
                 >
@@ -240,6 +257,7 @@ export function AnimationFramesEditor({
                   size="icon-xs"
                   className="size-5 text-destructive hover:text-destructive"
                   onClick={() => deleteFrame(index)}
+                  disabled={controlsDisabled}
                   aria-label={`${t("frameDelete")} ${index + 1}`}
                   title={t("frameDelete")}
                 >
@@ -262,7 +280,7 @@ export function AnimationFramesEditor({
           accept="image/*"
           multiple
           onChange={handleFilesChange}
-          disabled={uploading}
+          disabled={controlsDisabled}
           className="cursor-pointer"
         />
       </div>

@@ -100,6 +100,7 @@
     "publish": "Publish",
     "unpublish": "Unpublish",
     "uploadImageError": "Please select an image file.",
+    "fileTooLarge": "The file exceeds the 15 MB limit.",
     "uploadImageErrorGeneric": "Error uploading image.",
     "uploadAnimationError": "All files must be images.",
     "uploadAnimationErrorGeneric": "Error creating sprite sheet.",
@@ -156,7 +157,8 @@
     "saveError": "Could not save the changes.",
     "duplicateSection": "Duplicate section",
     "undo": "Undo",
-    "redo": "Redo"
+    "redo": "Redo",
+    "unsavedConfirm": "You have unsaved changes. Leave anyway?"
   },
   "errors": {
     "notFound": "Page not found",

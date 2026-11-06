@@ -283,3 +283,95 @@ describe("LongYStep — frontières", () => {
     expect(onBoundary).not.toHaveBeenCalled();
   });
 });
+
+describe("LongYStep — robustesse molette (RD-2, RD-3, RD-8)", () => {
+  test("image 404 (naturalHeight = 0) : la molette ne bloque pas la navigation", () => {
+    const onBoundary = vi.fn();
+    render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
+
+    // Aucun `markImageReady` : l'image n'est pas décodée (404).
+    fireEvent.wheel(scroller, { deltaY: -240 });
+    expect(onBoundary).toHaveBeenCalledWith("top");
+  });
+
+  test("deltaMode ligne (Firefox) : 12 lignes défilent de 192 px", () => {
+    const onBoundary = vi.fn();
+    render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
+
+    fireEvent.wheel(scroller, { deltaY: 12, deltaMode: 1 });
+    expect(scroller.scrollTop).toBe(192);
+    expect(onBoundary).not.toHaveBeenCalled();
+  });
+
+  test("Ctrl + molette : le zoom navigateur n'est pas intercepté", () => {
+    const onBoundary = vi.fn();
+    render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
+
+    const notCanceled = fireEvent.wheel(scroller, { deltaY: -240, ctrlKey: true });
+    expect(notCanceled).toBe(true);
+    expect(onBoundary).not.toHaveBeenCalled();
+  });
+
+  test("pincement à deux doigts : le scroll n'est pas intercepté", () => {
+    render(wrap(<LongYStep section={longSection()} onBoundary={vi.fn()} />));
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, { scrollTop: 0, clientHeight: 800, scrollHeight: 4000 });
+
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 500 }, { clientY: 520 }] });
+    const notCanceled = fireEvent.touchMove(scroller, {
+      touches: [
+        { clientY: 200 },
+        { clientY: 220 },
+      ],
+    });
+    expect(notCanceled).toBe(true);
+  });
+});
+
+describe("LongYStep — reset token (RD-7)", () => {
+  test("un changement de resetToken remet le défilement en haut", () => {
+    const { rerender } = render(
+      wrap(<LongYStep section={longSection()} onBoundary={vi.fn()} resetToken={0} />),
+    );
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    Object.defineProperty(scroller, "scrollTop", {
+      value: 640,
+      writable: true,
+      configurable: true,
+    });
+
+    rerender(
+      wrap(<LongYStep section={longSection()} onBoundary={vi.fn()} resetToken={1} />),
+    );
+
+    expect(scroller.scrollTop).toBe(0);
+  });
+});
+
+describe("LongYStep — resetToken au remontage", () => {
+  test("un token déjà incrémenté ne écrase pas la position restaurée", () => {
+    render(
+      wrap(
+        <LongYStep
+          section={longSection()}
+          onBoundary={vi.fn()}
+          initialScrollTop={420}
+          resetToken={2}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId("long-y-scroll").scrollTop).toBe(420);
+  });
+});

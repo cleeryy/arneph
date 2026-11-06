@@ -1,9 +1,13 @@
 import { describe, expect, test, vi } from "vitest";
 
 import {
+  MAX_CANVAS_DIMENSION,
+  MAX_IMAGE_PIXELS,
+  MAX_SPRITE_FRAMES,
   MAX_SPRITE_PIXELS,
   buildSpriteSheet,
   createBrowserFactory,
+  fitWithin,
   readImageDimensions,
   resizeImage,
   sliceSpriteSheet,
@@ -109,10 +113,12 @@ class MockCanvas implements CanvasLike {
 
 interface MockImage extends DecodedImage {
   id: string;
+  /** Simule `ImageBitmap.close()` pour vérifier la libération mémoire. */
+  close: ReturnType<typeof vi.fn>;
 }
 
 function img(id: string, width: number, height: number): MockImage {
-  return { id, width, height };
+  return { id, width, height, close: vi.fn() };
 }
 
 interface MockFactoryHandle extends CanvasFactory {
@@ -174,9 +180,27 @@ describe("readImageDimensions(file)", () => {
   });
 });
 
+describe("fitWithin(width, height, maxDimension)", () => {
+  test("borne les DEUX dimensions : 800×20000 → 655×16384", () => {
+    expect(fitWithin(800, 20000, MAX_CANVAS_DIMENSION)).toEqual({
+      width: 655,
+      height: MAX_CANVAS_DIMENSION,
+    });
+  });
+
+  test("applique un maxDimension plus petit : 4000×3000 → 1600×1200", () => {
+    expect(fitWithin(4000, 3000, 1600)).toEqual({ width: 1600, height: 1200 });
+  });
+
+  test("ne fait jamais d'upscale : 800×600 inchangé", () => {
+    expect(fitWithin(800, 600, 1600)).toEqual({ width: 800, height: 600 });
+  });
+});
+
 describe("resizeImage(file)", () => {
   test("conserve la taille native : 3000×2000 → canvas 3000×2000, pas de downscale", async () => {
-    const factory = mockFactory([img("full", 3000, 2000)]);
+    const source = img("full", 3000, 2000);
+    const factory = mockFactory([source]);
     const blob = await resizeImage(factory.file("full"), { factory });
 
     expect(blob.type).toBe("image/webp");
@@ -187,6 +211,8 @@ describe("resizeImage(file)", () => {
       { image: expect.objectContaining({ width: 3000, height: 2000 }), dx: 0, dy: 0, dw: 3000, dh: 2000 },
     ]);
     expect(canvas.toBlobCalls).toEqual([{ type: "image/webp", quality: 0.9 }]);
+    // IMG-7 : le bitmap décodé est libéré après usage.
+    expect(source.close).toHaveBeenCalledTimes(1);
   });
 
   test("ne fait PAS d'upscale : 800×600 → canvas 800×600 inchangé", async () => {
@@ -202,26 +228,48 @@ describe("resizeImage(file)", () => {
     );
   });
 
-  test("image déjà à la limite → dimensions conservées (pas de double resize)", async () => {
-    const factory = mockFactory([img("exact", 16384, 9000)]);
-    await resizeImage(factory.file("exact"), { factory });
-    const canvas = factory.canvases[0];
-    expect(canvas.width).toBe(16384);
-    expect(canvas.height).toBe(9000);
+  test("rejette 16384×9000 : au-delà de MAX_IMAGE_PIXELS avant tout canvas", async () => {
+    expect(16384 * 9000).toBeGreaterThan(MAX_IMAGE_PIXELS);
+    const source = img("too-many-pixels", 16384, 9000);
+    const factory = mockFactory([source]);
+
+    await expect(
+      resizeImage(factory.file("too-many-pixels"), { factory }),
+    ).rejects.toMatchObject({
+      name: "ImageProcessingError",
+      code: "IMAGE_TOO_LARGE",
+    });
+
+    expect(factory.canvases).toHaveLength(0);
+    expect(source.close).toHaveBeenCalledTimes(1);
   });
 
-  test("downscale uniquement au-delà de MAX_CANVAS_DIMENSION : 20000×2000 → 16384×1638", async () => {
-    const factory = mockFactory([img("huge", 20000, 2000)]);
-    const blob = await resizeImage(factory.file("huge"), { factory });
+  test("rejette une planche long-y 800×20000 (hauteur > MAX_CANVAS_DIMENSION)", async () => {
+    expect(20000).toBeGreaterThan(MAX_CANVAS_DIMENSION);
+    const factory = mockFactory([img("long-y", 800, 20000)]);
+
+    await expect(
+      resizeImage(factory.file("long-y"), { factory }),
+    ).rejects.toMatchObject({ code: "IMAGE_TOO_LARGE" });
+    expect(factory.canvases).toHaveLength(0);
+  });
+
+  test("applique maxDimension aux DEUX côtés : 4000×3000 → 1600×1200", async () => {
+    const source = img("photo", 4000, 3000);
+    const factory = mockFactory([source]);
+    const blob = await resizeImage(factory.file("photo"), {
+      factory,
+      maxDimension: 1600,
+    });
 
     expect(blob.type).toBe("image/webp");
     const canvas = factory.canvases[0];
-    expect(canvas.width).toBe(16384);
-    expect(canvas.height).toBe(1638);
+    expect(canvas.width).toBe(1600);
+    expect(canvas.height).toBe(1200);
     expect(canvas.draws).toEqual([
-      { image: expect.objectContaining({ width: 20000, height: 2000 }), dx: 0, dy: 0, dw: 16384, dh: 1638 },
+      { image: expect.objectContaining({ width: 4000, height: 3000 }), dx: 0, dy: 0, dw: 1600, dh: 1200 },
     ]);
-    expect(canvas.toBlobCalls).toEqual([{ type: "image/webp", quality: 0.9 }]);
+    expect(source.close).toHaveBeenCalledTimes(1);
   });
 
   test("rejette un fichier non-image", async () => {
@@ -272,6 +320,26 @@ describe("toWebP(blob, quality=0.9)", () => {
     await toWebP(factory.file("p"), 0.5, { factory });
     expect(factory.canvases[0].toBlobCalls[0].quality).toBe(0.5);
   });
+
+  test("rejette une source au-delà de MAX_IMAGE_PIXELS (8000×6000)", async () => {
+    expect(8000 * 6000).toBeGreaterThan(MAX_IMAGE_PIXELS);
+    const source = img("huge", 8000, 6000);
+    const factory = mockFactory([source]);
+
+    await expect(
+      toWebP(factory.file("huge"), undefined, { factory }),
+    ).rejects.toMatchObject({ code: "IMAGE_TOO_LARGE" });
+
+    expect(factory.canvases).toHaveLength(0);
+    expect(source.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("libère le bitmap décodé après encodage", async () => {
+    const source = img("p", 100, 50);
+    const factory = mockFactory([source]);
+    await toWebP(factory.file("p"), undefined, { factory });
+    expect(source.close).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("buildSpriteSheet(files, {maxColumns=10})", () => {
@@ -302,6 +370,8 @@ describe("buildSpriteSheet(files, {maxColumns=10})", () => {
     expect(canvas.draws).toHaveLength(25);
     expect(canvas.width).toBe(sheet.frameWidth * sheet.columns);
     expect(canvas.height).toBe(sheet.frameHeight * sheet.rows);
+    // IMG-7 : chaque frame décodée est libérée après assemblage.
+    images.forEach((image) => expect(image.close).toHaveBeenCalledTimes(1));
   });
 
   test("1 image → 1 frame, grille 1×1, dims de la source", async () => {
@@ -381,6 +451,42 @@ describe("buildSpriteSheet(files, {maxColumns=10})", () => {
     ).toBeLessThanOrEqual(MAX_SPRITE_PIXELS);
   });
 
+  test("120 frames : limite haute acceptée", async () => {
+    const images = Array.from({ length: MAX_SPRITE_FRAMES }, (_, i) =>
+      img(`f${i}`, 100, 100),
+    );
+    const factory = mockFactory(images);
+    const sheet = await buildSpriteSheet(
+      images.map((i) => factory.file(i.id)),
+      { maxColumns: 10, factory },
+    );
+
+    expect(sheet.frameCount).toBe(MAX_SPRITE_FRAMES);
+    expect(sheet.columns).toBe(10);
+    expect(sheet.rows).toBe(12);
+  });
+
+  test("au-delà de MAX_SPRITE_FRAMES (121) : TOO_MANY_FRAMES avant décodage", async () => {
+    const images = Array.from(
+      { length: MAX_SPRITE_FRAMES + 1 },
+      (_, i) => img(`f${i}`, 100, 100),
+    );
+    const factory = mockFactory(images);
+
+    await expect(
+      buildSpriteSheet(
+        images.map((i) => factory.file(i.id)),
+        { maxColumns: 10, factory },
+      ),
+    ).rejects.toMatchObject({
+      name: "ImageProcessingError",
+      code: "TOO_MANY_FRAMES",
+    });
+
+    expect(factory.decodeCalls).toEqual([]);
+    expect(factory.canvases).toHaveLength(0);
+  });
+
   test("rejette un lot vide", async () => {
     const factory = mockFactory([]);
     await expect(buildSpriteSheet([], { factory })).rejects.toMatchObject({
@@ -412,11 +518,14 @@ describe("sliceSpriteSheet(sprite, geometry)", () => {
   const GRID = { columns: 4, rows: 3, frameWidth: 100, frameHeight: 100, frameCount: 10 };
 
   test("découpe la grille en frames WebP dans l'ordre de lecture", async () => {
-    const factory = mockFactory([img("sheet", 400, 300)]);
+    const source = img("sheet", 400, 300);
+    const factory = mockFactory([source]);
     const sliced = await sliceSpriteSheet(factory.file("sheet"), GRID, { factory });
 
     // La feuille n'est décodée qu'une seule fois, quelles que soient les frames.
     expect(factory.decodeCalls).toEqual(["sheet"]);
+    // IMG-7 : le bitmap de la feuille est libéré après découpe.
+    expect(source.close).toHaveBeenCalledTimes(1);
 
     expect(sliced.frameWidth).toBe(100);
     expect(sliced.frameHeight).toBe(100);
@@ -515,8 +624,9 @@ describe("sliceSpriteSheet(sprite, geometry)", () => {
     expect(factory.decodeCalls).toEqual([]);
   });
 
-  test("rejette une feuille trop petite pour la grille annoncée", async () => {
-    const factory = mockFactory([img("sheet", 150, 100)]);
+  test("rejette une feuille trop petite pour la grille annoncée et libère le bitmap", async () => {
+    const source = img("sheet", 150, 100);
+    const factory = mockFactory([source]);
     await expect(
       sliceSpriteSheet(
         factory.file("sheet"),
@@ -524,6 +634,7 @@ describe("sliceSpriteSheet(sprite, geometry)", () => {
         { factory },
       ),
     ).rejects.toMatchObject({ code: "INVALID_IMAGE" });
+    expect(source.close).toHaveBeenCalledTimes(1);
   });
 });
 

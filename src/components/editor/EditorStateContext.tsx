@@ -34,7 +34,7 @@ export interface EditorState {
   setVisibility: (visibility: SectionVisibility | null) => void;
   /** Selection is shared between the sidebar layers panel and the canvas. */
   selectedSectionId: string | null;
-  setSelectedSectionId: (sectionId: string | null) => void;
+  setSelectedSectionId: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 interface SectionsHistoryState {

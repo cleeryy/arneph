@@ -75,10 +75,26 @@ vi.mock("next/link", () => ({
   default: ({
     children,
     href,
+    onClick,
+    ...rest
   }: {
     children: React.ReactNode;
     href: string;
-  }) => <a href={href}>{children}</a>,
+  } & React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+    <a
+      href={href}
+      {...rest}
+      onClick={(event) => {
+        onClick?.(event);
+        // jsdom n'implémente pas la navigation : on annule toujours l'action
+        // par défaut. Les assertions portent sur `confirm`, pas sur le retour
+        // de `fireEvent.click`.
+        event.preventDefault();
+      }}
+    >
+      {children}
+    </a>
+  ),
 }));
 
 afterEach(() => {
@@ -330,6 +346,287 @@ describe("Editor client — layout applies server id map on save", () => {
     expect(alert.textContent).toMatch(/Section 3/);
     expect(alert.textContent).not.toMatch(/Section 4/);
     expect(alert.textContent?.toLowerCase()).toMatch(/image|uploader/);
+  });
+});
+
+describe("Editor detail — hardened save (ED-1/ED-2)", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  function makeSaveSection(id: string, position: number): SectionWithImages {
+    return {
+      id,
+      webtoonId: WEBTOON_ID,
+      position,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
+  function Seeder({ seed, dirty }: { seed: SectionWithImages[]; dirty: boolean }) {
+    const { setSections, setIsDirty, setSelectedSectionId } = useEditorState();
+    React.useEffect(() => {
+      setSections(seed);
+      setIsDirty(dirty);
+      setSelectedSectionId(seed[0]?.id ?? null);
+    }, [seed, dirty, setSections, setIsDirty, setSelectedSectionId]);
+    return null;
+  }
+
+  function AddDuringSave() {
+    const { sections, commitSections } = useEditorState();
+    return (
+      <button
+        type="button"
+        data-testid="add-during-save"
+        onClick={() =>
+          commitSections([
+            ...sections,
+            makeSaveSection("late-temp", sections.length + 1),
+          ])
+        }
+      >
+        add
+      </button>
+    );
+  }
+
+  function SaveProbe() {
+    const { sections, isDirty, selectedSectionId } = useEditorState();
+    return (
+      <div
+        data-testid="save-probe"
+        data-ids={JSON.stringify(sections.map((section) => section.id))}
+        data-dirty={String(isDirty)}
+        data-selected={selectedSectionId ?? ""}
+      />
+    );
+  }
+
+  async function renderShell(
+    seed: SectionWithImages[],
+    options: { dirty?: boolean; visibility?: "draft" | "published" } = {},
+  ) {
+    const { EditorDetailLayoutContent } = await import(
+      "@/components/editor/EditorDetailShell"
+    );
+    const { EditorStateProvider } = await import(
+      "@/components/editor/EditorStateContext"
+    );
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider initialVisibility={options.visibility ?? null}>
+          <EditorDetailLayoutContent webtoonId={WEBTOON_ID}>
+            <Seeder seed={seed} dirty={options.dirty ?? true} />
+            <AddDuringSave />
+            <SaveProbe />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("save-probe")).toHaveAttribute(
+        "data-ids",
+        JSON.stringify(seed.map((section) => section.id)),
+      );
+    });
+    await screen.findByRole("button", { name: "Enregistrer" });
+  }
+
+  function probeIds(): string[] {
+    return JSON.parse(
+      screen.getByTestId("save-probe").getAttribute("data-ids") ?? "[]",
+    ) as string[];
+  }
+
+  test("edits made while saving survive the id remap and keep the editor dirty", async () => {
+    let resolveSave: (value: {
+      ok: boolean;
+      sectionIds?: Record<string, string>;
+    }) => void = () => {};
+    vi.mocked(saveWebtoon).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    await renderShell([makeSaveSection("temp-1", 1)]);
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => {
+      expect(vi.mocked(saveWebtoon)).toHaveBeenCalledTimes(1);
+    });
+
+    // The canvas stays interactive during the await.
+    fireEvent.click(screen.getByTestId("add-during-save"));
+    await waitFor(() => {
+      expect(probeIds()).toEqual(["temp-1", "late-temp"]);
+    });
+
+    act(() => {
+      resolveSave({ ok: true, sectionIds: { "temp-1": "server-1" } });
+    });
+
+    // The remap applies to the latest state: the late section is not dropped.
+    await waitFor(() => {
+      expect(probeIds()).toEqual(["server-1", "late-temp"]);
+    });
+    // The shared selection follows the remapped id instead of pointing at a
+    // dead client UUID.
+    expect(screen.getByTestId("save-probe")).toHaveAttribute(
+      "data-selected",
+      "server-1",
+    );
+    // Something changed during the save: the unsaved guard stays armed.
+    expect(screen.getByTestId("save-probe")).toHaveAttribute(
+      "data-dirty",
+      "true",
+    );
+    expect(screen.getByTestId("dirty-indicator")).toBeInTheDocument();
+  });
+
+  test("a double click starts a single save (synchronous re-entrance lock)", async () => {
+    let resolveSave: (value: {
+      ok: boolean;
+      sectionIds?: Record<string, string>;
+    }) => void = () => {};
+    vi.mocked(saveWebtoon).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+
+    await renderShell([makeSaveSection("temp-1", 1)]);
+    const saveButton = screen.getByRole("button", { name: "Enregistrer" });
+
+    // Both clicks happen before React can render the disabled state.
+    act(() => {
+      saveButton.click();
+      saveButton.click();
+    });
+
+    expect(vi.mocked(saveWebtoon)).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSave({ ok: true, sectionIds: { "temp-1": "server-1" } });
+    });
+    await waitFor(() => {
+      expect(probeIds()).toEqual(["server-1"]);
+    });
+  });
+
+  test("a double click starts a single publish (synchronous re-entrance lock)", async () => {
+    let resolvePublish: (value: { ok: boolean }) => void = () => {};
+    vi.mocked(publishWebtoon).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePublish = resolve;
+        }),
+    );
+
+    await renderShell([makeSaveSection("sec-1", 1)], {
+      dirty: false,
+      visibility: "draft",
+    });
+
+    const publishButton = screen.getByRole("button", { name: "Publier" });
+    expect(publishButton).toBeEnabled();
+
+    act(() => {
+      publishButton.click();
+      publishButton.click();
+    });
+
+    expect(vi.mocked(publishWebtoon)).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolvePublish({ ok: true });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("visibility-badge")).toHaveTextContent("Publié");
+    });
+  });
+});
+
+describe("EditorCanvasClient — one-shot hydration (ED-14)", () => {
+  function makeHydrationSection(id: string): SectionWithImages {
+    return {
+      id,
+      webtoonId: "w1",
+      position: 1,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
+  function HydrationProbe() {
+    const { sections, webtoonTitle } = useEditorState();
+    return (
+      <div
+        data-testid="hydration-probe"
+        data-ids={JSON.stringify(sections.map((section) => section.id))}
+        data-title={webtoonTitle ?? ""}
+      />
+    );
+  }
+
+  test("a revalidated RSC payload for the same webtoon never overwrites state", async () => {
+    const { EditorCanvasClient } = await import(
+      "@/components/editor/EditorCanvasClient"
+    );
+    const { EditorStateProvider } = await import(
+      "@/components/editor/EditorStateContext"
+    );
+
+    function ui(initialSections: SectionWithImages[], webtoonId: string) {
+      return (
+        <NextIntlClientProvider locale="fr" messages={frMessages}>
+          <EditorStateProvider>
+            <EditorCanvasClient
+              initialSections={initialSections}
+              webtoonId={webtoonId}
+              initialTitle="Titre"
+              initialVisibility="draft"
+            />
+            <HydrationProbe />
+          </EditorStateProvider>
+        </NextIntlClientProvider>
+      );
+    }
+
+    const probe = () => screen.getByTestId("hydration-probe");
+
+    const { rerender } = render(ui([makeHydrationSection("server-1")], "w1"));
+    await waitFor(() => {
+      expect(probe()).toHaveAttribute("data-ids", JSON.stringify(["server-1"]));
+    });
+    expect(probe()).toHaveAttribute("data-title", "Titre");
+
+    // Post-save revalidation sends a fresh array: it must not replace the
+    // live editor state for the same webtoon.
+    rerender(ui([makeHydrationSection("stale-server")], "w1"));
+    await waitFor(() => {
+      expect(probe()).toHaveAttribute("data-ids", JSON.stringify(["server-1"]));
+    });
+
+    // A different webtoon still hydrates.
+    rerender(ui([makeHydrationSection("other-webtoon")], "w2"));
+    await waitFor(() => {
+      expect(probe()).toHaveAttribute(
+        "data-ids",
+        JSON.stringify(["other-webtoon"]),
+      );
+    });
   });
 });
 
@@ -700,7 +997,9 @@ describe("Editor detail — cover upload", () => {
     await waitFor(() => {
       expect(vi.mocked(uploadSectionAsset)).toHaveBeenCalledTimes(1);
     });
-    expect(vi.mocked(resizeImage)).toHaveBeenCalledWith(file);
+    expect(vi.mocked(resizeImage)).toHaveBeenCalledWith(file, {
+      maxDimension: 800,
+    });
 
     const [path, blob, contentType] =
       vi.mocked(uploadSectionAsset).mock.calls[0];
@@ -880,6 +1179,58 @@ describe("Editor detail — unsaved changes guard", () => {
     expect(
       removeSpy.mock.calls.filter((call) => call[0] === "beforeunload"),
     ).toHaveLength(1);
+  });
+
+  test("client-side links confirm before leaving a dirty editor", async () => {
+    await renderShell();
+
+    const backLink = screen.getByRole("link", { name: /Retour à l'éditeur/ });
+    const readerLink = screen.getByRole("link", { name: /Lecteur/ });
+
+    // Clean editor: no confirmation is requested.
+    const cleanConfirm = vi.spyOn(window, "confirm");
+    fireEvent.click(backLink);
+    expect(cleanConfirm).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("make-dirty"));
+    await waitFor(() => {
+      expect(screen.getByTestId("dirty-indicator")).toBeInTheDocument();
+    });
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    fireEvent.click(readerLink);
+    expect(confirmSpy).toHaveBeenCalledWith(
+      "Des modifications ne sont pas enregistrées. Quitter quand même ?",
+    );
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(backLink);
+    expect(confirmSpy).toHaveBeenCalledTimes(2);
+  });
+
+  test("a cancelled popstate re-pushes the editor entry", async () => {
+    await renderShell();
+
+    const cleanConfirm = vi.spyOn(window, "confirm");
+    fireEvent.popState(window);
+    expect(cleanConfirm).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("make-dirty"));
+    await waitFor(() => {
+      expect(screen.getByTestId("dirty-indicator")).toBeInTheDocument();
+    });
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const pushSpy = vi.spyOn(window.history, "pushState");
+    fireEvent.popState(window);
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(pushSpy).toHaveBeenCalledTimes(1);
+
+    confirmSpy.mockReturnValue(true);
+    pushSpy.mockClear();
+    fireEvent.popState(window);
+    expect(pushSpy).not.toHaveBeenCalled();
   });
 });
 

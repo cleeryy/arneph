@@ -100,6 +100,7 @@
     "publish": "Publier",
     "unpublish": "Dépublier",
     "uploadImageError": "Veuillez sélectionner un fichier image.",
+    "fileTooLarge": "Le fichier dépasse la limite de 15 Mo.",
     "uploadImageErrorGeneric": "Erreur lors du téléchargement de l'image.",
     "uploadAnimationError": "Tous les fichiers doivent être des images.",
     "uploadAnimationErrorGeneric": "Erreur lors de la création de la sprite sheet.",
@@ -156,7 +157,8 @@
     "saveError": "Impossible d'enregistrer les modifications.",
     "duplicateSection": "Dupliquer la section",
     "undo": "Annuler",
-    "redo": "Rétablir"
+    "redo": "Rétablir",
+    "unsavedConfirm": "Des modifications ne sont pas enregistrées. Quitter quand même ?"
   },
   "errors": {
     "notFound": "Page introuvable",

@@ -4,6 +4,7 @@ import * as React from "react";
 import { useTranslations } from "next-intl";
 
 import type { SectionWithImages } from "@/lib/db/queries";
+import { normalizeWheelDelta } from "@/hooks/useReaderNavigation";
 import type { FxOverlayConfig, LongYSectionConfig } from "@/types/webtoon";
 import { FxOverlay } from "../FxOverlay";
 import { StepImage } from "./StepImage";
@@ -23,6 +24,11 @@ export interface LongYStepProps {
   onScrollTopChange?: (scrollTop: number) => void;
   /** Progression interne 0→1, utilisée par la barre globale. */
   onScrollProgress?: (progress: number) => void;
+  /**
+   * Incrémenté par le deck quand l'utilisateur demande le « haut de page ».
+   * Un changement remet `scrollTop` à 0 sans démonter l'étape.
+   */
+  resetToken?: number;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -49,6 +55,7 @@ export function LongYStep({
   initialScrollTop = 0,
   onScrollTopChange,
   onScrollProgress,
+  resetToken = 0,
 }: LongYStepProps) {
   const t = useTranslations("reader.section");
   const config = section.config as LongYSectionConfig;
@@ -93,19 +100,12 @@ export function LongYStep({
     callbacksRef.current.onBoundary(edge);
   }, []);
 
-  /** L'image doit être décodée avant de décider qu'on est « en butée ». */
-  const isContentReady = React.useCallback((): boolean => {
-    const el = scrollerRef.current;
-    if (!el) return false;
-    const image = el.querySelector("img");
-    return Boolean(image && image.complete && image.naturalHeight > 0);
-  }, []);
-
   const scrollBy = React.useCallback(
     (delta: number): boolean => {
       const el = scrollerRef.current;
       if (!el) return false;
-      if (!isContentReady()) return false;
+      // Aucune dépendance au décodage de l'image : un 404 (naturalHeight = 0)
+      // ou une image lente ne doit pas bloquer la molette.
       const max = el.scrollHeight - el.clientHeight;
       if (max <= 0) return false;
       const next = clamp(el.scrollTop + delta, 0, max);
@@ -127,6 +127,36 @@ export function LongYStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // « Haut de page » : reset impératif sans démonter l'étape. On ne réagit
+  // qu'à un changement de token : un remontage (retour arrière) doit conserver
+  // la position mémorisée, même si un reset a eu lieu plus tôt.
+  const lastResetToken = React.useRef(resetToken);
+  React.useEffect(() => {
+    if (resetToken === lastResetToken.current) return;
+    lastResetToken.current = resetToken;
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = 0;
+    latchedRef.current = null;
+    edgeAccumulatorRef.current = 0;
+    publishNow();
+  }, [resetToken, publishNow]);
+
+  // Le rAF de publication ne doit pas survivre au démontage.
+  React.useEffect(
+    () => () => {
+      if (publishFrame.current !== null) {
+        cancelAnimationFrame(publishFrame.current);
+        publishFrame.current = null;
+      }
+      if (momentumRef.current !== null) {
+        cancelAnimationFrame(momentumRef.current);
+        momentumRef.current = null;
+      }
+    },
+    [],
+  );
+
   // Gestes : listeners natifs non passifs pour pouvoir bloquer le scroll natif.
   React.useEffect(() => {
     const el = scrollerRef.current;
@@ -140,28 +170,35 @@ export function LongYStep({
     };
 
     const onWheel = (event: WheelEvent) => {
+      // Ctrl/⌘ + molette = zoom navigateur : ne jamais l'avaler (WCAG 1.4.4).
+      if (event.ctrlKey || event.metaKey) return;
       event.preventDefault();
       stopMomentum();
-      if (!isContentReady()) return;
 
       const el = scrollerRef.current;
       if (!el) return;
+      const delta = normalizeWheelDelta(
+        event.deltaY,
+        event.deltaMode,
+        el.clientHeight,
+      );
+      if (delta === 0) return;
       const max = el.scrollHeight - el.clientHeight;
-      const moved = scrollBy(event.deltaY);
+      const moved = scrollBy(delta);
 
       // En butée (ou contenu plus court que l'écran), il faut insister un peu
       // avant de quitter l'étape : sinon on saute sans voir la fin.
       if (!moved) {
         const atEdge =
           max <= 0 ||
-          (event.deltaY > 0
+          (delta > 0
             ? el.scrollTop >= max
             : el.scrollTop <= 0);
         if (!atEdge) return;
-        edgeAccumulatorRef.current += Math.abs(event.deltaY);
+        edgeAccumulatorRef.current += Math.abs(delta);
         if (edgeAccumulatorRef.current >= el.clientHeight * EDGE_HOLD_RATIO) {
           edgeAccumulatorRef.current = 0;
-          notify(event.deltaY > 0 ? "bottom" : "top");
+          notify(delta > 0 ? "bottom" : "top");
         }
         return;
       }
@@ -186,6 +223,11 @@ export function LongYStep({
     };
 
     const onTouchMove = (event: TouchEvent) => {
+      // Pincement : laisser le zoom natif au navigateur (WCAG 1.4.4).
+      if (event.touches.length > 1) {
+        touchY = null;
+        return;
+      }
       const current = event.touches[0]?.clientY;
       if (current === undefined || touchY === null) return;
       event.preventDefault();
@@ -258,7 +300,7 @@ export function LongYStep({
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [publish, scrollBy, notify, isContentReady]);
+  }, [publish, scrollBy, notify]);
 
   return (
     <section

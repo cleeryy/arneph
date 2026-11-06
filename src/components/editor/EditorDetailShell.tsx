@@ -45,10 +45,23 @@ export function EditorDetailLayoutContent({
     webtoonTitle,
     visibility,
     setVisibility,
+    setSelectedSectionId,
   } = useEditorState();
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<ActionResult | null>(null);
+
+  // Latest-value refs are required here: a save resolves after the await and
+  // must apply its id map to the sections edited meanwhile, never to the
+  // snapshot captured at click time. The React Compiler lint rule cannot see
+  // that the write is only read from an async event handler.
+  const sectionsRef = React.useRef(sections);
+  // eslint-disable-next-line react-hooks/refs
+  sectionsRef.current = sections;
+  // Synchronous re-entrance locks: the disabled button only exists after the
+  // next render, so a double click could otherwise start two saves/publishes.
+  const saveInFlightRef = React.useRef(false);
+  const publishInFlightRef = React.useRef(false);
 
   // Garde-fou fermeture d'onglet / rechargement : uniquement tant que des
   // modifications ne sont pas enregistrées.
@@ -67,14 +80,45 @@ export function EditorDetailLayoutContent({
     };
   }, [isDirty]);
 
+  // Best-effort back/forward guard: re-push the current entry when the user
+  // declines to leave, so the editor is not unmounted by a cancelled popstate.
+  React.useEffect(() => {
+    if (!isDirty) return;
+
+    function handlePopState() {
+      if (window.confirm(t("unsavedConfirm"))) return;
+      window.history.pushState(null, "", window.location.href);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [isDirty, t]);
+
+  // Client-side <Link> navigation does not fire beforeunload: confirm here.
+  const guardLink = React.useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>) => {
+      if (!isDirty) return;
+      if (!window.confirm(t("unsavedConfirm"))) {
+        event.preventDefault();
+      }
+    },
+    [isDirty, t],
+  );
+
   async function performSave(): Promise<boolean> {
+    if (saveInFlightRef.current) return false;
+    saveInFlightRef.current = true;
+
     setSaveResult(null);
 
-    const invalidIndex = sections.findIndex(
+    const sectionsAtSave = sections;
+    const invalidIndex = sectionsAtSave.findIndex(
       (s) => !sectionConfigSchema.safeParse(s.config).success,
     );
     if (invalidIndex !== -1) {
-      const invalid = sections[invalidIndex];
+      const invalid = sectionsAtSave[invalidIndex];
       const configType =
         (invalid.config as { type?: string } | undefined)?.type ?? invalid.type;
       const isAnimation = configType === "animation";
@@ -96,18 +140,30 @@ export function EditorDetailLayoutContent({
           action: isAnimation ? t("animationUpload") : t("imageUpload"),
         }),
       });
+      saveInFlightRef.current = false;
       return false;
     }
 
     setSaving(true);
     try {
-      const result = await saveWebtoon(webtoonId, sections);
+      const result = await saveWebtoon(webtoonId, sectionsAtSave);
       setSaveResult(result);
       if (result.ok) {
+        // Edits made while the request was in flight must survive the
+        // response: remap the latest sections, never the save snapshot.
+        const currentSections = sectionsRef.current;
+        const changedDuringSave = currentSections !== sectionsAtSave;
         if (result.sectionIds) {
-          setSections(remapSectionIds(sections, result.sectionIds));
+          setSections(remapSectionIds(currentSections, result.sectionIds));
+          // Functional update: remap whichever section is selected now, even
+          // if the selection changed while the save was in flight.
+          const sectionIds = result.sectionIds;
+          setSelectedSectionId((current) =>
+            current && sectionIds[current] ? sectionIds[current] : current,
+          );
         }
-        setIsDirty(false);
+        // Only disarm the unsaved-changes guard when nothing changed meanwhile.
+        if (!changedDuringSave) setIsDirty(false);
       }
       return result.ok;
     } catch (err) {
@@ -117,6 +173,7 @@ export function EditorDetailLayoutContent({
       });
       return false;
     } finally {
+      saveInFlightRef.current = false;
       setSaving(false);
     }
   }
@@ -126,54 +183,68 @@ export function EditorDetailLayoutContent({
   }
 
   async function handlePublish() {
-    setSaveResult(null);
+    if (publishInFlightRef.current) return;
+    publishInFlightRef.current = true;
 
-    if (sections.length === 0) {
-      setSaveResult({ ok: false, error: t("publishNoSections") });
-      return;
-    }
-
-    setPublishing(true);
     try {
-      // Publishing a dirty editor must persist the pending edits first.
-      if (isDirty) {
-        const saved = await performSave();
-        if (!saved) return;
+      setSaveResult(null);
+
+      if (sections.length === 0) {
+        setSaveResult({ ok: false, error: t("publishNoSections") });
+        return;
       }
 
-      const result = await publishWebtoon(webtoonId);
-      if (result.ok) {
-        setVisibility("published");
-      } else {
-        setSaveResult({ ok: false, error: result.error ?? t("publishError") });
+      setPublishing(true);
+      try {
+        // Publishing a dirty editor must persist the pending edits first.
+        if (isDirty) {
+          const saved = await performSave();
+          if (!saved) return;
+        }
+
+        const result = await publishWebtoon(webtoonId);
+        if (result.ok) {
+          setVisibility("published");
+        } else {
+          setSaveResult({ ok: false, error: result.error ?? t("publishError") });
+        }
+      } catch (err) {
+        setSaveResult({
+          ok: false,
+          error: err instanceof Error ? err.message : t("publishError"),
+        });
+      } finally {
+        setPublishing(false);
       }
-    } catch (err) {
-      setSaveResult({
-        ok: false,
-        error: err instanceof Error ? err.message : t("publishError"),
-      });
     } finally {
-      setPublishing(false);
+      publishInFlightRef.current = false;
     }
   }
 
   async function handleUnpublish() {
-    setSaveResult(null);
-    setPublishing(true);
+    if (publishInFlightRef.current) return;
+    publishInFlightRef.current = true;
+
     try {
-      const result = await unpublishWebtoon(webtoonId);
-      if (result.ok) {
-        setVisibility("draft");
-      } else {
-        setSaveResult({ ok: false, error: result.error ?? t("publishError") });
+      setSaveResult(null);
+      setPublishing(true);
+      try {
+        const result = await unpublishWebtoon(webtoonId);
+        if (result.ok) {
+          setVisibility("draft");
+        } else {
+          setSaveResult({ ok: false, error: result.error ?? t("publishError") });
+        }
+      } catch (err) {
+        setSaveResult({
+          ok: false,
+          error: err instanceof Error ? err.message : t("publishError"),
+        });
+      } finally {
+        setPublishing(false);
       }
-    } catch (err) {
-      setSaveResult({
-        ok: false,
-        error: err instanceof Error ? err.message : t("publishError"),
-      });
     } finally {
-      setPublishing(false);
+      publishInFlightRef.current = false;
     }
   }
 
@@ -184,6 +255,7 @@ export function EditorDetailLayoutContent({
           <div className="flex items-center gap-3">
             <Link
               href="/editor"
+              onClick={guardLink}
               className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
             >
               ← {t("backToEditor")}
@@ -199,6 +271,7 @@ export function EditorDetailLayoutContent({
           <div className="flex items-center gap-2">
             <Link
               href={`/read/${webtoonId}`}
+              onClick={guardLink}
               className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
             >
               {t("readerLink")}

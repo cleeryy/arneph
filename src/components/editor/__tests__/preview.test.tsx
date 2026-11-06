@@ -273,6 +273,26 @@ describe("PreviewRenderer — correct component per section type", () => {
     expect(screen.getByTestId("image-step")).toBeInTheDocument();
   });
 
+  test("image preview is lazy-loaded (previews éditeur hors écran)", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<PreviewRenderer section={makeImageSection()} />));
+
+    expect(screen.getByTestId("image-step-image")).toHaveAttribute(
+      "loading",
+      "lazy",
+    );
+  });
+
+  test("long-y preview is lazy-loaded", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<PreviewRenderer section={makeLongYSection()} />));
+
+    expect(screen.getByTestId("long-y-step-image")).toHaveAttribute(
+      "loading",
+      "lazy",
+    );
+  });
+
   test("long-y type renders the long-y section", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makeLongYSection()} />));

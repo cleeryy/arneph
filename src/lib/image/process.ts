@@ -8,14 +8,18 @@
  * `createBrowserFactory()` branche le vrai DOM en runtime navigateur.
  */
 
-import { MAX_SPRITE_PIXELS } from "./limits";
+import { MAX_IMAGE_PIXELS, MAX_SPRITE_PIXELS } from "./limits";
 import { isAnimatedImage } from "./animated";
 
 export const DEFAULT_WEBP_QUALITY = 0.9;
 export const DEFAULT_MAX_COLUMNS = 10;
 export const MAX_CANVAS_DIMENSION = 16384;
+/** Plafond de frames acceptées par `buildSpriteSheet`. */
+export const MAX_SPRITE_FRAMES = 120;
+/** Décodages simultanés maximum pendant la construction d'une sprite sheet. */
+const SPRITE_DECODE_CONCURRENCY = 4;
 
-export { MAX_SPRITE_PIXELS } from "./limits";
+export { MAX_IMAGE_PIXELS, MAX_SPRITE_PIXELS } from "./limits";
 export const SUPPORTED_IMAGE_TYPES = [
   "image/png",
   "image/jpeg",
@@ -31,6 +35,7 @@ export type ImageProcessingErrorCode =
   | "INVALID_TARGET"
   | "IMAGE_TOO_LARGE"
   | "SPRITE_TOO_LARGE"
+  | "TOO_MANY_FRAMES"
   | "EMPTY_BATCH"
   | "CANVAS_UNAVAILABLE"
   | "ENCODE_FAILED";
@@ -197,15 +202,76 @@ function toBlobAsync(
   });
 }
 
-function fitWithin(
+/**
+ * Rejette les images qui dépassent le budget canvas : une dimension au-delà de
+ * `MAX_CANVAS_DIMENSION` ou une surface au-delà de `MAX_IMAGE_PIXELS`.
+ *
+ * Ce garde-fou s'applique à la source, avant tout downscale : une planche
+ * `1200×30000` est rejetée proprement (`IMAGE_TOO_LARGE`) au lieu de laisser
+ * `canvas.toBlob` renvoyer `null` (ou faire tomber l'onglet).
+ */
+export function assertWithinCanvasBudget(width: number, height: number): void {
+  if (
+    width > MAX_CANVAS_DIMENSION ||
+    height > MAX_CANVAS_DIMENSION ||
+    width * height > MAX_IMAGE_PIXELS
+  ) {
+    throw new ImageProcessingError(
+      "IMAGE_TOO_LARGE",
+      `Image ${width}×${height}px trop grande : limite ${MAX_CANVAS_DIMENSION}px par côté et ${MAX_IMAGE_PIXELS} pixels au total.`,
+    );
+  }
+}
+
+/**
+ * Borne **les deux** dimensions à `maxDimension` en conservant le ratio.
+ * Jamais d'upscale : un facteur ≥ 1 laisse la taille native intacte.
+ */
+export function fitWithin(
   width: number,
   height: number,
+  maxDimension: number,
 ): { width: number; height: number } {
-  if (width <= MAX_CANVAS_DIMENSION) return { width, height };
+  const scale = Math.min(1, maxDimension / width, maxDimension / height);
+  if (scale >= 1) return { width, height };
   return {
-    width: MAX_CANVAS_DIMENSION,
-    height: Math.max(1, Math.round((height * MAX_CANVAS_DIMENSION) / width)),
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
   };
+}
+
+/** Libère un `ImageBitmap` décodé quand le runtime l'expose. */
+function closeDecodedImage(image: DecodedImage): void {
+  if ("close" in image) {
+    const close = (image as { close?: unknown }).close;
+    if (typeof close === "function") close.call(image);
+  }
+}
+
+/**
+ * Applique `mapper` à `items` avec au plus `concurrency` appels en vol.
+ * L'ordre des résultats suit celui des entrées.
+ */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length));
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= items.length) return;
+      results[index] = await mapper(items[index]);
+    }
+  });
+
+  await Promise.all(workers);
+  return results;
 }
 
 /** Dimensions réelles d'une image, via le décodeur du fournisseur. */
@@ -216,8 +282,12 @@ export async function readImageDimensions(
   const canvasFactory = getFactory(factory);
   assertImageFile(file, SUPPORTED_IMAGE_TYPES);
   const image = await canvasFactory.decodeImage(file);
-  assertValidDimensions(image.width, image.height);
-  return { width: image.width, height: image.height };
+  try {
+    assertValidDimensions(image.width, image.height);
+    return { width: image.width, height: image.height };
+  } finally {
+    closeDecodedImage(image);
+  }
 }
 
 export async function resizeImage(
@@ -229,16 +299,29 @@ export async function resizeImage(
 
   assertImageFile(file, supportedTypes);
   const image = await canvasFactory.decodeImage(file);
-  assertValidDimensions(image.width, image.height);
+  try {
+    assertValidDimensions(image.width, image.height);
+    assertWithinCanvasBudget(image.width, image.height);
 
-  const fitted = fitWithin(image.width, image.height);
-  const outWidth = fitted.width;
-  const outHeight = fitted.height;
+    const fitted = fitWithin(
+      image.width,
+      image.height,
+      options.maxDimension ?? MAX_CANVAS_DIMENSION,
+    );
+    const outWidth = fitted.width;
+    const outHeight = fitted.height;
 
-  const canvas = canvasFactory.createCanvas(outWidth, outHeight);
-  const context = requireContext(canvas);
-  context.drawImage(image, 0, 0, outWidth, outHeight);
-  return toBlobAsync(canvas, "image/webp", options.quality ?? DEFAULT_WEBP_QUALITY);
+    const canvas = canvasFactory.createCanvas(outWidth, outHeight);
+    const context = requireContext(canvas);
+    context.drawImage(image, 0, 0, outWidth, outHeight);
+    return await toBlobAsync(
+      canvas,
+      "image/webp",
+      options.quality ?? DEFAULT_WEBP_QUALITY,
+    );
+  } finally {
+    closeDecodedImage(image);
+  }
 }
 
 /** Ré-encode n'importe quelle image décodable en WebP à la qualité donnée. */
@@ -252,21 +335,27 @@ export async function toWebP(
 
   assertImageFile(blob, supportedTypes);
   const image = await canvasFactory.decodeImage(blob);
-  assertValidDimensions(image.width, image.height);
+  try {
+    assertValidDimensions(image.width, image.height);
+    assertWithinCanvasBudget(image.width, image.height);
 
-  const canvas = canvasFactory.createCanvas(image.width, image.height);
-  const context = requireContext(canvas);
-  context.drawImage(image, 0, 0, image.width, image.height);
-  return toBlobAsync(canvas, "image/webp", quality);
+    const canvas = canvasFactory.createCanvas(image.width, image.height);
+    const context = requireContext(canvas);
+    context.drawImage(image, 0, 0, image.width, image.height);
+    return await toBlobAsync(canvas, "image/webp", quality);
+  } finally {
+    closeDecodedImage(image);
+  }
 }
 
 /**
  * Assemble une grille 2D de frames normalisées et l'exporte en WebP.
- * Normalisation : chaque frame est réduite à `maxWidth` max (jamais upscalée),
- * puis la cellule commune est la plus grande taille résultante — les frames
- * plus petites sont centrées dans la cellule (ratio toujours conservé).
- * La grille (columns ≤ maxColumns) contourne la limite canvas ~16384px ;
- * une grille qui la dépasserait est rejetée.
+ * Normalisation : chaque frame est bornée à `maxDimension` sur les deux côtés
+ * (jamais upscalée), puis la cellule commune est la plus grande taille
+ * résultante — les frames plus petites sont centrées dans la cellule (ratio
+ * toujours conservé). La grille (columns ≤ maxColumns) contourne la limite
+ * canvas ~16384px ; une grille qui la dépasserait est rejetée.
+ * Maximum `MAX_SPRITE_FRAMES` frames, décodées avec une concurrence bornée.
  */
 export async function buildSpriteSheet(
   files: Blob[],
@@ -286,72 +375,117 @@ export async function buildSpriteSheet(
     );
   }
 
-  const frames = await Promise.all(
-    files.map(async (file) => {
-      assertImageFile(file, supportedTypes);
-      if (await isAnimatedImage(file)) {
-        throw new ImageProcessingError(
-          "UNSUPPORTED_TYPE",
-          "le type animation attend des frames statiques, pas un fichier animé",
-        );
-      }
-      const image = await canvasFactory.decodeImage(file);
-      assertValidDimensions(image.width, image.height);
-      const fitted = fitWithin(image.width, image.height);
-      return { image, fittedWidth: fitted.width, fittedHeight: fitted.height };
-    }),
-  );
-
-  const maxFrameWidth = Math.max(...frames.map((frame) => frame.fittedWidth));
-  const maxFrameHeight = Math.max(...frames.map((frame) => frame.fittedHeight));
-  const columns = Math.min(maxColumns, frames.length);
-  const rows = Math.ceil(frames.length / columns);
-
-  // Budget mémoire : on réduit d'abord la taille des frames, jamais la grille,
-  // pour rester sous `MAX_SPRITE_PIXELS` (sinon le décodage fait tomber l'onglet).
-  const rawPixels = columns * maxFrameWidth * rows * maxFrameHeight;
-  const scale =
-    rawPixels > MAX_SPRITE_PIXELS
-      ? Math.sqrt(MAX_SPRITE_PIXELS / rawPixels)
-      : 1;
-  const frameWidth = Math.max(1, Math.floor(maxFrameWidth * scale));
-  const frameHeight = Math.max(1, Math.floor(maxFrameHeight * scale));
-  const sheetWidth = columns * frameWidth;
-  const sheetHeight = rows * frameHeight;
-
-  if (sheetWidth > maxDimension || sheetHeight > maxDimension) {
+  if (files.length > MAX_SPRITE_FRAMES) {
     throw new ImageProcessingError(
-      "SPRITE_TOO_LARGE",
-      `Grille ${sheetWidth}×${sheetHeight}px trop grande pour la limite canvas (${maxDimension}px).`,
+      "TOO_MANY_FRAMES",
+      `${files.length} frames fournies : le maximum est ${MAX_SPRITE_FRAMES} par sprite sheet.`,
     );
   }
 
-  const canvas = canvasFactory.createCanvas(sheetWidth, sheetHeight);
-  const context = requireContext(canvas);
+  interface DecodedFrame {
+    image: DecodedImage;
+    fittedWidth: number;
+    fittedHeight: number;
+  }
 
-  frames.forEach((frame, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const fittedWidth = Math.max(1, Math.round(frame.fittedWidth * scale));
-    const fittedHeight = Math.max(1, Math.round(frame.fittedHeight * scale));
-    const dx = Math.round(column * frameWidth + (frameWidth - fittedWidth) / 2);
-    const dy = Math.round(row * frameHeight + (frameHeight - fittedHeight) / 2);
-    context.drawImage(frame.image, dx, dy, fittedWidth, fittedHeight);
-  });
+  // Décodage borné : `Promise.all` sur 100 frames 1600² décodait ~1 Go avant
+  // même d'appliquer `MAX_SPRITE_PIXELS`. Les bitmaps sont libérés dans le
+  // `finally`, y compris si un décodage ou un encodage échoue.
+  const frames: DecodedFrame[] = [];
+  let disposed = false;
 
-  const spriteBlob = await toBlobAsync(
-    canvas,
-    "image/webp",
-    options.quality ?? DEFAULT_WEBP_QUALITY,
-  );
-  return {
-    spriteBlob,
-    frameWidth,
-    frameHeight,
-    columns,
-    rows,
-    frameCount: frames.length,
-  };
+  try {
+    await mapWithConcurrency(
+      files,
+      SPRITE_DECODE_CONCURRENCY,
+      async (file) => {
+        assertImageFile(file, supportedTypes);
+        if (await isAnimatedImage(file)) {
+          throw new ImageProcessingError(
+            "UNSUPPORTED_TYPE",
+            "le type animation attend des frames statiques, pas un fichier animé",
+          );
+        }
+        const image = await canvasFactory.decodeImage(file);
+        if (disposed) {
+          closeDecodedImage(image);
+          return;
+        }
+        try {
+          assertValidDimensions(image.width, image.height);
+          const fitted = fitWithin(image.width, image.height, maxDimension);
+          frames.push({
+            image,
+            fittedWidth: fitted.width,
+            fittedHeight: fitted.height,
+          });
+        } catch (error) {
+          closeDecodedImage(image);
+          throw error;
+        }
+      },
+    );
+
+    const maxFrameWidth = Math.max(...frames.map((frame) => frame.fittedWidth));
+    const maxFrameHeight = Math.max(
+      ...frames.map((frame) => frame.fittedHeight),
+    );
+    const columns = Math.min(maxColumns, frames.length);
+    const rows = Math.ceil(frames.length / columns);
+
+    // Budget mémoire : on réduit d'abord la taille des frames, jamais la grille,
+    // pour rester sous `MAX_SPRITE_PIXELS` (sinon le décodage fait tomber l'onglet).
+    const rawPixels = columns * maxFrameWidth * rows * maxFrameHeight;
+    const scale =
+      rawPixels > MAX_SPRITE_PIXELS
+        ? Math.sqrt(MAX_SPRITE_PIXELS / rawPixels)
+        : 1;
+    const frameWidth = Math.max(1, Math.floor(maxFrameWidth * scale));
+    const frameHeight = Math.max(1, Math.floor(maxFrameHeight * scale));
+    const sheetWidth = columns * frameWidth;
+    const sheetHeight = rows * frameHeight;
+
+    if (sheetWidth > maxDimension || sheetHeight > maxDimension) {
+      throw new ImageProcessingError(
+        "SPRITE_TOO_LARGE",
+        `Grille ${sheetWidth}×${sheetHeight}px trop grande pour la limite canvas (${maxDimension}px).`,
+      );
+    }
+
+    const canvas = canvasFactory.createCanvas(sheetWidth, sheetHeight);
+    const context = requireContext(canvas);
+
+    frames.forEach((frame, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const fittedWidth = Math.max(1, Math.round(frame.fittedWidth * scale));
+      const fittedHeight = Math.max(1, Math.round(frame.fittedHeight * scale));
+      const dx = Math.round(
+        column * frameWidth + (frameWidth - fittedWidth) / 2,
+      );
+      const dy = Math.round(
+        row * frameHeight + (frameHeight - fittedHeight) / 2,
+      );
+      context.drawImage(frame.image, dx, dy, fittedWidth, fittedHeight);
+    });
+
+    const spriteBlob = await toBlobAsync(
+      canvas,
+      "image/webp",
+      options.quality ?? DEFAULT_WEBP_QUALITY,
+    );
+    return {
+      spriteBlob,
+      frameWidth,
+      frameHeight,
+      columns,
+      rows,
+      frameCount: frames.length,
+    };
+  } finally {
+    disposed = true;
+    for (const frame of frames) closeDecodedImage(frame.image);
+  }
 }
 
 function assertSliceGeometry(geometry: SpriteSliceGeometry): void {
@@ -394,40 +528,44 @@ export async function sliceSpriteSheet(
   const { columns, frameWidth, frameHeight, frameCount } = geometry;
 
   const image = await canvasFactory.decodeImage(sprite);
-  assertValidDimensions(image.width, image.height);
+  try {
+    assertValidDimensions(image.width, image.height);
 
-  const usedRows = Math.ceil(frameCount / columns);
-  if (
-    frameWidth * columns > image.width ||
-    frameHeight * usedRows > image.height
-  ) {
-    throw new ImageProcessingError(
-      "INVALID_IMAGE",
-      `Sprite ${image.width}×${image.height}px trop petite pour une grille de ${columns}×${usedRows} cellules de ${frameWidth}×${frameHeight}px.`,
-    );
+    const usedRows = Math.ceil(frameCount / columns);
+    if (
+      frameWidth * columns > image.width ||
+      frameHeight * usedRows > image.height
+    ) {
+      throw new ImageProcessingError(
+        "INVALID_IMAGE",
+        `Sprite ${image.width}×${image.height}px trop petite pour une grille de ${columns}×${usedRows} cellules de ${frameWidth}×${frameHeight}px.`,
+      );
+    }
+
+    const frames: Blob[] = [];
+    for (let index = 0; index < frameCount; index += 1) {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const canvas = canvasFactory.createCanvas(frameWidth, frameHeight);
+      const context = requireContext(canvas);
+      context.drawImageRegion(
+        image,
+        column * frameWidth,
+        row * frameHeight,
+        frameWidth,
+        frameHeight,
+        0,
+        0,
+        frameWidth,
+        frameHeight,
+      );
+      frames.push(await toBlobAsync(canvas, "image/webp", quality));
+    }
+
+    return { frames, frameWidth, frameHeight };
+  } finally {
+    closeDecodedImage(image);
   }
-
-  const frames: Blob[] = [];
-  for (let index = 0; index < frameCount; index += 1) {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
-    const canvas = canvasFactory.createCanvas(frameWidth, frameHeight);
-    const context = requireContext(canvas);
-    context.drawImageRegion(
-      image,
-      column * frameWidth,
-      row * frameHeight,
-      frameWidth,
-      frameHeight,
-      0,
-      0,
-      frameWidth,
-      frameHeight,
-    );
-    frames.push(await toBlobAsync(canvas, "image/webp", quality));
-  }
-
-  return { frames, frameWidth, frameHeight };
 }
 
 class BrowserCanvas implements CanvasLike {

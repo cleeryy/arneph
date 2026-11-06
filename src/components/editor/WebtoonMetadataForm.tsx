@@ -16,6 +16,7 @@ import {
   readImageDimensions,
   resizeImage,
 } from "@/lib/image/process";
+import { MAX_UPLOAD_BYTES } from "@/lib/image/limits";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import { uploadSectionAsset } from "@/lib/supabase/upload";
 
@@ -31,6 +32,9 @@ function coverStoragePath(webtoonId: string, filename: string): string {
   const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   return `webtoons/covers/${webtoonId}/${timestamp}-${safeName}`;
 }
+
+/** Une couverture est rendue en vignette : 800 px suffit largement. */
+const COVER_IMAGE_MAX_DIMENSION = 800;
 
 export function WebtoonMetadataForm({
   webtoonId,
@@ -115,11 +119,17 @@ export function WebtoonMetadataForm({
       setError(t("uploadImageError"));
       return;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(t("fileTooLarge"));
+      return;
+    }
 
     setCoverBusy(true);
     try {
       // `resizeImage()` encode déjà en WebP : pas de double encodage.
-      const resized = await resizeImage(file);
+      const resized = await resizeImage(file, {
+        maxDimension: COVER_IMAGE_MAX_DIMENSION,
+      });
       const dimensions = await readImageDimensions(resized);
       if (!(dimensions.width > 0 && dimensions.height > 0)) {
         setError(t("uploadImageErrorGeneric"));
@@ -288,14 +298,22 @@ export function WebtoonMetadataForm({
           </div>
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="webtoon-metadata-title">{t("metadataTitle")}</Label>
+          <div className="flex items-baseline justify-between gap-2">
+            <Label htmlFor="webtoon-metadata-title">{t("metadataTitle")}</Label>
+            <span
+              data-testid="metadata-title-counter"
+              className="text-xs tabular-nums text-muted-foreground"
+            >
+              {title.length}/120
+            </span>
+          </div>
           <Input
             id="webtoon-metadata-title"
             data-testid="metadata-title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             disabled={busy}
-            maxLength={200}
+            maxLength={120}
           />
         </div>
         <div className="grid gap-1.5">

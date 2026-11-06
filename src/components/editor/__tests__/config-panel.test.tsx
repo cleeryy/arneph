@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
@@ -39,15 +39,20 @@ vi.mock("next/image", () => ({
   },
 }));
 
-const { uploadSpy } = vi.hoisted(() => ({ uploadSpy: vi.fn() }));
+const { uploadSpy, removeSpy } = vi.hoisted(() => ({
+  uploadSpy: vi.fn(),
+  removeSpy: vi.fn(),
+}));
 
 vi.mock("@supabase/supabase-js", () => {
   uploadSpy.mockResolvedValue({ data: { path: "uploaded/path.webp" }, error: null });
+  removeSpy.mockResolvedValue({ data: [], error: null });
   return {
     createClient: vi.fn(() => ({
       storage: {
         from: vi.fn(() => ({
           upload: uploadSpy,
+          remove: removeSpy,
         })),
       },
     })),
@@ -232,7 +237,7 @@ describe("SectionConfigPanel — T25", () => {
 
     await waitFor(() => expect(uploadSpy).toHaveBeenCalledTimes(1));
 
-    expect(resizeImage).toHaveBeenCalledWith(file);
+    expect(resizeImage).toHaveBeenCalledWith(file, { maxDimension: 1600 });
     expect(toWebP).not.toHaveBeenCalled();
     expect(readImageDimensions).toHaveBeenCalledWith(resized);
 
@@ -575,6 +580,8 @@ describe("SectionConfigPanel — T13 FX section", () => {
     const slider = screen.getByRole("slider");
     fireEvent.change(slider, { target: { value: "50" } });
 
+    // ED-5 : un seul commit par changement, pas un snapshot par tick.
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         config: expect.objectContaining({
@@ -1057,6 +1064,7 @@ describe("SectionConfigPanel — animation individual frames", () => {
   // spy d'upload par défaut pour ne pas polluer les autres suites.
   afterEach(() => {
     uploadSpy.mockResolvedValue(DEFAULT_UPLOAD);
+    removeSpy.mockResolvedValue({ data: [], error: null });
   });
 
   function animationSection(): SectionWithImages {
@@ -1132,8 +1140,10 @@ describe("SectionConfigPanel — animation individual frames", () => {
     const uploadedPaths = uploadSpy.mock.calls.map(
       ([path]) => path as string,
     );
+    const frameBatch = uploadedPaths[1]?.match(/\/frames\/(\d+)\//)?.[1];
+    expect(frameBatch).toBeTruthy();
     const expectedFramePaths = frames.map(
-      (_, index) => `webtoons/sections/sec-1/frames/${index}.webp`,
+      (_, index) => `webtoons/sections/sec-1/frames/${frameBatch}/${index}.webp`,
     );
 
     // Feuille (repli) uploadée d'abord, puis une frame par index.
@@ -1210,6 +1220,71 @@ describe("SectionConfigPanel — animation individual frames", () => {
       await screen.findByText("Erreur lors de la création de la sprite sheet."),
     ).toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
+
+    // Le sprite déjà uploadé ne doit pas rester orphelin après l'échec.
+    await waitFor(() => expect(removeSpy).toHaveBeenCalled());
+    const spritePath = uploadSpy.mock.calls[0][0] as string;
+    expect(removeSpy.mock.calls[0][0]).toEqual([spritePath]);
+  });
+
+  test("a second full upload writes frames in a new timestamped batch", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://127.0.0.1:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "test-anon-key");
+    vi.mocked(buildSpriteSheet).mockResolvedValue({
+      spriteBlob: new Blob(["sprite"], { type: "image/webp" }),
+      frameWidth: 100,
+      frameHeight: 100,
+      columns: 2,
+      rows: 1,
+      frameCount: 2,
+    });
+    vi.mocked(sliceSpriteSheet).mockResolvedValue({
+      frames: frameBlobs(2),
+      frameWidth: 100,
+      frameHeight: 100,
+    });
+    uploadSpy.mockImplementation(async (path: string) => ({
+      data: { path },
+      error: null,
+    }));
+
+    const nowSpy = vi.spyOn(Date, "now");
+    try {
+      const onChange = vi.fn();
+      render(
+        wrap(
+          <SectionConfigPanel
+            section={animationSection()}
+            onSectionChange={onChange}
+            onClose={vi.fn()}
+          />,
+        ),
+      );
+
+      const fileInput = screen.getByLabelText("Uploader les frames d'animation");
+      const file = new File(["frame"], "frame.png", { type: "image/png" });
+
+      nowSpy.mockReturnValue(1_000);
+      fireEvent.change(fileInput, { target: { files: [file] } });
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(fileInput).not.toBeDisabled());
+
+      nowSpy.mockReturnValue(2_000);
+      fireEvent.change(fileInput, { target: { files: [file] } });
+      await waitFor(() => expect(onChange).toHaveBeenCalledTimes(2));
+
+      const framePaths = uploadSpy.mock.calls
+        .map(([path]) => path as string)
+        .filter((path) => path.includes("/frames/"));
+      expect(framePaths).toEqual([
+        "webtoons/sections/sec-1/frames/1000/0.webp",
+        "webtoons/sections/sec-1/frames/1000/1.webp",
+        "webtoons/sections/sec-1/frames/2000/0.webp",
+        "webtoons/sections/sec-1/frames/2000/1.webp",
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 });
 
@@ -1297,7 +1372,9 @@ describe("SectionConfigPanel — animation frames editor", () => {
 
     const uploadedPath = uploadSpy.mock.calls[0][0] as string;
     expect(uploadedPath).toMatch(/^webtoons\/sections\/sec-1\/frames\/\d+-0\.webp$/);
-    expect(resizeImage).toHaveBeenCalledWith(expect.any(File));
+    expect(resizeImage).toHaveBeenCalledWith(expect.any(File), {
+      maxDimension: 1600,
+    });
 
     const updated = lastCall(onChange);
     expect(updated.config).toMatchObject({
@@ -1309,5 +1386,55 @@ describe("SectionConfigPanel — animation frames editor", () => {
       frameWidth: 64,
       frameHeight: 64,
     });
+  });
+});
+
+describe("SectionConfigPanel — upload hardening", () => {
+  test("rejects an oversized image before decoding or uploading it", async () => {
+    const section = makeSection({ type: "image" });
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    const fileInput = screen.getByLabelText("Uploader une image");
+    const file = new File(["too-heavy"], "huge.png", { type: "image/png" });
+    Object.defineProperty(file, "size", { value: 15 * 1024 * 1024 + 1 });
+
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    expect(
+      await screen.findByText("Le fichier dépasse la limite de 15 Mo."),
+    ).toBeInTheDocument();
+    expect(resizeImage).not.toHaveBeenCalled();
+    expect(uploadSpy).not.toHaveBeenCalled();
+  });
+
+  test("disables section controls while an upload is in flight (ED-11)", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(false);
+    let resolveResize!: (blob: Blob) => void;
+    vi.mocked(resizeImage).mockImplementationOnce(
+      () =>
+        new Promise<Blob>((resolve) => {
+          resolveResize = resolve;
+        }),
+    );
+
+    const section = makeSection({ type: "image" });
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={vi.fn()} onClose={vi.fn()} />));
+
+    const fileInput = screen.getByLabelText("Uploader une image");
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["image"], "test.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByText("Envoi en cours…")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Type de section" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Fermer le panneau" })).toBeDisabled();
+    expect(screen.getByLabelText("Uploader un audio")).toBeDisabled();
+
+    await act(async () => {
+      resolveResize(new Blob(["resized"], { type: "image/webp" }));
+    });
+
+    await waitFor(() => expect(fileInput).not.toBeDisabled());
   });
 });

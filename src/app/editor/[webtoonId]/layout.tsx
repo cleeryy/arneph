@@ -18,6 +18,7 @@ export default async function EditorDetailLayout({
 
   return (
     <EditorStateProvider
+      key={webtoonId}
       initialTitle={webtoon?.title ?? null}
       initialDescription={webtoon?.description ?? null}
       initialVisibility={webtoon?.visibility ?? null}

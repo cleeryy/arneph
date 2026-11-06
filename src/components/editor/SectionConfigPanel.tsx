@@ -29,8 +29,9 @@ import {
   ImageProcessingError,
 } from "@/lib/image/process";
 import { isAnimatedImage } from "@/lib/image/animated";
+import { MAX_UPLOAD_BYTES } from "@/lib/image/limits";
 import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
-import { uploadSectionAsset } from "@/lib/supabase/upload";
+import { uploadSectionAsset, removeSectionAssets } from "@/lib/supabase/upload";
 import { sectionTypeLabel } from "@/lib/editor/section-labels";
 import type { SectionWithImages } from "@/lib/db/queries";
 import type {
@@ -51,6 +52,9 @@ interface SectionConfigPanelProps {
 }
 
 const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/webm", "audio/ogg"];
+
+/** Les images de section sont rendues plein écran : 1600 px suffit. */
+const SECTION_IMAGE_MAX_DIMENSION = 1600;
 
 type StaticSectionConfig = Extract<
   SectionWithImages["config"],
@@ -145,6 +149,11 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith("image/");
 }
 
+/** Refuse un fichier trop lourd avant `resizeImage()` / décodage. */
+function isFileTooLarge(file: File): boolean {
+  return file.size > MAX_UPLOAD_BYTES;
+}
+
 function isAudioFile(file: File): boolean {
   return AUDIO_MIME_TYPES.includes(file.type);
 }
@@ -163,6 +172,14 @@ export function SectionConfigPanel({
   const t = useTranslations("editor");
   const [error, setError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
+  /**
+   * Valeur affichée du slider d'opacité pendant un glissement. L'historique
+   * n'est écrit qu'au commit (`onValueCommitted`), pas à chaque tick.
+   */
+  const [opacityDraft, setOpacityDraft] = React.useState<{
+    sectionId: string;
+    value: number;
+  } | null>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const animationInputRef = React.useRef<HTMLInputElement>(null);
   const audioInputRef = React.useRef<HTMLInputElement>(null);
@@ -220,6 +237,10 @@ export function SectionConfigPanel({
       setError(t("uploadImageError"));
       return;
     }
+    if (isFileTooLarge(file)) {
+      setError(t("fileTooLarge"));
+      return;
+    }
 
     setUploading(true);
     try {
@@ -236,7 +257,9 @@ export function SectionConfigPanel({
       } else {
         // `resizeImage()` encode déjà en WebP : le repasser dans `toWebP()`
         // serait un double encodage (perte de qualité + CPU inutile).
-        const resized = await resizeImage(file);
+        const resized = await resizeImage(file, {
+          maxDimension: SECTION_IMAGE_MAX_DIMENSION,
+        });
         dimensions = await readImageDimensions(resized);
         uploadBlob = resized;
         mimeType = "image/webp";
@@ -291,8 +314,15 @@ export function SectionConfigPanel({
       setError(t("uploadAnimationError"));
       return;
     }
+    if (fileArray.some(isFileTooLarge)) {
+      setError(t("fileTooLarge"));
+      return;
+    }
 
     setUploading(true);
+    // Tout ce qui est déjà parti sur Storage doit pouvoir être retiré si un
+    // upload suivant échoue : jamais de sprite orphelin sans frames.
+    const uploadedPaths: string[] = [];
     try {
       const spriteSheet = await buildSpriteSheet(fileArray);
 
@@ -308,19 +338,23 @@ export function SectionConfigPanel({
 
       const path = generateStoragePath(section.id, `sprite-${Date.now()}.webp`);
       const storagePath = await uploadSectionAsset(path, spriteSheet.spriteBlob, "image/webp");
+      uploadedPaths.push(storagePath);
 
+      // Batch horodaté : un ré-upload complet sur la même section écrit dans
+      // un dossier neuf, donc `upsert: false` ne casse plus dès la frame 0.
+      const frameBatch = Date.now();
+      const framePaths: string[] = [];
       // Une frame = un asset : aucun écran ne rend plus une grille géante.
       // Upload séquentiel pour que `framePaths` suive l'ordre de lecture et
       // qu'un échec stoppe avant toute écriture dans la section.
-      const framePaths: string[] = [];
       for (let index = 0; index < sliced.frames.length; index += 1) {
-        framePaths.push(
-          await uploadSectionAsset(
-            `webtoons/sections/${section.id}/frames/${index}.webp`,
-            sliced.frames[index],
-            "image/webp",
-          ),
+        const framePath = await uploadSectionAsset(
+          `webtoons/sections/${section.id}/frames/${frameBatch}/${index}.webp`,
+          sliced.frames[index],
+          "image/webp",
         );
+        uploadedPaths.push(framePath);
+        framePaths.push(framePath);
       }
 
       const frameCount = sliced.frames.length;
@@ -357,6 +391,10 @@ export function SectionConfigPanel({
       };
       onSectionChange(updatedSection);
     } catch (err) {
+      await removeSectionAssets(uploadedPaths).catch(() => {
+        // Nettoyage best-effort : un orphelin Storage ne doit pas masquer
+        // l'erreur d'upload affichée à l'utilisateur.
+      });
       if (err instanceof ImageProcessingError) {
         setError(err.message);
       } else {
@@ -379,6 +417,9 @@ export function SectionConfigPanel({
     if (section.config.type !== "animation") {
       throw new Error("Section animation requise pour uploader des frames.");
     }
+    if (files.some(isFileTooLarge)) {
+      throw new ImageProcessingError("IMAGE_TOO_LARGE", t("fileTooLarge"));
+    }
 
     const animationConfig = section.config;
     const timestamp = Date.now();
@@ -387,7 +428,9 @@ export function SectionConfigPanel({
     let frameHeight = animationConfig.frameHeight;
 
     for (let index = 0; index < files.length; index += 1) {
-      const resized = await resizeImage(files[index]);
+      const resized = await resizeImage(files[index], {
+        maxDimension: SECTION_IMAGE_MAX_DIMENSION,
+      });
       if (frameWidth <= 0 || frameHeight <= 0) {
         const dimensions = await readImageDimensions(resized);
         frameWidth = dimensions.width;
@@ -479,6 +522,11 @@ export function SectionConfigPanel({
     opacity: 1,
   };
 
+  const fxOpacityPercent =
+    opacityDraft?.sectionId === section.id
+      ? opacityDraft.value
+      : Math.round(fxConfig.opacity * 100);
+
   const handleFxUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -486,6 +534,10 @@ export function SectionConfigPanel({
 
     if (!["image/gif", "image/webp"].includes(file.type)) {
       setError(t("fxUploadError"));
+      return;
+    }
+    if (isFileTooLarge(file)) {
+      setError(t("fileTooLarge"));
       return;
     }
 
@@ -621,12 +673,28 @@ export function SectionConfigPanel({
     <Card className="mx-auto w-full max-w-full sm:max-w-md">
       <CardHeader className="flex flex-row items-center justify-between gap-2">
         <CardTitle>{t("configPanelTitle")}</CardTitle>
-        <Button variant="ghost" size="icon" onClick={onClose} aria-label={t("closePanel")}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          aria-label={t("closePanel")}
+          disabled={uploading}
+        >
           <X className="size-4" />
         </Button>
       </CardHeader>
 
       <CardContent className="space-y-4">
+        {/*
+          Un upload long ne doit pas pouvoir être écrasé par une édition
+          concurrente : tous les contrôles de configuration sont désactivés
+          pendant l'envoi (le `fieldset` couvre aussi les boutons du sous-éditeur).
+        */}
+        <fieldset
+          disabled={uploading}
+          aria-busy={uploading}
+          className="m-0 min-w-0 space-y-4 border-0 p-0"
+        >
         <div className="space-y-2">
           <label htmlFor="section-type" className="text-sm font-medium text-foreground">
             {t("sectionType")}
@@ -771,6 +839,7 @@ export function SectionConfigPanel({
             frameHeight={animationConfig?.frameHeight ?? 0}
             onChange={handleAnimationFramesChange}
             onUploadFiles={handleAnimationFrameUpload}
+            disabled={uploading}
           />
         )}
 
@@ -985,14 +1054,20 @@ export function SectionConfigPanel({
                         {t("fxOpacity")}
                       </label>
                       <Slider
-                        value={[Math.round(fxConfig.opacity * 100)]}
-                        onValueChange={(value) => handleFxConfigChange({ opacity: value[0] / 100 })}
+                        value={[fxOpacityPercent]}
+                        onValueChange={(value) =>
+                          setOpacityDraft({ sectionId: section.id, value: value[0] })
+                        }
+                        onValueCommitted={(value) => {
+                          handleFxConfigChange({ opacity: value[0] / 100 });
+                          setOpacityDraft(null);
+                        }}
                         max={100}
                         step={1}
                         className="flex-1"
                       />
                       <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">
-                        {Math.round(fxConfig.opacity * 100)}%
+                        {fxOpacityPercent}%
                       </span>
                     </div>
                   </div>
@@ -1008,6 +1083,7 @@ export function SectionConfigPanel({
           <label htmlFor="preview" className="text-sm font-medium text-foreground">{t("preview")}</label>
           <SectionPreview section={section} />
         </div>
+        </fieldset>
       </CardContent>
     </Card>
   );

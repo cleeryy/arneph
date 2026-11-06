@@ -12,10 +12,13 @@ import {
   createSection,
   createWebtoon,
   deleteSection,
+  deleteSectionsByIds,
   deleteWebtoon,
   getWebtoon,
+  getWebtoonCoverPath,
   reorderSections,
   updateWebtoon,
+  type UpdateWebtoonData,
 } from "@/lib/db/queries";
 import type { ImageRecord } from "@/types/webtoon";
 
@@ -24,19 +27,36 @@ const imageRecordSchema = z.object({
   sectionId: z.string().min(1),
   webtoonId: z.string().min(1),
   storagePath: z.string().min(1),
-  width: z.number().positive(),
-  height: z.number().positive(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
   mimeType: z.string().min(1),
   position: z.number().int().nonnegative(),
 });
 
-const sectionWithImagesSchema = sectionSchema.extend({
-  images: z.array(imageRecordSchema),
-});
+function hasUniqueIds(items: { id: string }[]): boolean {
+  return new Set(items.map((item) => item.id)).size === items.length;
+}
+
+const sectionWithImagesSchema = sectionSchema
+  .extend({
+    images: z
+      .array(imageRecordSchema)
+      .max(20, "Une section ne peut pas contenir plus de 20 images"),
+  })
+  .refine((section) => hasUniqueIds(section.images), {
+    message: "Les identifiants d'image doivent être uniques dans une section",
+    path: ["images"],
+  });
 
 const saveWebtoonSchema = z.object({
   webtoonId: z.string().min(1),
-  sections: z.array(sectionWithImagesSchema),
+  sections: z
+    .array(sectionWithImagesSchema)
+    .max(500, "Un webtoon ne peut pas contenir plus de 500 sections")
+    .refine(hasUniqueIds, {
+      message: "Les identifiants de section doivent être uniques",
+      path: ["sections"],
+    }),
 });
 
 const publishWebtoonSchema = z.object({
@@ -82,8 +102,34 @@ const MAX_UNIQUE_TITLE_ATTEMPTS = 50;
 const DUPLICATE_TITLE_ERROR =
   "Un webtoon porte déjà ce titre. Choisissez un autre titre.";
 
+/**
+ * Message renvoyé au navigateur pour une panne interne.
+ * Le détail (SQL, hôte, contraintes) reste dans les logs serveur.
+ */
+const GENERIC_ERROR_MESSAGE =
+  "Une erreur est survenue. Réessayez dans quelques instants.";
+
+const BUSINESS_ERROR_PATTERN =
+  /introuvable|aucune section|nettoyage partiel|Impossible de publier/i;
+const INTERNAL_ERROR_PATTERN =
+  /db\.|fetch failed|ECONN|duplicate key|violates|timeout/i;
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
+}
+
+/**
+ * Transforme une erreur serveur en message public.
+ * Les erreurs métier explicites passent telles quelles ; les pannes
+ * d'infrastructure sont journalisées puis remplacées par un message générique.
+ */
+function publicErrorMessage(error: unknown): string {
+  const message = errorMessage(error);
+  console.error("[editor-actions] operation failed:", message);
+
+  if (BUSINESS_ERROR_PATTERN.test(message)) return message;
+  if (INTERNAL_ERROR_PATTERN.test(message)) return GENERIC_ERROR_MESSAGE;
+  return message;
 }
 
 /** Détecte une violation de la contrainte unique `unique_webtoons_title`. */
@@ -125,53 +171,119 @@ async function createWebtoonWithUniqueTitle(
   throw new Error("createWebtoonWithUniqueTitle: épuisement des tentatives");
 }
 
-function collectSectionStoragePaths(section: {
+interface SectionStorageSource {
   images: { storagePath: string }[];
   audioPath?: string | null;
-  config: { imagePath?: unknown; spritePath?: unknown; fxPath?: unknown };
-}): string[] {
+  config: {
+    imagePath?: string;
+    spritePath?: string;
+    fxPath?: string;
+    audioPath?: string;
+    framePaths?: string[];
+  };
+}
+
+const STORAGE_BUCKET = "webtoon-images";
+const STORAGE_REMOVE_BATCH_SIZE = 1000;
+
+/** Tous les chemins Storage référencés par une section (images + config). */
+function collectSectionStoragePaths(section: SectionStorageSource): string[] {
   return [
     ...section.images.map((image) => image.storagePath),
     section.audioPath,
-    "imagePath" in section.config ? section.config.imagePath : undefined,
-    "spritePath" in section.config ? section.config.spritePath : undefined,
-    "fxPath" in section.config ? section.config.fxPath : undefined,
+    section.config.audioPath,
+    section.config.imagePath,
+    section.config.spritePath,
+    section.config.fxPath,
+    ...(section.config.framePaths ?? []),
   ].filter((path): path is string => typeof path === "string" && path.length > 0);
 }
 
+/** Tous les chemins Storage référencés par un webtoon (couverture + sections). */
+function collectWebtoonStoragePaths(webtoon: {
+  coverPath?: string | null;
+  sections: SectionStorageSource[];
+}): string[] {
+  return [
+    webtoon.coverPath,
+    ...webtoon.sections.flatMap((section) => collectSectionStoragePaths(section)),
+  ].filter((path): path is string => typeof path === "string" && path.length > 0);
+}
+
+/**
+ * Supprime des objets Storage par lots (l'API accepte au plus 1000 clés).
+ * Best-effort : une panne Storage est journalisée, jamais propagée.
+ */
 async function removeStoragePaths(paths: string[]): Promise<void> {
   const uniquePaths = [...new Set(paths)];
   if (uniquePaths.length === 0) return;
 
-  const { error: removeError } = await supabase
-    .storage
-    .from("webtoon-images")
-    .remove(uniquePaths);
+  for (let index = 0; index < uniquePaths.length; index += STORAGE_REMOVE_BATCH_SIZE) {
+    const batch = uniquePaths.slice(index, index + STORAGE_REMOVE_BATCH_SIZE);
+    const { error: removeError } = await supabase
+      .storage
+      .from(STORAGE_BUCKET)
+      .remove(batch);
 
-  if (removeError) {
-    console.warn("removeStoragePaths failed:", removeError.message);
+    if (removeError) {
+      console.warn("removeStoragePaths failed:", removeError.message);
+    }
   }
 }
 
-async function cleanupSectionStorage(sectionId: string, knownPaths: string[] = []): Promise<void> {
-  const prefix = `webtoons/sections/${sectionId}/`;
+/**
+ * Liste les fichiers d'un dossier Storage.
+ * `depth` contrôle la descente dans les sous-dossiers : les frames d'animation
+ * vivent dans `frames/<timestamp>/`, d'où la récursion bornée.
+ */
+async function listStorageFiles(prefix: string, depth: number): Promise<string[]> {
   const { data: files, error: listError } = await supabase
     .storage
-    .from("webtoon-images")
+    .from(STORAGE_BUCKET)
     .list(prefix, { limit: 1000 });
 
-  const listedPaths = listError || !files ? [] : files.map((file: { name: string }) => `${prefix}${file.name}`);
-  const paths = [...new Set([...knownPaths, ...listedPaths])];
+  if (listError || !files) return [];
+
+  const paths: string[] = [];
+  for (const file of files as { name: string; id?: string | null }[]) {
+    const path = `${prefix}${file.name}`;
+    // Les dossiers sont renvoyés avec `id: null` par l'API Storage.
+    if (file.id === null) {
+      if (depth > 0) {
+        const nested = await listStorageFiles(`${path}/`, depth - 1);
+        paths.push(...nested);
+      }
+      continue;
+    }
+    paths.push(path);
+  }
+  return paths;
+}
+
+const EMPTY_KEEP_PATHS: ReadonlySet<string> = new Set();
+
+/**
+ * Nettoie le dossier Storage d'une section supprimée.
+ * Combine les chemins connus (base) et un listing du dossier (orphelins), en
+ * préservant les chemins encore référencés par la sauvegarde en cours.
+ */
+async function cleanupSectionStorage(
+  sectionId: string,
+  knownPaths: string[] = [],
+  keepPaths: ReadonlySet<string> = EMPTY_KEEP_PATHS,
+): Promise<void> {
+  const prefix = `webtoons/sections/${sectionId}/`;
+  const [directFiles, frameFiles] = await Promise.all([
+    listStorageFiles(prefix, 0),
+    listStorageFiles(`${prefix}frames/`, 2),
+  ]);
+
+  const paths = [...new Set([...knownPaths, ...directFiles, ...frameFiles])].filter(
+    (path) => !keepPaths.has(path),
+  );
   if (paths.length === 0) return;
 
-  const { error: removeError } = await supabase
-    .storage
-    .from("webtoon-images")
-    .remove(paths);
-
-  if (removeError) {
-    console.warn(`cleanupSectionStorage failed for ${sectionId}:`, removeError.message);
-  }
+  await removeStoragePaths(paths);
 }
 
 /**
@@ -228,7 +340,7 @@ export async function createWebtoonAction(
 
     return { ok: true, webtoonId: webtoon.id };
   } catch (error) {
-    return { ok: false, error: errorMessage(error) };
+    return { ok: false, error: publicErrorMessage(error) };
   }
 }
 
@@ -262,20 +374,48 @@ export async function updateWebtoonMetadataAction(
   }
 
   try {
-    const patch: Parameters<typeof updateWebtoon>[1] = {
-      title: parse.data.title,
-      description: parse.data.description,
-    };
+    // Ancienne couverture lue AVANT l'update : si elle est remplacée ou
+    // effacée, son fichier devient orphelin après un update réussi.
+    let previousCoverPath: string | null = null;
     if (parse.data.coverPath !== undefined) {
-      // `webtoons.cover_path` est nullable : `null` efface la couverture.
-      // `UpdateWebtoonData` n'expose pas encore `null` pour ce champ.
-      (patch as { coverPath?: string | null }).coverPath =
-        parse.data.coverPath === "" ? null : parse.data.coverPath;
+      try {
+        previousCoverPath = await getWebtoonCoverPath(webtoonId);
+      } catch (coverError) {
+        console.warn(
+          `updateWebtoonMetadataAction cover lookup failed for ${webtoonId}:`,
+          errorMessage(coverError),
+        );
+      }
+    }
+
+    const patch: UpdateWebtoonData = { title: parse.data.title };
+    if (parse.data.description !== undefined) {
+      // Une description vide efface la colonne (null), pas une chaîne vide.
+      patch.description =
+        parse.data.description.trim().length === 0
+          ? null
+          : parse.data.description;
+    }
+    if (parse.data.coverPath !== undefined) {
+      patch.coverPath = parse.data.coverPath === "" ? null : parse.data.coverPath;
     }
 
     const updated = await updateWebtoon(webtoonId, patch);
     if (!updated) {
       return { ok: false, error: "Webtoon introuvable." };
+    }
+
+    if (previousCoverPath && previousCoverPath !== patch.coverPath) {
+      // Best-effort : l'update est déjà persisté, un incident Storage ne doit
+      // pas le transformer en échec côté client.
+      try {
+        await removeStoragePaths([previousCoverPath]);
+      } catch (cleanupError) {
+        console.warn(
+          `updateWebtoonMetadataAction cover cleanup failed for ${webtoonId}:`,
+          errorMessage(cleanupError),
+        );
+      }
     }
 
     revalidatePath("/editor");
@@ -286,7 +426,7 @@ export async function updateWebtoonMetadataAction(
     if (isDuplicateTitleError(error)) {
       return { ok: false, error: DUPLICATE_TITLE_ERROR };
     }
-    return { ok: false, error: errorMessage(error) };
+    return { ok: false, error: publicErrorMessage(error) };
   }
 }
 
@@ -307,14 +447,17 @@ export async function saveWebtoon(
   try {
     const { webtoonId: wid, sections: incomingSections } = parse.data;
     const current = await getWebtoon(wid);
-    const existingSectionIds = new Set(
-      current?.sections.map((s) => s.id) ?? [],
-    );
+    if (!current) {
+      // Ne jamais créer de sections orphelines pour un webtoon inexistant.
+      return { ok: false, error: "Webtoon introuvable." };
+    }
+
+    const existingSectionIds = new Set(current.sections.map((s) => s.id));
     const incomingSectionIds = new Set(
       incomingSections.map((s) => s.id),
     );
 
-    const removedSections = (current?.sections ?? []).filter(
+    const removedSections = current.sections.filter(
       (section) => !incomingSectionIds.has(section.id),
     );
     const removedIds = removedSections.map((section) => section.id);
@@ -322,7 +465,7 @@ export async function saveWebtoon(
       collectSectionStoragePaths(section),
     );
     const retainedSections = new Map(
-      (current?.sections ?? [])
+      current.sections
         .filter((section) => incomingSectionIds.has(section.id))
         .map((section) => [section.id, section] as const),
     );
@@ -351,6 +494,13 @@ export async function saveWebtoon(
       .filter((id): id is string => Boolean(id));
     await reorderSections(wid, orderedIds);
 
+    // P0-1 : supprimer les sections retirées en base AVANT tout nettoyage
+    // Storage. Une ligne fantôme réapparaîtrait au rechargement avec des
+    // médias déjà effacés, et compterait dans la publication.
+    if (removedIds.length > 0) {
+      await deleteSectionsByIds(wid, removedIds);
+    }
+
     const incomingPaths = new Set(
       incomingSections.flatMap((section) => collectSectionStoragePaths(section)),
     );
@@ -360,7 +510,9 @@ export async function saveWebtoon(
     await removeStoragePaths(replacedPaths);
 
     await Promise.all(
-      removedIds.map((id, index) => cleanupSectionStorage(id, removedStorage[index])),
+      removedIds.map((id, index) =>
+        cleanupSectionStorage(id, removedStorage[index], incomingPaths),
+      ),
     );
 
     revalidatePath(`/editor/${wid}`);
@@ -368,7 +520,7 @@ export async function saveWebtoon(
 
     return { ok: true, sectionIds: Object.fromEntries(persistedIds) };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
+    const message = publicErrorMessage(err);
 
     if (createdSectionIds.length === 0) {
       return { ok: false, error: message };
@@ -414,33 +566,59 @@ async function upsertSection(
   await syncImages(webtoonId, section.id, section.images);
 }
 
+/**
+ * Synchronise les lignes `images` d'une section sans jamais vider la table
+ * avant un insert réussi :
+ * 1. lire les ids existants,
+ * 2. upsert des images entrantes (conflit sur `id`),
+ * 3. supprimer uniquement les ids absents du payload.
+ * Un échec d'upsert laisse donc les lignes existantes intactes.
+ */
 async function syncImages(
   webtoonId: string,
   sectionId: string,
   images: ImageRecord[],
 ): Promise<void> {
-  const { error: deleteError } = await supabase.from("images").delete().eq("section_id", sectionId);
+  const { data: existingRows, error: selectError } = await supabase
+    .from("images")
+    .select("id")
+    .eq("section_id", sectionId);
+
+  if (selectError) throw new Error(`syncImages failed: ${selectError.message}`);
+
+  if (images.length > 0) {
+    const { error: upsertError } = await supabase
+      .from("images")
+      .upsert(
+        images.map((img) => ({
+          id: img.id,
+          section_id: sectionId,
+          webtoon_id: webtoonId,
+          storage_path: img.storagePath,
+          width: img.width,
+          height: img.height,
+          mime_type: img.mimeType,
+          position: img.position,
+        })),
+        { onConflict: "id" },
+      );
+
+    if (upsertError) throw new Error(`syncImages failed: ${upsertError.message}`);
+  }
+
+  const incomingIds = new Set(images.map((img) => img.id));
+  const staleIds = (existingRows ?? [])
+    .map((row) => row.id)
+    .filter((id) => !incomingIds.has(id));
+
+  if (staleIds.length === 0) return;
+
+  const { error: deleteError } = await supabase
+    .from("images")
+    .delete()
+    .in("id", staleIds);
 
   if (deleteError) throw new Error(`syncImages failed: ${deleteError.message}`);
-
-  if (images.length === 0) return;
-
-  const { error: imgError } = await supabase
-    .from("images")
-    .insert(
-      images.map((img) => ({
-        id: img.id,
-        section_id: sectionId,
-        webtoon_id: webtoonId,
-        storage_path: img.storagePath,
-        width: img.width,
-        height: img.height,
-        mime_type: img.mimeType,
-        position: img.position,
-      })),
-    );
-
-  if (imgError) throw new Error(`syncImages failed: ${imgError.message}`);
 }
 
 export async function publishWebtoon(
@@ -479,8 +657,7 @@ export async function publishWebtoon(
 
     return { ok: true };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return { ok: false, error: message };
+    return { ok: false, error: publicErrorMessage(err) };
   }
 }
 
@@ -506,8 +683,7 @@ export async function unpublishWebtoon(
 
     return { ok: true };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return { ok: false, error: message };
+    return { ok: false, error: publicErrorMessage(err) };
   }
 }
 
@@ -523,38 +699,55 @@ export async function deleteWebtoonAction(
   }
 
   try {
-    // Storage cleanup is best-effort: an outage must never block deleting
-    // the database row (orphan objects can be swept later).
-    try {
-      const current = await getWebtoon(webtoonId);
-      if (current?.sections) {
-        await Promise.all(
-          current.sections.map((section) =>
-            cleanupSectionStorage(section.id, [
-              ...section.images.map((image) => image.storagePath),
-              section.audioPath,
-              "imagePath" in section.config ? section.config.imagePath : undefined,
-              "spritePath" in section.config ? section.config.spritePath : undefined,
-              "fxPath" in section.config ? section.config.fxPath : undefined,
-            ].filter((path): path is string => Boolean(path))),
-          ),
-        );
-      }
-    } catch (cleanupError) {
-      console.warn(
-        `deleteWebtoonAction storage cleanup failed for ${webtoonId}:`,
-        errorMessage(cleanupError),
-      );
+    // Lire les chemins AVANT la suppression : après le delete en cascade,
+    // plus rien ne permet de retrouver les objets Storage.
+    const current = await getWebtoon(webtoonId);
+    const knownPaths = current ? collectWebtoonStoragePaths(current) : [];
+
+    // DB d'abord : si le delete échoue, aucun fichier n'est supprimé.
+    // Un objet Storage orphelin est récupérable, un webtoon sans médias non.
+    const deleted = await deleteWebtoon(webtoonId);
+    if (!deleted) {
+      return { ok: false, error: "Webtoon introuvable." };
     }
 
-    await deleteWebtoon(webtoonId);
+    // Storage cleanup is best-effort: an outage must never turn a successful
+    // DB delete into a failure (orphan objects can be swept later).
+    if (current) {
+      try {
+        await Promise.all(
+          current.sections.map((section) =>
+            cleanupSectionStorage(
+              section.id,
+              collectSectionStoragePaths(section),
+            ),
+          ),
+        );
+        if (current.coverPath) {
+          await removeStoragePaths([current.coverPath]);
+        }
+      } catch (cleanupError) {
+        console.warn(
+          `deleteWebtoonAction storage cleanup failed for ${webtoonId}:`,
+          errorMessage(cleanupError),
+        );
+        // Fallback best-effort sur les chemins connus (tous orphelins).
+        try {
+          await removeStoragePaths(knownPaths);
+        } catch (fallbackError) {
+          console.warn(
+            `deleteWebtoonAction storage fallback failed for ${webtoonId}:`,
+            errorMessage(fallbackError),
+          );
+        }
+      }
+    }
 
     revalidatePath("/editor");
     revalidatePath("/read");
 
     return { ok: true };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return { ok: false, error: message };
+    return { ok: false, error: publicErrorMessage(err) };
   }
 }

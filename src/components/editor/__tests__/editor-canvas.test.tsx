@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { ReactElement } from "react";
 import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import { act, within } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -179,6 +180,80 @@ describe("EditorCanvas — T23", () => {
 
     const moveDownBtn = screen.getByRole("button", { name: "Descendre" });
     expect(moveDownBtn).toBeDisabled();
+  });
+});
+
+describe("EditorCanvas — config panel derives from live sections (ED-7)", () => {
+  let setSectionsFromTest: ((sections: SectionWithImages[]) => void) | null =
+    null;
+
+  function CanvasHost({ initial }: { initial: SectionWithImages[] }) {
+    const [sections, setSections] = React.useState(initial);
+    setSectionsFromTest = setSections;
+    return (
+      <EditorCanvas
+        sections={sections}
+        onSectionsChange={setSections}
+        webtoonId="w1"
+      />
+    );
+  }
+
+  afterEach(() => {
+    setSectionsFromTest = null;
+  });
+
+  test("follows a section id remap instead of keeping a dead id", () => {
+    render(wrap(<CanvasHost initial={[makeSection("temp-1", 1)]} />));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Modifier la section" }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Configuration de la section" }),
+    ).toBeInTheDocument();
+
+    // Same position, canonical server id: the panel must follow the remap.
+    act(() => {
+      setSectionsFromTest!([makeSection("server-1", 1)]);
+    });
+
+    expect(
+      screen.getByRole("heading", { name: "Configuration de la section" }),
+    ).toBeInTheDocument();
+  });
+
+  test("closes when the edited section disappears", () => {
+    render(
+      wrap(
+        <CanvasHost
+          initial={[makeSection("sec-1", 1), makeSection("sec-2", 2)]}
+        />,
+      ),
+    );
+
+    fireEvent.click(
+      within(screen.getByTestId("editor-section-sec-1")).getByRole("button", {
+        name: "Modifier la section",
+      }),
+    );
+    expect(
+      screen.getByRole("heading", { name: "Configuration de la section" }),
+    ).toBeInTheDocument();
+
+    // The modal blocks pointer interaction in a browser; the canvas buttons
+    // are still reachable via events, which lets us test the disappearance.
+    const deleteButton = within(
+      screen.getByTestId("editor-section-sec-1"),
+    ).getByRole("button", {
+      name: "Supprimer la section",
+      hidden: true,
+    });
+    fireEvent.click(deleteButton);
+
+    expect(
+      screen.queryByRole("heading", { name: "Configuration de la section" }),
+    ).not.toBeInTheDocument();
   });
 });
 

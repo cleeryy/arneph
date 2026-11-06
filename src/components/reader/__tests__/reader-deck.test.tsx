@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -28,9 +28,11 @@ vi.mock("next/image", () => ({
   },
 }));
 
-const { playSpy, pauseSpy } = vi.hoisted(() => ({
+const { playSpy, pauseSpy, toggleMuteSpy, audioState } = vi.hoisted(() => ({
   playSpy: vi.fn(),
   pauseSpy: vi.fn(),
+  toggleMuteSpy: vi.fn(),
+  audioState: { unlocked: false },
 }));
 
 vi.mock("@/hooks/useSectionAudio", () => ({
@@ -38,7 +40,9 @@ vi.mock("@/hooks/useSectionAudio", () => ({
     playSectionAudio: playSpy,
     pauseCurrent: pauseSpy,
     isPlaying: false,
-    unlocked: true,
+    unlocked: audioState.unlocked,
+    muted: false,
+    toggleMuted: toggleMuteSpy,
     onUnlocked: () => () => {},
   }),
 }));
@@ -52,8 +56,17 @@ import frMessages from "../../../../messages/fr.json";
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
+  audioState.unlocked = false;
   window.localStorage.clear();
 });
+
+/** Laisse passer la frame de coalescence de la molette. */
+async function flushWheel() {
+  await act(async () => {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  });
+}
 
 beforeEach(() => {
   Object.defineProperty(window, "innerWidth", { value: 390, configurable: true });
@@ -199,5 +212,169 @@ describe("ReaderDeck — navigation discrète", () => {
     );
     unmount();
     expect(pauseSpy).toHaveBeenCalled();
+  });
+
+  test("le déverrouillage audio relance la piste de l'étape courante", () => {
+    vi.useFakeTimers();
+    audioState.unlocked = false;
+    renderReader([image(1, "audio/one.mp3")]);
+    // Tentative au montage (no-op côté hook réel avant le premier geste).
+    expect(playSpy).toHaveBeenCalledTimes(1);
+
+    audioState.unlocked = true;
+    act(() => {
+      // Un simple re-render (masquage du header) suffit : `unlocked` est dans
+      // les dépendances de l'effet audio.
+      vi.advanceTimersByTime(2100);
+    });
+
+    expect(playSpy).toHaveBeenCalledTimes(2);
+    expect(playSpy).toHaveBeenLastCalledWith(
+      "sec-1",
+      expect.stringContaining("audio/one.mp3"),
+    );
+  });
+});
+
+describe("ReaderDeck — molette et tactile robustes (RD-1, RD-2, RD-8)", () => {
+  test("molette : un delta en lignes (Firefox) est converti en pixels", async () => {
+    renderReader([image(1), image(2), image(3)]);
+    const deck = screen.getByTestId("reader-deck");
+
+    fireEvent.wheel(deck, { deltaY: 12, deltaMode: 0 });
+    await flushWheel();
+    expect(screen.getByText("1/3")).toBeInTheDocument();
+
+    fireEvent.wheel(deck, { deltaY: 12, deltaMode: 1 });
+    await flushWheel();
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+  });
+
+  test("molette : l'inertie après navigation ne saute pas d'étape", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    renderReader([image(1), image(2), image(3)]);
+    const deck = screen.getByTestId("reader-deck");
+
+    fireEvent.wheel(deck, { deltaY: 400 });
+    await flushWheel();
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+
+    // Inertie immédiate : cooldown de 200 ms, aucun nouvelle navigation.
+    fireEvent.wheel(deck, { deltaY: 400 });
+    await flushWheel();
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+
+    nowSpy.mockReturnValue(1_250);
+    fireEvent.wheel(deck, { deltaY: 400 });
+    await flushWheel();
+    expect(screen.getByText("3/3")).toBeInTheDocument();
+    nowSpy.mockRestore();
+  });
+
+  test("Ctrl/⌘ + molette : le zoom navigateur n'est pas intercepté", async () => {
+    renderReader([image(1), image(2)]);
+    const deck = screen.getByTestId("reader-deck");
+
+    const notCanceled = fireEvent.wheel(deck, { deltaY: 400, ctrlKey: true });
+    expect(notCanceled).toBe(true);
+    await flushWheel();
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+  });
+
+  test("tactile : un long swipe ne traverse qu'une étape", () => {
+    renderReader([image(1), image(2), image(3)]);
+    const deck = screen.getByTestId("reader-deck");
+
+    act(() => {
+      fireEvent.touchStart(deck, { touches: [{ clientY: 700 }] });
+      fireEvent.touchMove(deck, { touches: [{ clientY: 100 }] });
+      fireEvent.touchEnd(deck, { changedTouches: [] });
+    });
+
+    expect(screen.getByText("2/3")).toBeInTheDocument();
+  });
+
+  test("tactile : un pincement à deux doigts n'est pas intercepté", () => {
+    renderReader([image(1), image(2)]);
+    const deck = screen.getByTestId("reader-deck");
+
+    fireEvent.touchStart(deck, { touches: [{ clientY: 700 }, { clientY: 720 }] });
+    const notCanceled = fireEvent.touchMove(deck, {
+      touches: [
+        { clientY: 100 },
+        { clientY: 120 },
+      ],
+    });
+    expect(notCanceled).toBe(true);
+    fireEvent.touchEnd(deck, { changedTouches: [] });
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+  });
+});
+
+describe("ReaderDeck — réglages, mute et header (RD-5, RD-6, RD-9)", () => {
+  test("le bouton mute bascule l'état audio", () => {
+    renderReader([image(1)]);
+    const mute = screen.getByTestId("reader-mute-button");
+    expect(mute).toHaveAttribute("aria-pressed", "false");
+    act(() => mute.click());
+    expect(toggleMuteSpy).toHaveBeenCalledTimes(1);
+  });
+
+  test("modale ouverte : molette et clic ne naviguent pas", async () => {
+    renderReader([image(1), image(2)]);
+    act(() => screen.getByTestId("reader-settings-button").click());
+
+    const deck = screen.getByTestId("reader-deck");
+    fireEvent.wheel(deck, { deltaY: 400 });
+    await flushWheel();
+    fireEvent.click(deck);
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+  });
+
+  test("la modale donne le focus à sa croix puis le restaure", () => {
+    renderReader([image(1)]);
+    const settingsButton = screen.getByTestId("reader-settings-button");
+    act(() => settingsButton.focus());
+    act(() => settingsButton.click());
+
+    const close = screen.getByRole("button", { name: "Fermer les réglages" });
+    expect(close).toHaveFocus();
+
+    act(() => close.click());
+    expect(screen.queryByTestId("reader-settings")).not.toBeInTheDocument();
+    expect(settingsButton).toHaveFocus();
+  });
+
+  test("header masqué : inert et aria-hidden pour les contrôles hors écran", () => {
+    vi.useFakeTimers();
+    renderReader([image(1)]);
+    const header = document.querySelector("header");
+    expect(header).not.toBeNull();
+    expect(header?.getAttribute("aria-hidden")).not.toBe("true");
+
+    act(() => {
+      vi.advanceTimersByTime(2200);
+    });
+
+    expect(header).toHaveAttribute("aria-hidden", "true");
+    expect(header).toHaveAttribute("inert");
+  });
+});
+
+describe("ReaderDeck — haut de page long-y (RD-7)", () => {
+  test("le bouton remet le défilement de l'étape à zéro", () => {
+    renderReader([longY(1)]);
+    const scroller = screen.getByTestId("long-y-scroll");
+    Object.defineProperty(scroller, "scrollTop", {
+      value: 640,
+      writable: true,
+      configurable: true,
+    });
+
+    act(() => {
+      screen.getByRole("button", { name: "Haut de page" }).click();
+    });
+
+    expect(scroller.scrollTop).toBe(0);
   });
 });

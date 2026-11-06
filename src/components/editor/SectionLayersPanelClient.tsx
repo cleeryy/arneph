@@ -20,7 +20,13 @@ export function SectionLayersPanelClient({
     setSelectedSectionId,
   } = useEditorState();
 
+  // Hydratation one-shot : le panneau latéral ne doit pas réappliquer un
+  // payload RSC revalidé après une sauvegarde et écraser les éditions faites
+  // pendant la requête (même garde que `EditorCanvasClient`).
+  const hydratedRef = React.useRef(false);
   React.useEffect(() => {
+    if (hydratedRef.current) return;
+    hydratedRef.current = true;
     setSections(initialSections);
   }, [initialSections, setSections]);
 

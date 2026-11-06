@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  animationSectionConfigSchema,
   imageSectionConfigSchema,
   longYSectionConfigSchema,
   sectionConfigSchema,
@@ -91,6 +92,38 @@ describe("fxPath / fxConfig optional fields — longYSectionConfigSchema", () =>
       height: 3000,
     });
     expect(result.success).toBe(true);
+  });
+});
+
+describe("animationSectionConfigSchema — framePaths bounds (DATA-13)", () => {
+  test("accepts up to 500 frame paths", () => {
+    const result = animationSectionConfigSchema.safeParse({
+      type: "animation",
+      spritePath: "sprite.webp",
+      framePaths: Array.from({ length: 500 }, (_, index) => `frames/${index}.webp`),
+      frameWidth: 100,
+      frameHeight: 100,
+      columns: 20,
+      rows: 25,
+      frameCount: 500,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects more than 500 frame paths", () => {
+    const result = animationSectionConfigSchema.safeParse({
+      type: "animation",
+      spritePath: "sprite.webp",
+      framePaths: Array.from({ length: 501 }, (_, index) => `frames/${index}.webp`),
+      frameWidth: 100,
+      frameHeight: 100,
+      columns: 20,
+      rows: 25,
+      frameCount: 500,
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

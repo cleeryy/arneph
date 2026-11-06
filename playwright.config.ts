@@ -1,5 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+import { loadLocalEnv } from "./scripts/load-env";
+
+// Le process Playwright est le parent des workers E2E : charger `.env.local` ici
+// rend `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` disponibles dans
+// tous les tests, sans loader dupliqué par fichier.
+loadLocalEnv();
+
 export default defineConfig({
   testDir: "./tests/e2e",
   fullyParallel: false,

@@ -10,6 +10,10 @@ export interface UseSectionAudioResult {
    * no-op : aucune lecture automatique imposée par le navigateur.
    */
   unlocked: boolean
+  /** `true` quand le son est coupé pour toutes les pistes. */
+  muted: boolean
+  /** Bascule le son coupé/actif, y compris sur l'élément média partagé. */
+  toggleMuted(): void
   /**
    * Souscription aux déverrouillages. Permet aux consommateurs de rejouer la
    * section qu'ils avaient mémorisée quand l'autoplay était encore bloqué.
@@ -25,6 +29,7 @@ let currentSectionId: string | null = null
 let currentUrl: string | null = null
 let playing = false
 let unlocked = false
+let muted = false
 let gesturesAttached = false
 const listeners = new Set<() => void>()
 // Set séparé du store : notifier un déverrouillage peut déclencher une lecture
@@ -43,6 +48,7 @@ function getAudio(): HTMLAudioElement | null {
   if (Ctor === null) return null
   try {
     audio = new Ctor()
+    audio.muted = muted
   } catch {
     audio = null
   }
@@ -97,6 +103,16 @@ function getUnlockedSnapshot(): boolean {
   return unlocked
 }
 
+function getMutedSnapshot(): boolean {
+  return muted
+}
+
+function toggleMuted(): void {
+  muted = !muted
+  if (audio !== null) audio.muted = muted
+  emitChange()
+}
+
 function playSectionAudio(sectionId: string, audioUrl: string | null): void {
   if (audioUrl === null || !unlocked) return
   const el = getAudio()
@@ -134,5 +150,14 @@ function pauseCurrent(): void {
 export function useSectionAudio(): UseSectionAudioResult {
   const isPlaying = React.useSyncExternalStore(subscribe, getPlayingSnapshot, () => false)
   const isUnlocked = React.useSyncExternalStore(subscribe, getUnlockedSnapshot, () => false)
-  return { playSectionAudio, pauseCurrent, isPlaying, unlocked: isUnlocked, onUnlocked }
+  const isMuted = React.useSyncExternalStore(subscribe, getMutedSnapshot, () => false)
+  return {
+    playSectionAudio,
+    pauseCurrent,
+    isPlaying,
+    unlocked: isUnlocked,
+    muted: isMuted,
+    toggleMuted,
+    onUnlocked,
+  }
 }

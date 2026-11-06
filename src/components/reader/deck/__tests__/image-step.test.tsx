@@ -3,6 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { ImageStep } from "../ImageStep";
+import { StepImage } from "../StepImage";
 import type { ImageSectionConfig } from "@/types/webtoon";
 import { makeImage, makeSection, wrap } from "./fixtures";
 
@@ -170,7 +171,7 @@ describe("ImageStep — média", () => {
     expect(img).toHaveAttribute("alt", "Section image");
   });
 
-  test("GIF natif (mimeType image/gif) → <img> natif, pas next/image", () => {
+  test("GIF natif (mimeType image/gif) → <img> natif avec URL objet (animation préservée)", () => {
     render(
       wrap(
         <ImageStep
@@ -184,7 +185,11 @@ describe("ImageStep — média", () => {
 
     const img = screen.getByTestId("image-step-image");
     expect(img).toHaveAttribute("data-image-variant", "native");
-    expect(img).toHaveAttribute("src", expect.stringContaining("test/anim.gif"));
+
+    // IMG-4 : imgproxy ré-encode le GIF en image fixe → URL objet directe.
+    const src = img.getAttribute("src") ?? "";
+    expect(src).toContain("/storage/v1/object/public/webtoon-images/test/anim.gif");
+    expect(src).not.toContain("/render/image/");
   });
 
   test("GIF détecté par extension (.gif) → <img> natif", () => {
@@ -203,9 +208,10 @@ describe("ImageStep — média", () => {
       ),
     );
 
-    expect(screen.getByTestId("image-step-image")).toHaveAttribute(
-      "data-image-variant",
-      "native",
+    const img = screen.getByTestId("image-step-image");
+    expect(img).toHaveAttribute("data-image-variant", "native");
+    expect(img.getAttribute("src") ?? "").toContain(
+      "/storage/v1/object/public/webtoon-images/test/loop.gif",
     );
   });
 
@@ -240,6 +246,60 @@ describe("ImageStep — média", () => {
 
     expect(screen.getByTestId("image-step")).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
+  });
+});
+
+describe("StepImage — mode de chargement", () => {
+  test("défaut eager sur next/image", () => {
+    render(
+      wrap(
+        <StepImage
+          section={imageSection()}
+          alt="Section image"
+          testId="step-image"
+          className=""
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId("step-image")).toHaveAttribute("loading", "eager");
+  });
+
+  test("loading='lazy' sur next/image", () => {
+    render(
+      wrap(
+        <StepImage
+          section={imageSection()}
+          alt="Section image"
+          loading="lazy"
+          testId="step-image"
+          className=""
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId("step-image")).toHaveAttribute("loading", "lazy");
+  });
+
+  test("loading='lazy' sur le <img> natif animé", () => {
+    render(
+      wrap(
+        <StepImage
+          section={imageSection(
+            {},
+            { images: [makeImage({ storagePath: "test/anim.gif", mimeType: "image/gif" })] },
+          )}
+          alt="Section image"
+          loading="lazy"
+          testId="step-image"
+          className=""
+        />,
+      ),
+    );
+
+    const img = screen.getByTestId("step-image");
+    expect(img).toHaveAttribute("data-image-variant", "native");
+    expect(img).toHaveAttribute("loading", "lazy");
   });
 });
 

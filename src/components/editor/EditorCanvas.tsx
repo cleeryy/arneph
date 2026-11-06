@@ -53,7 +53,40 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
     },
     [contextSetSelectedId],
   );
-  const [configPanelSection, setConfigPanelSection] = React.useState<SectionWithImages | null>(null);
+  /**
+   * The panel targets a section, never a snapshot: the section is resolved
+   * from the live list on every render (undo, edits and id remaps included).
+   * `knownIds` records the ids present when the panel opened so an id remap
+   * (position kept, brand-new server id) is followed, while a renumbered
+   * neighbour filling the slot of a deleted section closes the panel.
+   */
+  const [configPanel, setConfigPanel] = React.useState<{
+    id: string;
+    position: number;
+    knownIds: ReadonlySet<string>;
+  } | null>(null);
+  const configPanelSection = React.useMemo<SectionWithImages | null>(() => {
+    if (!configPanel) return null;
+    const byId = sections.find((section) => section.id === configPanel.id);
+    if (byId) return byId;
+    const byPosition = sections.find(
+      (section) => section.position === configPanel.position,
+    );
+    if (!byPosition || configPanel.knownIds.has(byPosition.id)) return null;
+    return byPosition;
+  }, [configPanel, sections]);
+
+  const openConfigPanel = React.useCallback(
+    (section: SectionWithImages) => {
+      setConfigPanel({
+        id: section.id,
+        position: section.position,
+        knownIds: new Set(sections.map((current) => current.id)),
+      });
+    },
+    [sections],
+  );
+
   const [newSectionOpen, setNewSectionOpen] = React.useState(false);
   const [scrollTargetId, setScrollTargetId] = React.useState<string | null>(null);
 
@@ -136,7 +169,6 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
 
   const handleConfigSectionChange = React.useCallback((section: SectionWithImages) => {
     applySections(sections.map((current) => (current.id === section.id ? section : current)));
-    setConfigPanelSection(section);
   }, [sections, applySections]);
 
   const handleDelete = React.useCallback(
@@ -317,7 +349,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
                         title={t("editSection")}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setConfigPanelSection(section);
+                          openConfigPanel(section);
                         }}
                         className="size-7"
                       >
@@ -339,7 +371,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
          <Dialog
            open={!!configPanelSection}
            onOpenChange={(open) => {
-             if (!open) setConfigPanelSection(null);
+             if (!open) setConfigPanel(null);
            }}
          >
            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
@@ -349,7 +381,7 @@ export function EditorCanvas({ sections, onSectionsChange, webtoonId }: EditorCa
              <SectionConfigPanel
                section={configPanelSection}
                onSectionChange={handleConfigSectionChange}
-               onClose={() => setConfigPanelSection(null)}
+               onClose={() => setConfigPanel(null)}
              />
            </DialogContent>
          </Dialog>

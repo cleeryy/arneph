@@ -10,6 +10,7 @@ function SliderComponent({
   value,
   defaultValue,
   onValueChange,
+  onValueCommitted,
   max = 100,
   step = 1,
   min = 0,
@@ -18,6 +19,7 @@ function SliderComponent({
   value?: number[];
   defaultValue?: number[];
   onValueChange?: (value: number[]) => void;
+  onValueCommitted?: (value: number[]) => void;
   max?: number;
   min?: number;
   step?: number;
@@ -33,6 +35,7 @@ function SliderComponent({
       value={value}
       defaultValue={defaultValue}
       onValueChange={onValueChange}
+      onValueCommitted={onValueCommitted}
       max={max}
       min={min}
       step={step}

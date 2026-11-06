@@ -3,10 +3,13 @@
 import * as React from "react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { ArrowUp, BookOpen, RotateCcw, Settings } from "lucide-react";
+import { ArrowUp, BookOpen, RotateCcw, Settings, VolumeX } from "lucide-react";
 
 import { buildReaderSteps, globalProgress, type ReaderStep } from "@/lib/reader/steps";
-import { useReaderNavigation } from "@/hooks/useReaderNavigation";
+import {
+  normalizeWheelDelta,
+  useReaderNavigation,
+} from "@/hooks/useReaderNavigation";
 import { useSectionAudio } from "@/hooks/useSectionAudio";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { ReaderPageData } from "@/app/read/[webtoonId]/page";
@@ -20,6 +23,8 @@ import { LongYStep } from "./deck/LongYStep";
 
 const HEADER_HIDE_MS = 2000;
 const STORAGE_PREFIX = "arneph:reader-index:v1:";
+/** Intervalle minimal entre deux mises à jour de la progression long-y (~16 Hz). */
+const LONG_Y_PROGRESS_INTERVAL_MS = 60;
 
 /**
  * Position de défilement des images longues, par section. Conservée au niveau
@@ -52,7 +57,8 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     [data.webtoon.sections],
   );
   const nav = useReaderNavigation(steps);
-  const { playSectionAudio, pauseCurrent } = useSectionAudio();
+  const { playSectionAudio, pauseCurrent, unlocked, muted, toggleMuted } =
+    useSectionAudio();
   const hydrated = React.useSyncExternalStore(
     () => () => {},
     () => true,
@@ -63,12 +69,17 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
   const [headerVisible, setHeaderVisible] = React.useState(true);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [longYProgress, setLongYProgress] = React.useState(0);
+  const [resetToken, setResetToken] = React.useState(0);
   const settingsOpenRef = React.useRef(false);
   const [resumeDismissed, setResumeDismissed] = React.useState(false);
   const hideTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartY = React.useRef<number | null>(null);
+  const touchDelta = React.useRef(0);
   const wheelAccumulator = React.useRef(0);
   const wheelFrame = React.useRef<number | null>(null);
+  const longYProgressValue = React.useRef(0);
+  const longYProgressAt = React.useRef(0);
+  const longYProgressTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
   const navRef = React.useRef(nav);
   const stepKindRef = React.useRef<ReaderStep["kind"] | undefined>(undefined);
@@ -114,7 +125,9 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     if (!nav.isEnd && nav.index > 0) saveIndex(data.webtoon.id, nav.index);
   }, [data.webtoon.id, nav.index, nav.isEnd]);
 
-  // Audio : une seule section montée, on pilote directement.
+  // Audio : une seule section montée, on pilote directement. `unlocked` fait
+  // partie des dépendances : le premier geste doit relancer la piste mémorisée
+  // même si l'étape n'a pas changé.
   React.useEffect(() => {
     if (!step?.section.audioPath) {
       pauseCurrent();
@@ -124,7 +137,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       step.section.id,
       getSupabasePublicObjectUrl(step.section.audioPath),
     );
-  }, [step, playSectionAudio, pauseCurrent]);
+  }, [step, unlocked, playSectionAudio, pauseCurrent]);
 
   React.useEffect(() => () => pauseCurrent(), [pauseCurrent]);
 
@@ -141,6 +154,42 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     hideTimer.current = setTimeout(() => setHeaderVisible(false), HEADER_HIDE_MS);
   }, []);
 
+  // Timers de confort : ils ne doivent jamais survivre au démontage.
+  React.useEffect(
+    () => () => {
+      if (hideTimer.current !== null) {
+        clearTimeout(hideTimer.current);
+        hideTimer.current = null;
+      }
+      if (longYProgressTimer.current !== null) {
+        clearTimeout(longYProgressTimer.current);
+        longYProgressTimer.current = null;
+      }
+    },
+    [],
+  );
+
+  /**
+   * Progression d'une image longue : throttlée (~16 Hz) pour éviter un render
+   * React par frame de scroll. La dernière valeur est toujours publiée.
+   */
+  const handleLongYProgress = React.useCallback((value: number) => {
+    longYProgressValue.current = value;
+    const now = Date.now();
+    const elapsed = now - longYProgressAt.current;
+    if (elapsed >= LONG_Y_PROGRESS_INTERVAL_MS) {
+      longYProgressAt.current = now;
+      setLongYProgress(value);
+      return;
+    }
+    if (longYProgressTimer.current !== null) return;
+    longYProgressTimer.current = setTimeout(() => {
+      longYProgressTimer.current = null;
+      longYProgressAt.current = Date.now();
+      setLongYProgress(longYProgressValue.current);
+    }, LONG_Y_PROGRESS_INTERVAL_MS - elapsed);
+  }, []);
+
   // Le header se masque après quelques secondes ; chaque geste le réaffiche
   // via `revealHeader` (aucun setState synchrone dans cet effet).
   React.useEffect(() => {
@@ -153,21 +202,31 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     const el = containerRef.current;
     if (!el) return;
     const onWheel = (event: WheelEvent) => {
+      if (settingsOpenRef.current) return;
       if (isInteractiveTarget(event.target)) return;
-      if (event.deltaY > 0) dismissChrome();
+      // Ctrl/⌘ + molette = zoom navigateur : ne jamais l'avaler (WCAG 1.4.4).
+      if (event.ctrlKey || event.metaKey) return;
+      // Firefox renvoie des lignes (`DOM_DELTA_LINE`), pas des pixels.
+      const delta = normalizeWheelDelta(
+        event.deltaY,
+        event.deltaMode,
+        window.innerHeight,
+      );
+      if (delta === 0) return;
+      if (delta > 0) dismissChrome();
       else revealHeader();
       if (stepKindRef.current === "long-y") return;
       event.preventDefault();
 
       // Un seul rendu par frame : les trackpads émettent des dizaines
       // d'événements par seconde.
-      wheelAccumulator.current += event.deltaY;
+      wheelAccumulator.current += delta;
       if (wheelFrame.current === null) {
         wheelFrame.current = requestAnimationFrame(() => {
           wheelFrame.current = null;
-          const delta = wheelAccumulator.current;
+          const accumulated = wheelAccumulator.current;
           wheelAccumulator.current = 0;
-          navRef.current.handleWheel(delta);
+          navRef.current.handleWheel(accumulated);
         });
       }
     };
@@ -181,16 +240,29 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     };
   }, [revealHeader, dismissChrome]);
 
-  // Tactile : même logique, seuil géré par l'accumulateur du hook.
+  // Tactile : sur une étape discrète, un geste = une étape (commit au
+  // touchend). Les étapes épinglées gardent un pilotage continu.
   React.useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const isContinuousStep = () =>
+      stepKindRef.current === "pan-x" || stepKindRef.current === "animation";
     const onTouchStart = (event: TouchEvent) => {
+      if (settingsOpenRef.current) return;
       revealHeader();
       touchStartY.current = event.touches[0]?.clientY ?? null;
+      touchDelta.current = 0;
     };
     const onTouchMove = (event: TouchEvent) => {
-      if (isInteractiveTarget(event.target) || stepKindRef.current === "long-y") return;
+      if (settingsOpenRef.current) return;
+      // Pincement : laisser le zoom natif au navigateur (WCAG 1.4.4).
+      if (event.touches.length > 1) {
+        touchDelta.current = 0;
+        return;
+      }
+      if (isInteractiveTarget(event.target) || stepKindRef.current === "long-y") {
+        return;
+      }
       const current = event.touches[0]?.clientY;
       if (current === undefined || touchStartY.current === null) return;
       const delta = touchStartY.current - current;
@@ -199,13 +271,36 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       if (delta > 0) dismissChrome();
       else revealHeader();
       event.preventDefault();
-      navRef.current.handleWheel(delta);
+      if (isContinuousStep()) {
+        navRef.current.handleWheel(delta);
+        return;
+      }
+      // Les étapes image accumulent pendant le geste et ne naviguent qu'au
+      // relâchement, sinon un long swipe traverse plusieurs sections.
+      touchDelta.current += delta;
+    };
+    const resetTouch = () => {
+      touchStartY.current = null;
+      touchDelta.current = 0;
+    };
+    const onTouchEnd = (event: TouchEvent) => {
+      const accumulated = touchDelta.current;
+      resetTouch();
+      // Un doigt encore posé : ce n'est pas la fin du geste.
+      if (event.touches.length > 0) return;
+      if (settingsOpenRef.current || accumulated === 0) return;
+      if (isContinuousStep() || stepKindRef.current === "long-y") return;
+      navRef.current.handleWheel(accumulated);
     };
     el.addEventListener("touchstart", onTouchStart, { passive: true });
     el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", resetTouch);
     return () => {
       el.removeEventListener("touchstart", onTouchStart);
       el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", resetTouch);
     };
   }, [revealHeader, dismissChrome]);
 
@@ -251,7 +346,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [revealHeader]);
+  }, [revealHeader, dismissChrome]);
 
   // Entre deux images simples, l'échange doit être instantané : toute
   // animation laisserait voir le fond une frame.
@@ -301,12 +396,15 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       data-hydrated={hydrated ? "true" : "false"}
       className="relative h-[100dvh] overflow-hidden bg-background"
       onClick={(event) => {
+        if (settingsOpenRef.current) return;
         if (isInteractiveTarget(event.target)) return;
         if (step?.kind === "long-y") return;
         nav.handleTap(event.clientX, window.innerWidth);
       }}
     >
       <header
+        inert={!headerVisible}
+        aria-hidden={!headerVisible}
         data-visible={headerVisible ? "true" : "false"}
         className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/60 to-transparent px-4 pb-8 pt-[max(0.75rem,env(safe-area-inset-top))] transition-opacity duration-200 data-[visible=false]:opacity-0 motion-reduce:transition-none"
       >
@@ -324,6 +422,19 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
             <span className="text-xs tabular-nums text-white/80">
               {Math.min(nav.index + 1, total)}/{total}
             </span>
+            <button
+              type="button"
+              data-testid="reader-mute-button"
+              aria-label={t("mute")}
+              aria-pressed={muted}
+              onClick={toggleMuted}
+              className={
+                "inline-flex size-8 items-center justify-center rounded-md hover:bg-white/15 focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none " +
+                (muted ? "bg-white/15 text-white" : "text-white/90")
+              }
+            >
+              <VolumeX aria-hidden="true" className="size-4" />
+            </button>
             <button
               type="button"
               data-testid="reader-settings-button"
@@ -402,7 +513,8 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
               onScrollTopChange={(top) =>
                 longYScrollPositions.set(step.section.id, top)
               }
-              onScrollProgress={setLongYProgress}
+              onScrollProgress={handleLongYProgress}
+              resetToken={resetToken}
               onBoundary={(edge) => (edge === "bottom" ? nav.goNext() : nav.goPrev())}
             />
           ) : null}
@@ -415,7 +527,7 @@ export function ReaderDeck({ data }: { data: ReaderPageData }) {
       {!nav.isEnd && step?.kind === "long-y" ? (
         <button
           type="button"
-          onClick={() => nav.goTo(nav.index)}
+          onClick={() => setResetToken((token) => token + 1)}
           aria-label={t("backToTop")}
           className="absolute right-4 top-[max(3.5rem,calc(env(safe-area-inset-top)+3rem))] z-20 inline-flex size-9 items-center justify-center rounded-full border border-border bg-background/90 text-foreground shadow backdrop-blur focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >

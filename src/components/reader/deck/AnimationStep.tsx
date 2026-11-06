@@ -3,7 +3,6 @@
 import { useTranslations } from "next-intl";
 
 import type { SectionWithImages } from "@/lib/db/queries";
-import { spritePositionFromFrame } from "@/lib/scroll/transforms";
 import { MAX_SPRITE_PIXELS } from "@/lib/image/limits";
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { AnimationSectionConfig } from "@/types/webtoon";
@@ -192,14 +191,16 @@ export function AnimationStep({
     );
   }
 
-  const { x, y } = spritePositionFromFrame(
-    frameIndex,
-    columns,
-    frameWidth,
-    frameHeight,
-  );
+  // Géométrie relative : le sprite s'adapte à la taille rendue du conteneur
+  // (`max-width/max-height: 100%`), donc jamais rogné sur petit écran.
+  // `frameIndex` est borné à la grille réelle (config `frameCount` incohérente).
+  const gridFrame = Math.min(frameIndex, columns * rows - 1);
+  const column = gridFrame % columns;
+  const row = Math.floor(gridFrame / columns);
+  const xPercent = columns > 1 ? (column / (columns - 1)) * 100 : 0;
+  const yPercent = rows > 1 ? (row / (rows - 1)) * 100 : 0;
   const backgroundImage = getSupabasePublicObjectUrl(spritePath);
-  const backgroundSize = `${columns * frameWidth}px ${rows * frameHeight}px`;
+  const backgroundSize = `${columns * 100}% ${rows * 100}%`;
 
   return (
     <section
@@ -224,7 +225,7 @@ export function AnimationStep({
           backgroundImage: `url("${backgroundImage}")`,
           backgroundSize,
           backgroundRepeat: "no-repeat",
-          backgroundPosition: `${-x}px ${-y}px`,
+          backgroundPosition: `${xPercent}% ${yPercent}%`,
         }}
       />
     </section>

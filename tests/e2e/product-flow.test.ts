@@ -1,51 +1,15 @@
-import fs from "node:fs";
-import path from "node:path";
-
 import { test, expect, type Locator, type Page } from "@playwright/test";
 
 const BASE = "http://localhost:3000";
 const DEMO_TITLE = "Démo";
 const READING_INDEX_PREFIX = "arneph:reader-index:v1";
 
-/**
- * `next dev` lit `.env.local`, pas le process Playwright. On reprend donc les
- * mêmes clés (priorité à l'environnement déjà exporté) pour résoudre le
- * webtoon de démo via l'API REST Supabase, comme `e2e-flow.test.ts`.
- */
-function loadLocalEnv(): Record<string, string> {
-  const values: Record<string, string> = {};
-
-  for (const file of [".env.local", ".env"]) {
-    const fullPath = path.resolve(process.cwd(), file);
-    if (!fs.existsSync(fullPath)) continue;
-
-    for (const line of fs.readFileSync(fullPath, "utf8").split(/\r?\n/)) {
-      const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/.exec(line);
-      if (!match) continue;
-      const [, key, rawValue] = match;
-      if (key in values) continue;
-
-      let value = rawValue.trim();
-      if (
-        (value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))
-      ) {
-        value = value.slice(1, -1);
-      }
-      values[key] = value;
-    }
-  }
-
-  return values;
-}
-
-const LOCAL_ENV = loadLocalEnv();
+// `playwright.config.ts` charge `.env.local` puis `.env` via
+// `scripts/load-env.ts` avant de démarrer les workers : les clés sont donc
+// déjà disponibles ici, sans loader local.
 const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  LOCAL_ENV.NEXT_PUBLIC_SUPABASE_URL ||
-  "http://127.0.0.1:54321";
-const SERVICE_ROLE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY || LOCAL_ENV.SUPABASE_SERVICE_ROLE_KEY || "";
+  process.env.NEXT_PUBLIC_SUPABASE_URL || "http://127.0.0.1:54321";
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 
 async function apiRequest(method: string, url: string): Promise<Response> {
   const res = await fetch(`${SUPABASE_URL}${url}`, {

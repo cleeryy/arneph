@@ -14,18 +14,25 @@ interface EditorCanvasClientProps {
 
 export function EditorCanvasClient({ initialSections, webtoonId, initialTitle, initialVisibility }: EditorCanvasClientProps) {
   const { sections, setSections, setIsDirty, setWebtoonTitle, setVisibility } = useEditorState();
+  // Hydrate exactly once per webtoon: the RSC payload revalidated after a save
+  // must not overwrite edits made while the request was in flight.
+  const hydratedForRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
+    if (hydratedForRef.current === webtoonId) return;
+    hydratedForRef.current = webtoonId;
     setSections(initialSections);
-  }, [initialSections, setSections]);
-
-  React.useEffect(() => {
     if (initialTitle !== undefined) setWebtoonTitle(initialTitle);
-  }, [initialTitle, setWebtoonTitle]);
-
-  React.useEffect(() => {
     if (initialVisibility !== undefined) setVisibility(initialVisibility);
-  }, [initialVisibility, setVisibility]);
+  }, [
+    webtoonId,
+    initialSections,
+    initialTitle,
+    initialVisibility,
+    setSections,
+    setWebtoonTitle,
+    setVisibility,
+  ]);
 
   const handleSectionsChange = React.useCallback(
     (next: SectionWithImages[]) => {
