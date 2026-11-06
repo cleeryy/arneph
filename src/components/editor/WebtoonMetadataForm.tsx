@@ -42,8 +42,13 @@ export function WebtoonMetadataForm({
 }: WebtoonMetadataFormProps) {
   const t = useTranslations("editor");
   const tCommon = useTranslations("common");
-  const { webtoonTitle, webtoonDescription, setWebtoonTitle, setWebtoonDescription } =
-    useEditorState();
+  const {
+    webtoonTitle,
+    webtoonDescription,
+    setWebtoonTitle,
+    setWebtoonDescription,
+    setMetadataDirty,
+  } = useEditorState();
 
   const [title, setTitle] = React.useState(webtoonTitle ?? "");
   const [description, setDescription] = React.useState(
@@ -93,6 +98,7 @@ export function WebtoonMetadataForm({
         return;
       }
       commitContext(nextTitle, nextDescription);
+      setMetadataDirty(false);
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("metadataError"));
@@ -155,6 +161,7 @@ export function WebtoonMetadataForm({
 
       setCoverPath(storagePath);
       commitContext(nextTitle, nextDescription);
+      setMetadataDirty(false);
       setSaved(true);
     } catch (err) {
       if (err instanceof ImageProcessingError) {
@@ -171,11 +178,13 @@ export function WebtoonMetadataForm({
   function handleCoverChange(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    setMetadataDirty(true);
     void handleCoverUpload(file);
   }
 
   async function handleCoverRemove() {
     if (busy || coverPath === null) return;
+    setMetadataDirty(true);
     setError(null);
     setSaved(false);
 
@@ -200,6 +209,7 @@ export function WebtoonMetadataForm({
 
       setCoverPath(null);
       commitContext(nextTitle, nextDescription);
+      setMetadataDirty(false);
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("metadataError"));
@@ -313,7 +323,10 @@ export function WebtoonMetadataForm({
             id="webtoon-metadata-title"
             data-testid="metadata-title"
             value={title}
-            onChange={(event) => setTitle(event.target.value)}
+            onChange={(event) => {
+              setTitle(event.target.value);
+              setMetadataDirty(true);
+            }}
             disabled={busy}
             maxLength={120}
           />
@@ -326,7 +339,10 @@ export function WebtoonMetadataForm({
             id="webtoon-metadata-description"
             data-testid="metadata-description"
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={(event) => {
+              setDescription(event.target.value);
+              setMetadataDirty(true);
+            }}
             disabled={busy}
             rows={2}
             maxLength={2000}

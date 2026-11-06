@@ -43,6 +43,7 @@ export function EditorDetailLayoutContent({
     setSections,
     isDirty,
     setIsDirty,
+    metadataDirty,
     canUndo,
     canRedo,
     undo,
@@ -55,6 +56,10 @@ export function EditorDetailLayoutContent({
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<ActionResult | null>(null);
+  // Le garde-fou de sortie couvre tout ce qui n'est pas persisté : sections
+  // éditées et formulaire metadata. Le bouton Enregistrer du header reste
+  // dédié aux sections.
+  const hasUnsaved = isDirty || metadataDirty;
   // Verrou optimiste : dernière révision confirmée par le serveur. La ref
   // évite qu'un second save lancé avant le re-render reparte de l'ancienne
   // valeur et se fasse refuser pour un conflit fantôme.
@@ -76,7 +81,7 @@ export function EditorDetailLayoutContent({
   // Garde-fou fermeture d'onglet / rechargement : uniquement tant que des
   // modifications ne sont pas enregistrées.
   React.useEffect(() => {
-    if (!isDirty) return;
+    if (!hasUnsaved) return;
 
     function handleBeforeUnload(event: BeforeUnloadEvent) {
       event.preventDefault();
@@ -88,12 +93,12 @@ export function EditorDetailLayoutContent({
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [isDirty]);
+  }, [hasUnsaved]);
 
   // Best-effort back/forward guard: re-push the current entry when the user
   // declines to leave, so the editor is not unmounted by a cancelled popstate.
   React.useEffect(() => {
-    if (!isDirty) return;
+    if (!hasUnsaved) return;
 
     function handlePopState() {
       if (window.confirm(t("unsavedConfirm"))) return;
@@ -104,17 +109,17 @@ export function EditorDetailLayoutContent({
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [isDirty, t]);
+  }, [hasUnsaved, t]);
 
   // Client-side <Link> navigation does not fire beforeunload: confirm here.
   const guardLink = React.useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
-      if (!isDirty) return;
+      if (!hasUnsaved) return;
       if (!window.confirm(t("unsavedConfirm"))) {
         event.preventDefault();
       }
     },
-    [isDirty, t],
+    [hasUnsaved, t],
   );
 
   async function performSave(): Promise<boolean> {
@@ -301,7 +306,7 @@ export function EditorDetailLayoutContent({
             >
               {t("readerLink")}
             </Link>
-            {isDirty && (
+            {hasUnsaved && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600" data-testid="dirty-indicator">
                 <AlertCircle className="size-3.5" />
                 {t("unsavedChanges")}

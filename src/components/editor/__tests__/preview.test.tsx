@@ -300,6 +300,17 @@ describe("PreviewRenderer — correct component per section type", () => {
     expect(screen.getByTestId("long-y-step")).toBeInTheDocument();
   });
 
+  test("long-y preview is non-interactive: the wheel reaches the editor", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    render(wrap(<PreviewRenderer section={makeLongYSection()} />));
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    // `fireEvent` renvoie false quand un listener a appelé preventDefault().
+    const notCanceled = fireEvent.wheel(scroller, { deltaY: 240 });
+    expect(notCanceled).toBe(true);
+    expect(scroller.scrollTop).toBe(0);
+  });
+
   test("pan-x type renders a pan-x preview", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
     render(wrap(<PreviewRenderer section={makePanXSection()} />));

@@ -998,6 +998,45 @@ describe("Editor detail — metadata form", () => {
     expect(screen.queryByTestId("metadata-error")).not.toBeInTheDocument();
   });
 
+  test("a metadata edit arms the unsaved-changes guard and the metadata save disarms it", async () => {
+    vi.mocked(updateWebtoonMetadataAction).mockResolvedValueOnce({ ok: true });
+    await renderShell({
+      initialTitle: "Titre initial",
+      initialDescription: "Description initiale",
+      initialVisibility: "draft",
+    });
+
+    expect(screen.queryByTestId("dirty-indicator")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("metadata-title"), {
+      target: { value: "Titre modifié" },
+    });
+
+    expect(await screen.findByTestId("dirty-indicator")).toBeInTheDocument();
+    const guardedEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(guardedEvent);
+    expect(guardedEvent.defaultPrevented).toBe(true);
+
+    // Le bouton Enregistrer du header reste dédié aux sections.
+    expect(screen.getByTestId("save-button")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("metadata-save"));
+
+    await waitFor(() => {
+      expect(vi.mocked(updateWebtoonMetadataAction)).toHaveBeenCalledWith(
+        WEBTOON_ID,
+        { title: "Titre modifié", description: "Description initiale" },
+      );
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("dirty-indicator")).not.toBeInTheDocument();
+    });
+
+    const clearedEvent = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(clearedEvent);
+    expect(clearedEvent.defaultPrevented).toBe(false);
+  });
+
   test("an empty title is rejected inline and never reaches the action", async () => {
     await renderShell({
       initialTitle: "Titre",

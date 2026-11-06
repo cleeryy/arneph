@@ -35,7 +35,11 @@ export function PreviewRenderer({ section, progress = 0.5 }: PreviewRendererProp
         {section.type === "image" ? (
           <ImageStep section={section} />
         ) : section.type === "long-y" ? (
-          <LongYStep section={section} onBoundary={() => {}} />
+          <LongYStep
+            section={section}
+            onBoundary={() => {}}
+            interactive={false}
+          />
         ) : section.type === "pan-x" ? (
           <PanXStep section={section} progress={progress} gestureZones={false} />
         ) : (

@@ -26,6 +26,13 @@ export interface EditorState {
   canRedo: boolean;
   isDirty: boolean;
   setIsDirty: (dirty: boolean) => void;
+  /**
+   * Modifications du formulaire metadata (titre, description, couverture) non
+   * encore enregistrées. Distinct de `isDirty`, qui suit les sections : le
+   * bouton Enregistrer du header ne concerne que les sections.
+   */
+  metadataDirty: boolean;
+  setMetadataDirty: (dirty: boolean) => void;
   webtoonTitle: string | null;
   setWebtoonTitle: (title: string | null) => void;
   webtoonDescription: string | null;
@@ -259,6 +266,7 @@ export function EditorStateProvider({
   const [selectedSectionId, setSelectedSectionId] = React.useState<
     string | null
   >(null);
+  const [metadataDirty, setMetadataDirty] = React.useState(false);
 
   const setSections = React.useCallback(
     (sections: SectionWithImages[]) => {
@@ -323,6 +331,8 @@ export function EditorStateProvider({
       canRedo: history.future.length > 0,
       isDirty: history.isDirty,
       setIsDirty,
+      metadataDirty,
+      setMetadataDirty,
       webtoonTitle,
       setWebtoonTitle,
       webtoonDescription,
@@ -342,6 +352,7 @@ export function EditorStateProvider({
       undo,
       redo,
       setIsDirty,
+      metadataDirty,
       webtoonTitle,
       webtoonDescription,
       visibility,

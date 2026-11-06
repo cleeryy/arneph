@@ -30,6 +30,12 @@ export interface LongYStepProps {
    * Un changement remet `scrollTop` à 0 sans démonter l'étape.
    */
   resetToken?: number;
+  /**
+   * `false` en aperçu éditeur : aucun listener de geste n'est attaché, la
+   * molette et le tactile remontent au conteneur parent au lieu d'être
+   * interceptés par cette étape.
+   */
+  interactive?: boolean;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -57,6 +63,7 @@ export function LongYStep({
   onScrollTopChange,
   onScrollProgress,
   resetToken = 0,
+  interactive = true,
 }: LongYStepProps) {
   const t = useTranslations("reader.section");
   const config = section.config as LongYSectionConfig;
@@ -167,9 +174,11 @@ export function LongYStep({
   );
 
   // Gestes : listeners natifs non passifs pour pouvoir bloquer le scroll natif.
+  // En aperçu (`interactive === false`), on n'attache rien : la molette doit
+  // remonter au conteneur éditeur, sinon la page ne défile plus.
   React.useEffect(() => {
     const el = scrollerRef.current;
-    if (!el) return;
+    if (!el || !interactive) return;
 
     const stopMomentum = () => {
       if (momentumRef.current !== null) {
@@ -309,7 +318,7 @@ export function LongYStep({
       el.removeEventListener("touchend", onTouchEnd);
       el.removeEventListener("touchcancel", onTouchEnd);
     };
-  }, [publish, scrollBy, notify]);
+  }, [publish, scrollBy, notify, interactive]);
 
   return (
     <section

@@ -426,6 +426,54 @@ describe("LongYStep — robustesse molette (RD-2, RD-3, RD-8)", () => {
   });
 });
 
+describe("LongYStep — mode non interactif (aperçu éditeur)", () => {
+  test("aucun listener de geste : la molette remonte au parent", () => {
+    const onBoundary = vi.fn();
+    render(
+      wrap(
+        <LongYStep
+          section={longSection()}
+          onBoundary={onBoundary}
+          interactive={false}
+        />,
+      ),
+    );
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, {
+      scrollTop: 0,
+      clientHeight: 800,
+      scrollHeight: 4000,
+    });
+
+    // `fireEvent` renvoie false quand un listener a appelé preventDefault().
+    const notCanceled = fireEvent.wheel(scroller, { deltaY: 240 });
+    expect(notCanceled).toBe(true);
+    expect(scroller.scrollTop).toBe(0);
+    expect(onBoundary).not.toHaveBeenCalled();
+
+    const touchNotCanceled = fireEvent.touchMove(scroller, {
+      touches: [{ clientY: 200 }],
+    });
+    expect(touchNotCanceled).toBe(true);
+  });
+
+  test("par défaut, l'étape reste interactive", () => {
+    const onBoundary = vi.fn();
+    render(wrap(<LongYStep section={longSection()} onBoundary={onBoundary} />));
+
+    const scroller = screen.getByTestId("long-y-scroll");
+    setScrollMetrics(scroller, {
+      scrollTop: 0,
+      clientHeight: 800,
+      scrollHeight: 4000,
+    });
+
+    fireEvent.wheel(scroller, { deltaY: -240 });
+    expect(onBoundary).toHaveBeenCalledWith("top");
+  });
+});
+
 describe("LongYStep — reset token (RD-7)", () => {
   test("un changement de resetToken remet le défilement en haut", () => {
     const { rerender } = render(
