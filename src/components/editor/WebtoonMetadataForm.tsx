@@ -17,7 +17,7 @@ import {
   resizeImage,
 } from "@/lib/image/process";
 import { MAX_UPLOAD_BYTES } from "@/lib/image/limits";
-import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
+import { getSupabaseRenderUrl } from "@/lib/supabase/public-url";
 import { uploadSectionAsset } from "@/lib/supabase/upload";
 
 interface WebtoonMetadataFormProps {
@@ -232,12 +232,14 @@ export function WebtoonMetadataForm({
             <div className="relative aspect-[4/5] w-20 shrink-0 overflow-hidden rounded-md border border-border bg-muted">
               {coverPath ? (
                 <Image
-                  src={getSupabasePublicObjectUrl(coverPath)}
+                  src={coverPath}
+                  loader={({ src, width }) =>
+                    getSupabaseRenderUrl(src, { width })
+                  }
                   alt={title.trim() || t("previewAlt")}
                   width={320}
                   height={400}
                   sizes="80px"
-                  unoptimized
                   data-testid="metadata-cover-preview"
                   className="h-full w-full object-cover"
                 />

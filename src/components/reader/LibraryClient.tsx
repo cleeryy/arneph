@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 
-import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
+import { getSupabaseRenderUrl } from "@/lib/supabase/public-url";
 import { Input } from "@/components/ui/input";
 import {
   Card,
@@ -64,8 +64,12 @@ function compareByNewest(a: LibraryWebtoon, b: LibraryWebtoon): number {
   return diff;
 }
 
-function compareByTitle(a: LibraryWebtoon, b: LibraryWebtoon): number {
-  return a.title.localeCompare(b.title, "fr") || a.id.localeCompare(b.id);
+function compareByTitle(
+  a: LibraryWebtoon,
+  b: LibraryWebtoon,
+  locale: string,
+): number {
+  return a.title.localeCompare(b.title, locale) || a.id.localeCompare(b.id);
 }
 
 /** Filtrage + tri purs, exportés pour des tests unitaires directs. */
@@ -73,6 +77,7 @@ export function selectLibraryWebtoons(
   webtoons: LibraryWebtoon[],
   query: string,
   sort: LibrarySort,
+  locale = "fr",
 ): LibraryWebtoon[] {
   const normalizedQuery = normalizeForSearch(query.trim());
   const filtered = webtoons.filter((webtoon) =>
@@ -80,7 +85,9 @@ export function selectLibraryWebtoons(
   );
 
   return filtered.sort(
-    sort === "title" ? compareByTitle : compareByNewest,
+    sort === "title"
+      ? (a, b) => compareByTitle(a, b, locale)
+      : compareByNewest,
   );
 }
 
@@ -109,16 +116,12 @@ export default function LibraryClient({ webtoons }: LibraryClientProps) {
   }, [query]);
 
   const visibleWebtoons = React.useMemo(
-    () => selectLibraryWebtoons(webtoons, debouncedQuery, sort),
-    [webtoons, debouncedQuery, sort],
+    () => selectLibraryWebtoons(webtoons, debouncedQuery, sort, locale),
+    [webtoons, debouncedQuery, sort, locale],
   );
 
-  // Aucune clé i18n dédiée au bouton d'effacement (messages hors périmètre) :
-  // libellés locaux minimaux, alignés sur la locale active.
-  const clearLabel = locale.startsWith("fr")
-    ? "Effacer la recherche"
-    : "Clear search";
-  const resetLabel = locale.startsWith("fr") ? "Réinitialiser" : "Reset";
+  const clearLabel = t("clearSearch");
+  const resetLabel = t("reset");
 
   const dateFormatter = React.useMemo(
     () =>
@@ -238,13 +241,15 @@ export default function LibraryClient({ webtoons }: LibraryClientProps) {
                     <div className="relative aspect-[4/5] w-full overflow-hidden bg-muted">
                       {webtoon.coverPath ? (
                         <Image
-                          src={getSupabasePublicObjectUrl(webtoon.coverPath)}
+                          src={webtoon.coverPath}
+                          loader={({ src, width }) =>
+                            getSupabaseRenderUrl(src, { width })
+                          }
                           alt={webtoon.title}
                           width={800}
-                          height={450}
+                          height={1000}
                           sizes="(min-width: 1024px) 320px, (min-width: 640px) 50vw, 100vw"
                           className="h-full w-full object-cover motion-safe:transition-transform motion-safe:duration-500 motion-safe:ease-out motion-safe:group-hover:scale-[1.03]"
-                          unoptimized
                         />
                       ) : (
                         <div

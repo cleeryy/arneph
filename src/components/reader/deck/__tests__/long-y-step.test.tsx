@@ -66,10 +66,6 @@ vi.mock("next/image", () => ({
   },
 }));
 
-vi.mock("motion/react", () => ({
-  useReducedMotion: () => false,
-}));
-
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();

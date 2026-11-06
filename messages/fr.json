@@ -6,7 +6,8 @@
     "edit": "Modifier",
     "add": "Ajouter",
     "back": "Retour",
-    "loading": "Chargement…"
+    "loading": "Chargement…",
+    "appDescription": "Lecteur et éditeur de webtoons"
   },
   "home": {
     "title": "Lecteur de webtoon",
@@ -176,13 +177,18 @@
   "errors": {
     "notFound": "Page introuvable",
     "generic": "Une erreur est survenue. Réessayez plus tard.",
-    "retry": "Réessayer"
+    "retry": "Réessayer",
+    "backHome": "Retour à l'accueil",
+    "backToEditor": "Retour à l'éditeur",
+    "openReader": "Ouvrir le lecteur"
   },
   "library": {
     "searchPlaceholder": "Rechercher un webtoon…",
     "sortBy": "Trier par",
     "sortNewest": "Plus récents",
     "sortTitle": "Titre (A→Z)",
-    "noResults": "Aucun webtoon ne correspond."
+    "noResults": "Aucun webtoon ne correspond.",
+    "clearSearch": "Effacer la recherche",
+    "reset": "Réinitialiser"
   }
 }

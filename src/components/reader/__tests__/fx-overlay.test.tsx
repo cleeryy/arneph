@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
@@ -36,19 +36,52 @@ vi.mock("next/image", () => ({
   },
 }));
 
-const { mockUseReducedMotion } = vi.hoisted(() => ({
-  mockUseReducedMotion: vi.fn(),
-}));
-
-vi.mock("motion/react", () => ({
-  useReducedMotion: mockUseReducedMotion,
-}));
-
 const BASE_URL = "http://127.0.0.1:54321";
+
+/**
+ * `window.matchMedia` factice et pilotable : jsdom ne l'implémente pas.
+ * Le hook local `usePrefersReducedMotion` s'abonne à `change` ; `setMatches`
+ * notifie les abonnés comme le ferait le navigateur.
+ */
+function stubMatchMedia(initialMatches: boolean) {
+  const listeners = new Set<() => void>();
+  let matches = initialMatches;
+
+  const mediaQueryList = {
+    get matches() {
+      return matches;
+    },
+    media: "(prefers-reduced-motion: reduce)",
+    onchange: null,
+    addEventListener: vi.fn((_type: string, listener: () => void) => {
+      listeners.add(listener);
+    }),
+    removeEventListener: vi.fn((_type: string, listener: () => void) => {
+      listeners.delete(listener);
+    }),
+    addListener: vi.fn((listener: () => void) => {
+      listeners.add(listener);
+    }),
+    removeListener: vi.fn((listener: () => void) => {
+      listeners.delete(listener);
+    }),
+    dispatchEvent: vi.fn(() => true),
+  };
+
+  vi.stubGlobal("matchMedia", vi.fn(() => mediaQueryList));
+
+  return {
+    setMatches(nextMatches: boolean) {
+      matches = nextMatches;
+      for (const listener of listeners) listener();
+    },
+  };
+}
 
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 function wrap(ui: ReactElement) {
@@ -62,7 +95,7 @@ function wrap(ui: ReactElement) {
 describe("FxOverlay", () => {
   test("rend <img> avec src = URL publique construite depuis fxPath", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
-    mockUseReducedMotion.mockReturnValue(false);
+    stubMatchMedia(false);
 
     render(
       wrap(
@@ -86,7 +119,7 @@ describe("FxOverlay", () => {
 
   test("position center → style transform translate(-50%,-50%) + top/left 50%", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
-    mockUseReducedMotion.mockReturnValue(false);
+    stubMatchMedia(false);
 
     render(
       wrap(
@@ -110,7 +143,7 @@ describe("FxOverlay", () => {
 
   test("size percent width 50 → style width 50%", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
-    mockUseReducedMotion.mockReturnValue(false);
+    stubMatchMedia(false);
 
     render(
       wrap(
@@ -131,7 +164,7 @@ describe("FxOverlay", () => {
 
   test("opacity 0.5 → style opacity 0.5", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
-    mockUseReducedMotion.mockReturnValue(false);
+    stubMatchMedia(false);
 
     render(
       wrap(
@@ -152,7 +185,7 @@ describe("FxOverlay", () => {
 
   test("reduced-motion → aria-hidden", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
-    mockUseReducedMotion.mockReturnValue(true);
+    stubMatchMedia(true);
 
     render(
       wrap(
@@ -170,12 +203,78 @@ describe("FxOverlay", () => {
     const img = screen.getByTestId("fx-overlay");
     expect(img).toHaveAttribute("aria-hidden", "true");
   });
+
+  test("mouvement autorisé → pas d'aria-hidden", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    stubMatchMedia(false);
+
+    render(
+      wrap(
+        <FxOverlay
+          fxPath="test/fx.gif"
+          fxConfig={{
+            position: { x: "center", y: "center" },
+            size: { mode: "percent", width: 50 },
+            opacity: 0.5,
+          }}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId("fx-overlay")).not.toHaveAttribute("aria-hidden");
+  });
+
+  test("suit un changement du réglage système prefers-reduced-motion", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+    const media = stubMatchMedia(false);
+
+    render(
+      wrap(
+        <FxOverlay
+          fxPath="test/fx.gif"
+          fxConfig={{
+            position: { x: "center", y: "center" },
+            size: { mode: "percent", width: 50 },
+            opacity: 0.5,
+          }}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId("fx-overlay")).not.toHaveAttribute("aria-hidden");
+
+    act(() => media.setMatches(true));
+
+    expect(screen.getByTestId("fx-overlay")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  });
+
+  test("matchMedia indisponible (SSR/jsdom) → mouvement autorisé", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
+
+    render(
+      wrap(
+        <FxOverlay
+          fxPath="test/fx.gif"
+          fxConfig={{
+            position: { x: "center", y: "center" },
+            size: { mode: "percent", width: 50 },
+            opacity: 0.5,
+          }}
+        />,
+      ),
+    );
+
+    expect(screen.getByTestId("fx-overlay")).not.toHaveAttribute("aria-hidden");
+  });
 });
 
 describe("FxOverlay integration — ImageSection", () => {
   test("pas de rendu FxOverlay si fxPath absent", () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", BASE_URL);
-    mockUseReducedMotion.mockReturnValue(false);
+    stubMatchMedia(false);
 
     const { container } = render(
       wrap(

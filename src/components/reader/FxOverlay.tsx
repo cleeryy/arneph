@@ -1,8 +1,46 @@
 "use client";
 
-import { useReducedMotion } from "motion/react";
+import { useSyncExternalStore } from "react";
+
 import { getSupabasePublicObjectUrl } from "@/lib/supabase/public-url";
 import type { FxOverlayConfig } from "@/types/webtoon";
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeToReducedMotion(onChange: () => void): () => void {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return () => {};
+  }
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+  mediaQuery.addEventListener("change", onChange);
+  return () => mediaQuery.removeEventListener("change", onChange);
+}
+
+function getReducedMotionSnapshot(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
+
+/** Snapshot serveur/hydratation : aucune préférence connue → mouvement autorisé. */
+function getReducedMotionServerSnapshot(): boolean {
+  return false;
+}
+
+/**
+ * Préférence système `prefers-reduced-motion` sans dépendance à `motion`.
+ *
+ * `useSyncExternalStore` garde le rendu SSR stable (`false`) puis se synchronise
+ * avec le média côté navigateur, y compris quand l'utilisateur change le réglage.
+ */
+function usePrefersReducedMotion(): boolean {
+  return useSyncExternalStore(
+    subscribeToReducedMotion,
+    getReducedMotionSnapshot,
+    getReducedMotionServerSnapshot,
+  );
+}
 
 interface FxOverlayProps {
   fxPath: string;
@@ -17,7 +55,7 @@ const DEFAULT_FX_CONFIG: FxOverlayConfig = {
 };
 
 export function FxOverlay({ fxPath, fxConfig, alt }: FxOverlayProps) {
-  const reducedMotion = useReducedMotion() === true;
+  const reducedMotion = usePrefersReducedMotion();
 
   if (!fxPath) return null;
 

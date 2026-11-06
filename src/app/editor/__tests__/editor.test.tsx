@@ -16,21 +16,37 @@ import frMessages from "../../../../messages/fr.json";
 
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
-    const { src, alt, width, height, loading, priority, className, sizes, ...rest } =
-      props as {
+    const {
+      src,
+      alt,
+      width,
+      height,
+      loading,
+      priority,
+      className,
+      sizes,
+      loader,
+      ...rest
+    } = props as {
+      src: string;
+      alt: string;
+      width: number;
+      height: number;
+      loading?: "eager" | "lazy";
+      priority?: boolean;
+      className?: string;
+      sizes?: string;
+      loader?: (args: {
         src: string;
-        alt: string;
         width: number;
-        height: number;
-        loading?: "eager" | "lazy";
-        priority?: boolean;
-        className?: string;
-        sizes?: string;
-      };
+        quality?: number;
+      }) => string;
+    };
+    const resolved = loader ? loader({ src, width }) : src;
     return (
       <img
         data-testid="next-image"
-        src={src}
+        src={resolved}
         alt={alt}
         width={width}
         height={height}
@@ -1130,7 +1146,7 @@ describe("Editor detail — cover upload", () => {
     const preview = await screen.findByTestId("metadata-cover-preview");
     expect(preview.getAttribute("src")).toContain(path);
     expect(preview.getAttribute("src")).toContain(
-      "/storage/v1/object/public/webtoon-images/",
+      "/storage/v1/render/image/public/webtoon-images/",
     );
     expect(preview).toHaveAttribute("alt", "Titre");
   });

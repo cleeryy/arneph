@@ -3,26 +3,32 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
 // next/image requiert la config optimizer (hors test) → mock qui expose src/w/h.
-// `unoptimized` est conservé en data-attribute : les assets Supabase ne doivent
-// jamais passer par l'optimiseur Next (règle AGENTS.md).
+// Le loader imgproxy est appliqué comme le ferait Next : les assets Supabase
+// ne passent jamais par l'optimiseur Next (règle AGENTS.md).
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
-    const { src, alt, width, height, className, unoptimized } = props as {
+    const { src, alt, width, height, className, sizes, loader } = props as {
       src: string;
       alt: string;
       width: number;
       height: number;
       className?: string;
-      unoptimized?: boolean;
+      sizes?: string;
+      loader?: (args: {
+        src: string;
+        width: number;
+        quality?: number;
+      }) => string;
     };
+    const resolved = loader ? loader({ src, width, quality: undefined }) : src;
     return (
       <img
         data-testid="next-image"
-        data-unoptimized={String(Boolean(unoptimized))}
         alt={alt}
-        src={src}
+        src={resolved}
         width={width}
         height={height}
+        data-sizes={sizes}
         className={className}
       />
     );
@@ -40,6 +46,20 @@ const messages = {
     sortNewest: "Plus récents",
     sortTitle: "Titre (A→Z)",
     noResults: "Aucun webtoon ne correspond.",
+    clearSearch: "Effacer la recherche",
+    reset: "Réinitialiser",
+  },
+};
+
+const enMessages = {
+  library: {
+    searchPlaceholder: "Search a webtoon…",
+    sortBy: "Sort by",
+    sortNewest: "Newest",
+    sortTitle: "Title (A→Z)",
+    noResults: "No webtoon matches.",
+    clearSearch: "Clear search",
+    reset: "Reset",
   },
 };
 
@@ -64,9 +84,12 @@ const webtoons: LibraryWebtoon[] = [
   },
 ];
 
-function renderLibrary(items: LibraryWebtoon[] = webtoons) {
+function renderLibrary(items: LibraryWebtoon[] = webtoons, locale = "fr") {
   return render(
-    <NextIntlClientProvider locale="fr" messages={messages}>
+    <NextIntlClientProvider
+      locale={locale}
+      messages={locale === "fr" ? messages : enMessages}
+    >
       <LibraryClient webtoons={items} />
     </NextIntlClientProvider>,
   );
@@ -86,7 +109,7 @@ afterEach(() => {
 });
 
 describe("LibraryClient", () => {
-  test("affiche la liste serveur, liens /read/:id et image non optimisée", () => {
+  test("affiche la liste serveur, liens /read/:id et couverture via loader imgproxy", () => {
     renderLibrary();
 
     expect(screen.getByText("Zéphyr")).toBeInTheDocument();
@@ -100,8 +123,16 @@ describe("LibraryClient", () => {
 
     const image = screen.getByTestId("next-image");
     expect(image).toHaveAttribute("alt", "Éclat d'été");
-    expect(image.getAttribute("src")).toContain("covers/eclat.webp");
-    expect(image).toHaveAttribute("data-unoptimized", "true");
+    expect(image).toHaveAttribute("width", "800");
+    expect(image).toHaveAttribute("height", "1000");
+
+    const url = new URL(image.getAttribute("src") ?? "");
+    expect(url.pathname).toBe(
+      "/storage/v1/render/image/public/webtoon-images/covers/eclat.webp",
+    );
+    expect(url.searchParams.get("width")).toBe("800");
+    expect(url.searchParams.get("quality")).toBe("75");
+    expect(image).not.toHaveAttribute("data-unoptimized");
   });
 
   test("trie par défaut du plus récent au plus ancien (createdAt desc)", () => {
@@ -153,7 +184,26 @@ describe("LibraryClient", () => {
         "Aucun webtoon ne correspond.",
       ),
     );
+    expect(
+      screen.getByRole("button", { name: "Réinitialiser" }),
+    ).toBeInTheDocument();
     expect(screen.queryAllByRole("link")).toHaveLength(0);
+  });
+
+  test("libellés d'effacement pilotés par la locale active (en)", async () => {
+    renderLibrary(webtoons, "en");
+
+    fireEvent.change(screen.getByTestId("library-search"), {
+      target: { value: "introuvable" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("library-no-results")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Clear search" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset" })).toBeInTheDocument();
   });
 
   test("le bouton d'effacement restaure la liste complète", async () => {

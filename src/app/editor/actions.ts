@@ -675,7 +675,7 @@ export async function unpublishWebtoon(
       { visibility: "draft" },
       auth.user.id,
     );
-    if (!result) throw new Error("Webtoon not found");
+    if (!result) throw new Error("Webtoon introuvable.");
 
     revalidatePath(`/editor/${webtoonId}`);
     revalidatePath("/read");

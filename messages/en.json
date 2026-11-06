@@ -6,7 +6,8 @@
     "edit": "Edit",
     "add": "Add",
     "back": "Back",
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "appDescription": "Webtoon reader and editor"
   },
   "home": {
     "title": "Webtoon reader",
@@ -176,13 +177,18 @@
   "errors": {
     "notFound": "Page not found",
     "generic": "Something went wrong. Please try again later.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "backHome": "Back to home",
+    "backToEditor": "Back to editor",
+    "openReader": "Open the reader"
   },
   "library": {
     "searchPlaceholder": "Search a webtoon…",
     "sortBy": "Sort by",
     "sortNewest": "Newest",
     "sortTitle": "Title (A→Z)",
-    "noResults": "No webtoon matches."
+    "noResults": "No webtoon matches.",
+    "clearSearch": "Clear search",
+    "reset": "Reset"
   }
 }

@@ -1,8 +1,18 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import {
+  createClient,
+  type SupabaseClient,
+  type SupabaseClientOptions,
+} from "@supabase/supabase-js";
 import WebSocket from "ws";
 import { deflateSync } from "node:zlib";
 
 import { loadLocalEnv } from "./load-env";
+
+// `@types/ws` déclare une surcharge `constructor(address: null)` que Supabase
+// ne peut pas satisfaire ; le transport réel est compatible à l'exécution.
+type RealtimeTransport = NonNullable<
+  SupabaseClientOptions<"public">["realtime"]
+>["transport"];
 
 const BUCKET = "webtoon-images";
 const FRAME_WIDTH = 800;
@@ -369,7 +379,7 @@ export async function seedDemo(force: boolean = false): Promise<{ webtoonId: str
 
   const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
-    realtime: { transport: WebSocket },
+    realtime: { transport: WebSocket as unknown as RealtimeTransport },
   });
 
   let firstWebtoonId: string | null = null;

@@ -57,11 +57,6 @@ vi.mock("next/image", () => ({
   },
 }));
 
-// FxOverlay lit `useReducedMotion` : hors navigateur réel, on fige à false.
-vi.mock("motion/react", () => ({
-  useReducedMotion: () => false,
-}));
-
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();

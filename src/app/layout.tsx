@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NextIntlClientProvider } from "next-intl";
-import { getLocale } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,10 +14,14 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "Arneph",
-  description: "Lecteur et éditeur de webtoons",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("common");
+
+  return {
+    title: "Arneph",
+    description: t("appDescription"),
+  };
+}
 
 export default async function RootLayout({
   children,
