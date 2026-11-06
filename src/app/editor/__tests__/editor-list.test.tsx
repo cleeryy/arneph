@@ -119,6 +119,18 @@ describe("Editor list — creation goes through the server action", () => {
   });
 });
 
+describe("Editor list — card content", () => {
+  test("keeps the webtoon title and the edit link visible", () => {
+    renderList([makeWebtoon("w1", "Mon histoire", "draft")]);
+
+    expect(screen.getByText("Mon histoire")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Éditer" })).toHaveAttribute(
+      "href",
+      "/editor/w1",
+    );
+  });
+});
+
 describe("Editor list — reader links", () => {
   test("a draft card offers no dead /read/:id link", () => {
     renderList([makeWebtoon("draft-1", "Brouillon", "draft")]);

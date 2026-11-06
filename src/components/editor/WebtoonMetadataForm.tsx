@@ -17,6 +17,7 @@ import {
   resizeImage,
 } from "@/lib/image/process";
 import { MAX_UPLOAD_BYTES } from "@/lib/image/limits";
+import { imageErrorKey } from "@/lib/image/error-message";
 import { getSupabaseRenderUrl } from "@/lib/supabase/public-url";
 import { uploadSectionAsset } from "@/lib/supabase/upload";
 
@@ -42,6 +43,8 @@ export function WebtoonMetadataForm({
 }: WebtoonMetadataFormProps) {
   const t = useTranslations("editor");
   const tCommon = useTranslations("common");
+  /** Traducteur racine : les clés d'erreur image sont complètes (`editor.*`). */
+  const tRoot = useTranslations();
   const {
     webtoonTitle,
     webtoonDescription,
@@ -165,7 +168,7 @@ export function WebtoonMetadataForm({
       setSaved(true);
     } catch (err) {
       if (err instanceof ImageProcessingError) {
-        setError(err.message);
+        setError(tRoot(imageErrorKey(err.code)));
       } else {
         setError(t("uploadImageErrorGeneric"));
       }

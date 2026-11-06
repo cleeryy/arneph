@@ -8,6 +8,7 @@ import { Save, Globe, Lock, AlertCircle, Undo2, Redo2 } from "lucide-react";
 import { useEditorState, remapSectionIds } from "@/components/editor/EditorStateContext";
 import { WebtoonMetadataForm } from "@/components/editor/WebtoonMetadataForm";
 import { saveWebtoon, publishWebtoon, unpublishWebtoon } from "@/app/editor/actions";
+import { signOut } from "@/lib/auth/actions";
 import { sectionConfigSchema } from "@/lib/schemas";
 import { isSectionType } from "@/lib/editor/sections";
 import { sectionTypeLabel } from "@/lib/editor/section-labels";
@@ -114,6 +115,18 @@ export function EditorDetailLayoutContent({
   // Client-side <Link> navigation does not fire beforeunload: confirm here.
   const guardLink = React.useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
+      if (!hasUnsaved) return;
+      if (!window.confirm(t("unsavedConfirm"))) {
+        event.preventDefault();
+      }
+    },
+    [hasUnsaved, t],
+  );
+
+  // La déconnexion est une Server Action : le beforeunload ne couvre pas le
+  // trajet, on confirme donc la sortie du formulaire comme pour les liens.
+  const guardSignOut = React.useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
       if (!hasUnsaved) return;
       if (!window.confirm(t("unsavedConfirm"))) {
         event.preventDefault();
@@ -306,6 +319,14 @@ export function EditorDetailLayoutContent({
             >
               {t("readerLink")}
             </Link>
+            <form action={signOut} onSubmit={guardSignOut}>
+              <button
+                type="submit"
+                className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+              >
+                {t("signOut")}
+              </button>
+            </form>
             {hasUnsaved && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600" data-testid="dirty-indicator">
                 <AlertCircle className="size-3.5" />

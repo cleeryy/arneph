@@ -1,3 +1,5 @@
+import { cache } from "react";
+
 import { supabase, type Database } from "./server";
 import type {
   ImageRecord,
@@ -265,7 +267,21 @@ export async function listWebtoons(ownerId?: string): Promise<Webtoon[]> {
   return (data ?? []).map((row: WebtoonRow) => mapWebtoon(row));
 }
 
-export async function getWebtoon(
+/**
+ * Webtoon complet de la requête courante.
+ *
+ * Enveloppé dans `cache()` React : le layout et la page de l'éditeur lisent le
+ * même webtoon, et le second appel réutilise la promesse du premier au lieu de
+ * relancer les trois requêtes PostgREST (webtoon + sections + images).
+ *
+ * La mémoïsation est strictement limitée à une requête :
+ * - hors d'un contexte React (tests unitaires, scripts, `tsx`), `cache` est un
+ *   passe-plat, donc aucune donnée périmée ne survit entre deux appels ;
+ * - les Server Actions lisent une seule fois, avant d'écrire, et ne
+ *   relisent jamais dans la même requête : pas de lecture après écriture
+ *   servie depuis le cache.
+ */
+export const getWebtoon = cache(async function getWebtoon(
   id: string,
   ownerId?: string,
 ): Promise<WebtoonWithSections | null> {
@@ -311,7 +327,7 @@ export async function getWebtoon(
   });
 
   return { ...mapWebtoon(webtoonRow as WebtoonRow), sections };
-}
+});
 
 // ---------------------------------------------------------------------------
 // Sections

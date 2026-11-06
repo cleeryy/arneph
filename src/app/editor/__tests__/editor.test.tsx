@@ -6,6 +6,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
@@ -85,6 +86,12 @@ vi.mock("@/app/editor/actions", () => ({
   saveWebtoon: vi.fn(),
   publishWebtoon: vi.fn(),
   unpublishWebtoon: vi.fn(),
+}));
+
+// EditorDetailShell importe la Server Action `signOut` : son module tire
+// `next/headers` + `server-only`, indisponibles en jsdom.
+vi.mock("@/lib/auth/actions", () => ({
+  signOut: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -1753,5 +1760,81 @@ describe("Editor DB integration (mocked)", () => {
   test("deleteWebtoon mock works", async () => {
     const result = await mockDeleteWebtoon("w1");
     expect(result).toBe(true);
+  });
+});
+
+describe("Editor — single app header per page (ED-13)", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  test("the segment layout renders neither a header nor a main", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync(
+      "/root/arneph/src/app/editor/layout.tsx",
+      "utf8",
+    );
+    // Ignore the explanatory JSDoc: only the rendered JSX matters here.
+    const jsx = source.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    expect(jsx).not.toMatch(/<header[\s>]/);
+    expect(jsx).not.toMatch(/<main[\s>]/);
+    expect(jsx).toContain("{children}");
+  });
+
+  test("the list page owns exactly one sticky header and one main", async () => {
+    const fs = await import("fs");
+    const source = fs.readFileSync(
+      "/root/arneph/src/app/editor/page.tsx",
+      "utf8",
+    );
+
+    expect(source.match(/<header[\s>]/g)).toHaveLength(1);
+    expect(source.match(/<main[\s>]/g)).toHaveLength(1);
+    expect(source).toContain('className="sticky top-0');
+    expect(source).toContain("backToHome");
+    expect(source).toContain("signOut");
+  });
+
+  test("the detail shell renders one sticky header, one main and the sign-out action", async () => {
+    const { EditorDetailLayoutContent } = await import(
+      "@/components/editor/EditorDetailShell"
+    );
+    const { EditorStateProvider } = await import(
+      "@/components/editor/EditorStateContext"
+    );
+
+    const { container } = render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider initialTitle="Titre" initialVisibility="draft">
+          <EditorDetailLayoutContent webtoonId={WEBTOON_ID}>
+            <div data-testid="detail-child" />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    const headers = container.querySelectorAll("header");
+    const mains = container.querySelectorAll("main");
+    expect(headers).toHaveLength(1);
+    expect(mains).toHaveLength(1);
+    expect(headers[0]).toHaveClass("sticky");
+    // The only main is the shell's content slot, not a nested page main.
+    expect(mains[0]).toContainElement(screen.getByTestId("detail-child"));
+
+    const header = headers[0];
+    expect(
+      within(header).getByRole("link", { name: /Retour à l'éditeur/ }),
+    ).toHaveAttribute("href", "/editor");
+    expect(within(header).getByTestId("editor-title")).toHaveTextContent(
+      "Titre",
+    );
+    expect(
+      within(header).getByRole("link", { name: "Lecteur" }),
+    ).toHaveAttribute("href", `/read/${WEBTOON_ID}`);
+
+    const signOutButton = within(header).getByRole("button", {
+      name: "Se déconnecter",
+    });
+    expect(signOutButton).toHaveAttribute("type", "submit");
+    expect(screen.getByTestId("save-button")).toBeInTheDocument();
   });
 });

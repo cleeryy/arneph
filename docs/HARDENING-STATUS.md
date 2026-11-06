@@ -3,7 +3,7 @@
 - **Branche** : `audit-hardening`
 - **Base audit** : commit `b11f916` + rapport `docs/AUDIT-2026-11-06.md`
 - **Dernier commit de code** : `e60bd2a` (+ polish en cours)
-- **Validation** : `npm test` 624 tests / 42 fichiers, `npm run lint` 0 erreur,
+- **Validation** : `npm test` 645 tests / 44 fichiers, `npm run lint` 0 erreur,
   `npm run typecheck` OK, `npm run build` OK, image Docker standalone testée
   (non-root, healthcheck, headers).
 
@@ -58,18 +58,19 @@
 - Long-y : `tiles`/`tileHeight`, upload/segmentation, rendu tuilé, préchargement
   des 2 premières tuiles.
 - Preview long-y non interactive + `metadataDirty` (polish).
+- Double header éditeur supprimé (header unique par route, déconnexion conservée).
+- `getWebtoon` mémoïsé par requête, erreurs image mappées sur des clés i18n,
+  `/api/health` ajouté.
 
 ## Reste à faire (non bloquant)
 
 - Découpage des gros fichiers : `SectionConfigPanel` (~1000 l.), `actions.ts`,
   `EditorDetailShell`, `WebtoonMetadataForm` (plan détaillé dans l'audit §6).
 - Contexte éditeur séparé sélection/historique pour réduire les re-renders.
-- Double header éditeur liste/détail (route groups).
-- i18n EN réellement atteignable (sélecteur/cookie) ; messages d'erreur image
-  mappés sur des clés i18n.
-- `getWebtoon` caché/dédoublonné (layout + page) et colonnes explicites.
+- i18n EN réellement atteignable (sélecteur/cookie).
+- Colonnes explicites dans `getWebtoon` et suppression des `select("*")`.
 - Mock Supabase `.single()` fidèle (`[]` vs objet + PGRST116).
-- `/api/health`, logs structurés, alerte 4xx assets.
+- Logs structurés, alerte 4xx assets, traces.
 - Backfill des assets existants (covers, long-y), claim des lignes legacy
   `owner_id is null`, uploads Storage owner-scoped.
 - E2E Playwright complets avec Supabase local + SMTP.

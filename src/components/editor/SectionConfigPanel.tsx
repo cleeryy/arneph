@@ -31,6 +31,7 @@ import {
   ImageProcessingError,
 } from "@/lib/image/process";
 import { isAnimatedImage } from "@/lib/image/animated";
+import { imageErrorKey } from "@/lib/image/error-message";
 import { MAX_IMAGE_PIXELS, MAX_UPLOAD_BYTES } from "@/lib/image/limits";
 import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
 import { uploadSectionAsset, removeSectionAssets } from "@/lib/supabase/upload";
@@ -175,6 +176,11 @@ export function SectionConfigPanel({
   onClose,
 }: SectionConfigPanelProps) {
   const t = useTranslations("editor");
+  /**
+   * Traducteur racine : `imageErrorKey()` renvoie des clés complètes
+   * (`editor.imageErrors.<code>`), pas des clés relatives au namespace.
+   */
+  const tRoot = useTranslations();
   const [error, setError] = React.useState<string | null>(null);
   const [uploading, setUploading] = React.useState(false);
   /**
@@ -409,7 +415,7 @@ export function SectionConfigPanel({
         });
       }
       if (err instanceof ImageProcessingError) {
-        setError(err.message);
+        setError(tRoot(imageErrorKey(err.code)));
       } else {
         setError(t("uploadImageErrorGeneric"));
       }
@@ -512,7 +518,7 @@ export function SectionConfigPanel({
         // l'erreur d'upload affichée à l'utilisateur.
       });
       if (err instanceof ImageProcessingError) {
-        setError(err.message);
+        setError(tRoot(imageErrorKey(err.code)));
       } else {
         setError(t("uploadAnimationErrorGeneric"));
       }
@@ -603,7 +609,7 @@ export function SectionConfigPanel({
       onSectionChange(updatedSection);
     } catch (err) {
       if (err instanceof ImageProcessingError) {
-        setError(err.message);
+        setError(tRoot(imageErrorKey(err.code)));
       } else if (err instanceof Error) {
         setError(err.message);
       } else {
@@ -687,7 +693,7 @@ export function SectionConfigPanel({
       onSectionChange(updatedSection);
     } catch (err) {
       if (err instanceof ImageProcessingError) {
-        setError(err.message);
+        setError(tRoot(imageErrorKey(err.code)));
       } else {
         setError(t("uploadImageErrorGeneric"));
       }
