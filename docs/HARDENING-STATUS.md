@@ -2,7 +2,8 @@
 
 - **Branche** : `audit-hardening`
 - **Base audit** : commit `b11f916` + rapport `docs/AUDIT-2026-11-06.md`
-- **Dernier commit de code** : `e60bd2a` (+ polish en cours)
+- **Dernier commit de code** : `a096e92`, poussé sur `origin/main`
+  (branche `audit-hardening` également poussée).
 - **Validation** : `npm test` 645 tests / 44 fichiers, `npm run lint` 0 erreur,
   `npm run typecheck` OK, `npm run build` OK, image Docker standalone testée
   (non-root, healthcheck, headers).
@@ -93,3 +94,9 @@
 7. Déployer l'image standalone, vérifier `/`, `/login`, `/auth/confirm`,
    `/editor`, `/read`, une image Supabase (200) et les headers.
 8. Tester le magic link de bout en bout avec un compte réel.
+
+> **État au moment de la rédaction** : le code est poussé sur `main`, mais le
+> conteneur Dokploy `arneph-app-*` tournait encore l'ancienne image (11 h) et
+> `/api/health` répondait 404. Un redéploiement Dokploy est nécessaire après
+> application des migrations et configuration Auth. Ne pas considérer la
+> production comme à jour tant que `/api/health` ne répond pas 200.
