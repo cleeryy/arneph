@@ -53,7 +53,11 @@ describe("uploadSectionAsset", () => {
     uploadSpy.mockResolvedValue({ data: { path: "canonical/path.gif" }, error: null });
 
     await expect(
-      uploadSectionAsset("requested/path.gif", new Blob(["gif"]), "image/gif"),
+      uploadSectionAsset(
+        "webtoons/sections/s1/requested.gif",
+        new Blob(["gif"]),
+        "image/gif",
+      ),
     ).resolves.toBe("canonical/path.gif");
   });
 
@@ -62,15 +66,41 @@ describe("uploadSectionAsset", () => {
     uploadSpy.mockResolvedValue({ data: null, error: storageError });
 
     await expect(
-      uploadSectionAsset("a.webp", new Blob(["x"]), "image/webp"),
+      uploadSectionAsset("webtoons/a.webp", new Blob(["x"]), "image/webp"),
     ).rejects.toBe(storageError);
+  });
+
+  test("refuse un chemin hors du préfixe webtoons/ sans appeler le Storage", async () => {
+    await expect(
+      uploadSectionAsset("covers/other.webp", new Blob(["x"]), "image/webp"),
+    ).rejects.toThrow("Chemin Storage invalide.");
+    expect(createClientSpy).not.toHaveBeenCalled();
+    expect(uploadSpy).not.toHaveBeenCalled();
+  });
+
+  test("refuse une traversée de répertoire sans appeler le Storage", async () => {
+    await expect(
+      uploadSectionAsset(
+        "webtoons/sections/s1/../../../secret.webp",
+        new Blob(["x"]),
+        "image/webp",
+      ),
+    ).rejects.toThrow("Chemin Storage invalide.");
+    expect(uploadSpy).not.toHaveBeenCalled();
+  });
+
+  test("refuse un chemin absolu sans appeler le Storage", async () => {
+    await expect(
+      uploadSectionAsset("/webtoons/secret.webp", new Blob(["x"]), "image/webp"),
+    ).rejects.toThrow("Chemin Storage invalide.");
+    expect(uploadSpy).not.toHaveBeenCalled();
   });
 
   test("échoue si l'environnement Supabase est incomplet", async () => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "");
 
     await expect(
-      uploadSectionAsset("a.webp", new Blob(["x"]), "image/webp"),
+      uploadSectionAsset("webtoons/a.webp", new Blob(["x"]), "image/webp"),
     ).rejects.toThrow(/clé publique non configurée/);
     expect(createClientSpy).not.toHaveBeenCalled();
   });

@@ -7,6 +7,14 @@ import { supabase } from "@/lib/db/server";
 import { requireUser } from "@/lib/auth/require-user";
 import { sectionSchema } from "@/lib/schemas";
 import {
+  SEED_STORAGE_PREFIX,
+  STORAGE_ROOT_PREFIX,
+  coverStoragePrefix,
+  isPathUnder,
+  isSafeStoragePath,
+  sectionStoragePrefix,
+} from "@/lib/storage/paths";
+import {
   type SectionWithImages,
 } from "@/lib/db/queries";
 import {
@@ -178,11 +186,18 @@ interface SectionStorageSource {
     fxPath?: string;
     audioPath?: string;
     framePaths?: string[];
+    /** Tuiles `long-y` (`tiles-<timestamp>/<index>.webp`). */
+    tiles?: string[];
   };
+}
+
+interface SectionStorageWithId extends SectionStorageSource {
+  id: string;
 }
 
 const STORAGE_BUCKET = "webtoon-images";
 const STORAGE_REMOVE_BATCH_SIZE = 1000;
+const INVALID_STORAGE_PATH_MESSAGE = "Chemin de stockage invalide.";
 
 /** Tous les chemins Storage référencés par une section (images + config). */
 function collectSectionStoragePaths(section: SectionStorageSource): string[] {
@@ -194,7 +209,36 @@ function collectSectionStoragePaths(section: SectionStorageSource): string[] {
     section.config.spritePath,
     section.config.fxPath,
     ...(section.config.framePaths ?? []),
+    ...(section.config.tiles ?? []),
   ].filter((path): path is string => typeof path === "string" && path.length > 0);
+}
+
+/**
+ * Vérifie que tous les chemins d'une section restent dans son dossier Storage
+ * (`webtoons/sections/<sectionId>/`) ou, pour le seed, sous `webtoons/seed/`.
+ * Lève une erreur au premier chemin invalide.
+ */
+function assertSectionStoragePaths(
+  section: SectionStorageWithId,
+  options: { allowSeed?: boolean } = {},
+): void {
+  const prefix = sectionStoragePrefix(section.id);
+
+  for (const path of collectSectionStoragePaths(section)) {
+    if (!isSafeStoragePath(path)) {
+      throw new Error(`${INVALID_STORAGE_PATH_MESSAGE} (${path})`);
+    }
+    if (isPathUnder(path, prefix)) continue;
+    if (options.allowSeed && isPathUnder(path, SEED_STORAGE_PREFIX)) continue;
+    throw new Error(
+      `${INVALID_STORAGE_PATH_MESSAGE} (${path} hors de ${prefix})`,
+    );
+  }
+}
+
+/** Vrai si un objet peut être supprimé du bucket sans risque. */
+function isRemovableStoragePath(path: string): boolean {
+  return isSafeStoragePath(path) && path.startsWith(STORAGE_ROOT_PREFIX);
 }
 
 /** Tous les chemins Storage référencés par un webtoon (couverture + sections). */
@@ -213,7 +257,9 @@ function collectWebtoonStoragePaths(webtoon: {
  * Best-effort : une panne Storage est journalisée, jamais propagée.
  */
 async function removeStoragePaths(paths: string[]): Promise<void> {
-  const uniquePaths = [...new Set(paths)];
+  // Dernier rempart : même si un appelant amont s'est trompé, jamais de
+  // suppression hors du préfixe applicatif ni d'un chemin douteux.
+  const uniquePaths = [...new Set(paths)].filter(isRemovableStoragePath);
   if (uniquePaths.length === 0) return;
 
   for (let index = 0; index < uniquePaths.length; index += STORAGE_REMOVE_BATCH_SIZE) {
@@ -262,21 +308,23 @@ const EMPTY_KEEP_PATHS: ReadonlySet<string> = new Set();
 
 /**
  * Nettoie le dossier Storage d'une section supprimée.
- * Combine les chemins connus (base) et un listing du dossier (orphelins), en
- * préservant les chemins encore référencés par la sauvegarde en cours.
+ * Combine les chemins connus (base) et un listing récursif borné du dossier
+ * (orphelins), en préservant les chemins encore référencés par la sauvegarde
+ * en cours. Deux niveaux couvrent les batches horodatés `frames/<ts>/` et
+ * `tiles-<ts>/`.
  */
 async function cleanupSectionStorage(
   sectionId: string,
   knownPaths: string[] = [],
   keepPaths: ReadonlySet<string> = EMPTY_KEEP_PATHS,
 ): Promise<void> {
-  const prefix = `webtoons/sections/${sectionId}/`;
-  const [directFiles, frameFiles] = await Promise.all([
-    listStorageFiles(prefix, 0),
-    listStorageFiles(`${prefix}frames/`, 2),
-  ]);
+  const prefix = sectionStoragePrefix(sectionId);
+  const listedFiles = await listStorageFiles(prefix, 2);
+  // Les chemins connus viennent de la base : ne supprimer que ceux qui
+  // appartiennent réellement au dossier de cette section.
+  const safeKnownPaths = knownPaths.filter((path) => isPathUnder(path, prefix));
 
-  const paths = [...new Set([...knownPaths, ...directFiles, ...frameFiles])].filter(
+  const paths = [...new Set([...safeKnownPaths, ...listedFiles])].filter(
     (path) => !keepPaths.has(path),
   );
   if (paths.length === 0) return;
@@ -371,6 +419,15 @@ export async function updateWebtoonMetadataAction(
     };
   }
 
+  // Une couverture ne peut référencer que le dossier de ce webtoon.
+  if (
+    parse.data.coverPath !== undefined &&
+    parse.data.coverPath !== "" &&
+    !isPathUnder(parse.data.coverPath, coverStoragePrefix(webtoonId))
+  ) {
+    return { ok: false, error: INVALID_STORAGE_PATH_MESSAGE };
+  }
+
   try {
     // Ancienne couverture lue AVANT l'update : si elle est remplacée ou
     // effacée, son fichier devient orphelin après un update réussi.
@@ -406,13 +463,20 @@ export async function updateWebtoonMetadataAction(
     if (previousCoverPath && previousCoverPath !== patch.coverPath) {
       // Best-effort : l'update est déjà persisté, un incident Storage ne doit
       // pas le transformer en échec côté client.
-      try {
-        await removeStoragePaths([previousCoverPath]);
-      } catch (cleanupError) {
+      if (!isPathUnder(previousCoverPath, coverStoragePrefix(webtoonId))) {
         console.warn(
-          `updateWebtoonMetadataAction cover cleanup failed for ${webtoonId}:`,
-          errorMessage(cleanupError),
+          `updateWebtoonMetadataAction ignored unsafe previous cover for ${webtoonId}:`,
+          previousCoverPath,
         );
+      } else {
+        try {
+          await removeStoragePaths([previousCoverPath]);
+        } catch (cleanupError) {
+          console.warn(
+            `updateWebtoonMetadataAction cover cleanup failed for ${webtoonId}:`,
+            errorMessage(cleanupError),
+          );
+        }
       }
     }
 
@@ -446,6 +510,20 @@ export async function saveWebtoon(
 
   try {
     const { webtoonId: wid, sections: incomingSections } = parse.data;
+
+    // P0-2b : refuser tout chemin hors du dossier de sa section (ou du seed)
+    // AVANT la transaction et avant tout nettoyage Storage.
+    try {
+      for (const section of incomingSections) {
+        assertSectionStoragePaths(section, { allowSeed: true });
+      }
+    } catch (storagePathError) {
+      console.warn(
+        `saveWebtoon rejected storage paths for ${wid}:`,
+        errorMessage(storagePathError),
+      );
+      return { ok: false, error: INVALID_STORAGE_PATH_MESSAGE };
+    }
 
     // Lecture AVANT l'écriture : elle sert uniquement à calculer les chemins
     // Storage devenus orphelins (sections retirées + fichiers remplacés).
@@ -627,6 +705,16 @@ export async function deleteWebtoonAction(
     // plus rien ne permet de retrouver les objets Storage.
     const current = await getWebtoon(webtoonId, auth.user.id);
     const knownPaths = current ? collectWebtoonStoragePaths(current) : [];
+    // P0-2b : ne jamais tenter de supprimer un chemin hors du bucket ou
+    // susceptible de sortir du préfixe applicatif.
+    const removablePaths = knownPaths.filter((path) => {
+      if (isRemovableStoragePath(path)) return true;
+      console.warn(
+        `deleteWebtoonAction ignored unsafe storage path for ${webtoonId}:`,
+        path,
+      );
+      return false;
+    });
 
     // DB d'abord : si le delete échoue, aucun fichier n'est supprimé.
     // Un objet Storage orphelin est récupérable, un webtoon sans médias non.
@@ -641,15 +729,19 @@ export async function deleteWebtoonAction(
       try {
         await Promise.all(
           current.sections.map((section) =>
-            cleanupSectionStorage(
-              section.id,
-              collectSectionStoragePaths(section),
-            ),
+            cleanupSectionStorage(section.id, removablePaths),
           ),
         );
-        if (current.coverPath) {
-          await removeStoragePaths([current.coverPath]);
-        }
+        // Couverture, assets seed et éventuels chemins hors dossier de section
+        // appartenant au bucket : supprimés explicitement (les dossiers de
+        // section sont déjà couverts ci-dessus).
+        const sectionPrefixes = current.sections.map((section) =>
+          sectionStoragePrefix(section.id),
+        );
+        const remainingPaths = removablePaths.filter(
+          (path) => !sectionPrefixes.some((prefix) => isPathUnder(path, prefix)),
+        );
+        await removeStoragePaths(remainingPaths);
       } catch (cleanupError) {
         console.warn(
           `deleteWebtoonAction storage cleanup failed for ${webtoonId}:`,
@@ -657,7 +749,7 @@ export async function deleteWebtoonAction(
         );
         // Fallback best-effort sur les chemins connus (tous orphelins).
         try {
-          await removeStoragePaths(knownPaths);
+          await removeStoragePaths(removablePaths);
         } catch (fallbackError) {
           console.warn(
             `deleteWebtoonAction storage fallback failed for ${webtoonId}:`,

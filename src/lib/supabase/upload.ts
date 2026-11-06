@@ -6,6 +6,8 @@
  * (clé anon) est créé ici, jamais dupliqué dans un composant. Le chemin
  * retourné est celui du Storage (relatif), jamais une URL complète.
  */
+import { STORAGE_ROOT_PREFIX, isSafeStoragePath } from "@/lib/storage/paths";
+
 const STORAGE_BUCKET = "webtoon-images";
 
 async function getStorageClient() {
@@ -29,6 +31,10 @@ export async function uploadSectionAsset(
   blob: Blob,
   contentType: string,
 ): Promise<string> {
+  if (!isSafeStoragePath(path) || !path.startsWith(STORAGE_ROOT_PREFIX)) {
+    throw new Error("Chemin Storage invalide.");
+  }
+
   const supabase = await getStorageClient();
   const { data, error } = await supabase
     .storage

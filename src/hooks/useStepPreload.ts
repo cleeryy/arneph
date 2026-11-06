@@ -21,6 +21,18 @@ export function stepImageUrls(step: ReaderStep): string[] {
     );
   }
 
+  // Planche longue segmentée : seules les deux premières tuiles sont
+  // préchargées (la tuile 0 est aussi `imagePath`, éviter le doublon).
+  if (
+    config.type === "long-y" &&
+    Array.isArray(config.tiles) &&
+    config.tiles.length > 0
+  ) {
+    return dedupe(config.tiles.slice(0, 2)).map((path) =>
+      getSupabaseRenderUrl(path, { width: 960 }),
+    );
+  }
+
   const paths: Array<string | undefined> = [section.images[0]?.storagePath];
 
   if (config.type === "image" || config.type === "long-y" || config.type === "pan-x") {

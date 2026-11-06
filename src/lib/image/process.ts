@@ -8,7 +8,13 @@
  * `createBrowserFactory()` branche le vrai DOM en runtime navigateur.
  */
 
-import { MAX_IMAGE_PIXELS, MAX_SPRITE_PIXELS } from "./limits";
+import {
+  LONG_Y_TILE_HEIGHT,
+  MAX_IMAGE_PIXELS,
+  MAX_LONG_Y_PIXELS,
+  MAX_LONG_Y_TILES,
+  MAX_SPRITE_PIXELS,
+} from "./limits";
 import { isAnimatedImage } from "./animated";
 
 export const DEFAULT_WEBP_QUALITY = 0.9;
@@ -99,7 +105,16 @@ export interface CanvasFactory {
 
 export interface ProcessOptions {
   quality?: number;
+  /**
+   * Borne les **deux** dimensions en conservant le ratio. Utilisé pour les
+   * images de page ; ignoré quand `maxWidth` est fourni.
+   */
   maxDimension?: number;
+  /**
+   * Borne uniquement la largeur, en conservant le ratio. Indispensable pour
+   * une planche `long-y` : `maxDimension` écraserait sa hauteur.
+   */
+  maxWidth?: number;
   supportedTypes?: readonly string[];
   factory?: CanvasFactory;
 }
@@ -240,6 +255,23 @@ export function fitWithin(
   };
 }
 
+/**
+ * Borne **la largeur seule** à `maxWidth` en conservant le ratio (la hauteur
+ * suit proportionnellement). Jamais d'upscale.
+ */
+function fitWidth(
+  width: number,
+  height: number,
+  maxWidth: number,
+): { width: number; height: number } {
+  const scale = Math.min(1, maxWidth / width);
+  if (scale >= 1) return { width, height };
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
 /** Libère un `ImageBitmap` décodé quand le runtime l'expose. */
 function closeDecodedImage(image: DecodedImage): void {
   if ("close" in image) {
@@ -303,11 +335,14 @@ export async function resizeImage(
     assertValidDimensions(image.width, image.height);
     assertWithinCanvasBudget(image.width, image.height);
 
-    const fitted = fitWithin(
-      image.width,
-      image.height,
-      options.maxDimension ?? MAX_CANVAS_DIMENSION,
-    );
+    const fitted =
+      options.maxWidth !== undefined
+        ? fitWidth(image.width, image.height, options.maxWidth)
+        : fitWithin(
+            image.width,
+            image.height,
+            options.maxDimension ?? MAX_CANVAS_DIMENSION,
+          );
     const outWidth = fitted.width;
     const outHeight = fitted.height;
 
@@ -319,6 +354,103 @@ export async function resizeImage(
       "image/webp",
       options.quality ?? DEFAULT_WEBP_QUALITY,
     );
+  } finally {
+    closeDecodedImage(image);
+  }
+}
+
+/** Options de découpage d'une planche `long-y` en tuiles verticales. */
+export interface LongYSliceOptions {
+  /** Hauteur source d'une tuile (défaut `LONG_Y_TILE_HEIGHT`). */
+  tileHeight?: number;
+  /** Largeur de sortie, ratio conservé (défaut 1600). */
+  maxWidth?: number;
+  quality?: number;
+  factory?: CanvasFactory;
+}
+
+/** Tuiles WebP d'une planche `long-y`, avec la géométrie de sortie. */
+export interface LongYSlice {
+  tiles: Blob[];
+  width: number;
+  height: number;
+  tileHeight: number;
+}
+
+/**
+ * Découpe une planche `long-y` en tuiles WebP verticales, sans chevauchement.
+ *
+ * La source n'est décodée qu'une fois et jamais dessinée en pleine hauteur :
+ * chaque tuile a sa propre toile `outWidth × outTileHeight`. La géométrie
+ * renvoyée (`width`, `height`, `tileHeight`) est celle des tuiles de sortie,
+ * pour que le lecteur puisse réserver les hauteurs sans mesurer les images.
+ *
+ * Une planche trop large, trop haute ou au-delà de `MAX_LONG_Y_PIXELS` est
+ * rejetée (`IMAGE_TOO_LARGE`) avant toute allocation de canvas.
+ */
+export async function sliceLongYImage(
+  file: Blob,
+  options: LongYSliceOptions = {},
+): Promise<LongYSlice> {
+  const canvasFactory = getFactory(options.factory);
+  const quality = options.quality ?? DEFAULT_WEBP_QUALITY;
+  const rawTileHeight = options.tileHeight ?? LONG_Y_TILE_HEIGHT;
+  if (!Number.isFinite(rawTileHeight) || rawTileHeight < 1) {
+    throw new ImageProcessingError(
+      "INVALID_TARGET",
+      `Hauteur de tuile invalide : ${rawTileHeight}.`,
+    );
+  }
+  const tileHeight = Math.floor(rawTileHeight);
+
+  assertImageFile(file, SUPPORTED_IMAGE_TYPES);
+  const image = await canvasFactory.decodeImage(file);
+  try {
+    assertValidDimensions(image.width, image.height);
+
+    const tileCount = Math.ceil(image.height / tileHeight);
+    if (
+      image.width > MAX_CANVAS_DIMENSION ||
+      tileCount > MAX_LONG_Y_TILES ||
+      image.width * image.height > MAX_LONG_Y_PIXELS
+    ) {
+      throw new ImageProcessingError(
+        "IMAGE_TOO_LARGE",
+        `Planche ${image.width}×${image.height}px trop grande : limite ${MAX_CANVAS_DIMENSION}px de large, ${MAX_LONG_Y_TILES} tuiles de ${tileHeight}px et ${MAX_LONG_Y_PIXELS} pixels au total.`,
+      );
+    }
+
+    const outWidth = Math.min(image.width, options.maxWidth ?? 1600);
+    const scale = outWidth / image.width;
+    const outHeight = Math.max(1, Math.round(image.height * scale));
+    const outTileHeight = Math.max(1, Math.round(tileHeight * scale));
+
+    const tiles: Blob[] = [];
+    for (let sourceY = 0; sourceY < image.height; sourceY += tileHeight) {
+      const sourceHeight = Math.min(tileHeight, image.height - sourceY);
+      const outSliceHeight = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = canvasFactory.createCanvas(outWidth, outSliceHeight);
+      const context = requireContext(canvas);
+      context.drawImageRegion(
+        image,
+        0,
+        sourceY,
+        image.width,
+        sourceHeight,
+        0,
+        0,
+        outWidth,
+        outSliceHeight,
+      );
+      tiles.push(await toBlobAsync(canvas, "image/webp", quality));
+    }
+
+    return {
+      tiles,
+      width: outWidth,
+      height: outHeight,
+      tileHeight: outTileHeight,
+    };
   } finally {
     closeDecodedImage(image);
   }

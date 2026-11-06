@@ -10,6 +10,7 @@ import {
   fitWithin,
   readImageDimensions,
   resizeImage,
+  sliceLongYImage,
   sliceSpriteSheet,
   toWebP,
   type CanvasFactory,
@@ -17,6 +18,11 @@ import {
   type DecodedImage,
   type ImageContext2D,
 } from "@/lib/image/process";
+import {
+  LONG_Y_TILE_HEIGHT,
+  MAX_LONG_Y_PIXELS,
+  MAX_LONG_Y_TILES,
+} from "@/lib/image/limits";
 
 vi.mock("@/lib/image/animated", async () => {
   const actual = await vi.importActual("@/lib/image/animated");
@@ -300,6 +306,220 @@ describe("resizeImage(file)", () => {
     await expect(
       resizeImage(new Blob(["c"], { type: "image/png" }), { factory }),
     ).rejects.toMatchObject({ code: "CANVAS_UNAVAILABLE" });
+  });
+});
+
+describe("resizeImage(file, { maxWidth })", () => {
+  test("borne UNIQUEMENT la largeur : 3000×12000 → 1600×6400", async () => {
+    const source = img("long", 3000, 12000);
+    const factory = mockFactory([source]);
+    const blob = await resizeImage(factory.file("long"), {
+      factory,
+      maxWidth: 1600,
+    });
+
+    expect(blob.type).toBe("image/webp");
+    const canvas = factory.canvases[0];
+    // maxDimension aurait donné 400×1600 : la hauteur de la planche serait
+    // écrasée, d'où l'option dédiée.
+    expect(canvas.width).toBe(1600);
+    expect(canvas.height).toBe(6400);
+    expect(canvas.draws).toEqual([
+      {
+        image: expect.objectContaining({ width: 3000, height: 12000 }),
+        dx: 0,
+        dy: 0,
+        dw: 1600,
+        dh: 6400,
+      },
+    ]);
+    expect(source.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("ne fait jamais d'upscale : 800×200 inchangé", async () => {
+    const factory = mockFactory([img("small", 800, 200)]);
+    await resizeImage(factory.file("small"), { factory, maxWidth: 1600 });
+
+    const canvas = factory.canvases[0];
+    expect(canvas.width).toBe(800);
+    expect(canvas.height).toBe(200);
+  });
+
+  test("maxWidth prime sur maxDimension quand les deux sont fournis", async () => {
+    const factory = mockFactory([img("photo", 3000, 12000)]);
+    await resizeImage(factory.file("photo"), {
+      factory,
+      maxWidth: 1000,
+      maxDimension: 200,
+    });
+
+    const canvas = factory.canvases[0];
+    expect(canvas.width).toBe(1000);
+    expect(canvas.height).toBe(4000);
+  });
+
+  test("applique toujours le budget canvas à la source avant réduction", async () => {
+    const factory = mockFactory([img("huge", 4000, 20000)]);
+
+    await expect(
+      resizeImage(factory.file("huge"), { factory, maxWidth: 1600 }),
+    ).rejects.toMatchObject({ code: "IMAGE_TOO_LARGE" });
+
+    expect(factory.canvases).toHaveLength(0);
+  });
+});
+
+describe("sliceLongYImage(file)", () => {
+  test("découpe une planche 800×10000 en 3 tuiles sans redimensionner", async () => {
+    const source = img("strip", 800, 10000);
+    const factory = mockFactory([source]);
+    const sliced = await sliceLongYImage(factory.file("strip"), { factory });
+
+    // Décodage unique, bitmap libéré dans le finally.
+    expect(factory.decodeCalls).toEqual(["strip"]);
+    expect(source.close).toHaveBeenCalledTimes(1);
+
+    expect(sliced).toMatchObject({
+      width: 800,
+      height: 10000,
+      tileHeight: LONG_Y_TILE_HEIGHT,
+    });
+    expect(sliced.tiles).toHaveLength(3);
+    expect(sliced.tiles.every((tile) => tile.type === "image/webp")).toBe(true);
+
+    expect(factory.canvases.map((canvas) => [canvas.width, canvas.height])).toEqual([
+      [800, 4096],
+      [800, 4096],
+      [800, 1808],
+    ]);
+
+    const regions = factory.canvases.map((canvas) => canvas.regionDraws[0]);
+    expect(regions.map(({ sy, sh }) => [sy, sh])).toEqual([
+      [0, 4096],
+      [4096, 4096],
+      [8192, 1808],
+    ]);
+    for (const region of regions) {
+      expect(region).toMatchObject({
+        sx: 0,
+        sw: 800,
+        dx: 0,
+        dy: 0,
+        dw: 800,
+      });
+    }
+    // La planche n'est jamais dessinée en pleine hauteur.
+    expect(factory.canvases.some((canvas) => canvas.height > 4096)).toBe(false);
+    expect(factory.canvases[0].toBlobCalls).toEqual([
+      { type: "image/webp", quality: 0.9 },
+    ]);
+  });
+
+  test("réduit la largeur et met la hauteur des tuiles à l'échelle : 3200×9000 → 1600×4500", async () => {
+    const source = img("strip", 3200, 9000);
+    const factory = mockFactory([source]);
+    const sliced = await sliceLongYImage(factory.file("strip"), {
+      factory,
+      maxWidth: 1600,
+    });
+
+    expect(sliced).toMatchObject({
+      width: 1600,
+      height: 4500,
+      tileHeight: 2048,
+    });
+    expect(sliced.tiles).toHaveLength(3);
+    expect(factory.canvases.map((canvas) => [canvas.width, canvas.height])).toEqual([
+      [1600, 2048],
+      [1600, 2048],
+      // Dernière tuile source : 9000 - 2×4096 = 808 px, soit 404 px à l'échelle.
+      [1600, 404],
+    ]);
+    expect(factory.canvases[2].regionDraws[0]).toMatchObject({
+      sy: 8192,
+      sh: 808,
+      dh: 404,
+    });
+  });
+
+  test("respecte les options tileHeight / maxWidth / quality", async () => {
+    const factory = mockFactory([img("strip", 800, 2500)]);
+    const sliced = await sliceLongYImage(factory.file("strip"), {
+      factory,
+      tileHeight: 1000,
+      maxWidth: 400,
+      quality: 0.5,
+    });
+
+    expect(sliced).toMatchObject({
+      width: 400,
+      height: 1250,
+      tileHeight: 500,
+    });
+    expect(sliced.tiles).toHaveLength(3);
+    expect(factory.canvases.map((canvas) => canvas.height)).toEqual([500, 500, 250]);
+    expect(factory.canvases[0].toBlobCalls).toEqual([
+      { type: "image/webp", quality: 0.5 },
+    ]);
+  });
+
+  test("rejette une largeur au-delà de MAX_CANVAS_DIMENSION avant tout canvas", async () => {
+    const source = img("wide", 20000, 1000);
+    const factory = mockFactory([source]);
+
+    await expect(
+      sliceLongYImage(factory.file("wide"), { factory }),
+    ).rejects.toMatchObject({ code: "IMAGE_TOO_LARGE" });
+
+    expect(factory.canvases).toHaveLength(0);
+    expect(source.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("rejette une planche au-delà de MAX_LONG_Y_PIXELS", async () => {
+    expect(4000 * 16000).toBeGreaterThan(MAX_LONG_Y_PIXELS);
+    const factory = mockFactory([img("heavy", 4000, 16000)]);
+
+    await expect(
+      sliceLongYImage(factory.file("heavy"), { factory }),
+    ).rejects.toMatchObject({ code: "IMAGE_TOO_LARGE" });
+
+    expect(factory.canvases).toHaveLength(0);
+  });
+
+  test("rejette une planche qui produirait plus de MAX_LONG_Y_TILES tuiles", async () => {
+    const factory = mockFactory([img("tall", 800, 10000)]);
+
+    await expect(
+      sliceLongYImage(factory.file("tall"), { factory, tileHeight: 256 }),
+    ).rejects.toMatchObject({ code: "IMAGE_TOO_LARGE" });
+
+    expect(Math.ceil(10000 / 256)).toBeGreaterThan(MAX_LONG_Y_TILES);
+    expect(factory.canvases).toHaveLength(0);
+  });
+
+  test("libère le bitmap quand un encodage échoue", async () => {
+    const source = img("strip", 800, 5000);
+    const failingFactory: CanvasFactory = {
+      createCanvas: () =>
+        ({
+          width: 0,
+          height: 0,
+          getContext2D: () => ({
+            drawImage: () => {},
+            drawImageRegion: () => {},
+          }),
+          toBlob: (callback: (blob: Blob | null) => void) => callback(null),
+        }) as CanvasLike,
+      decodeImage: async () => source,
+    };
+
+    await expect(
+      sliceLongYImage(new Blob(["strip"], { type: "image/png" }), {
+        factory: failingFactory,
+      }),
+    ).rejects.toMatchObject({ code: "ENCODE_FAILED" });
+
+    expect(source.close).toHaveBeenCalledTimes(1);
   });
 });
 

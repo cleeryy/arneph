@@ -5,6 +5,7 @@ import {
   imageSectionConfigSchema,
   longYSectionConfigSchema,
   sectionConfigSchema,
+  sectionSchema,
 } from "@/lib/schemas";
 
 describe("fxPath / fxConfig optional fields — imageSectionConfigSchema", () => {
@@ -124,6 +125,190 @@ describe("animationSectionConfigSchema — framePaths bounds (DATA-13)", () => {
     });
 
     expect(result.success).toBe(false);
+  });
+});
+
+describe("longYSectionConfigSchema — tiles / tileHeight (Phase 2C-1)", () => {
+  const TILES = ["tiles-1/0.webp", "tiles-1/1.webp", "tiles-1/2.webp"];
+
+  function section(config: Record<string, unknown>) {
+    return {
+      id: "s1",
+      webtoonId: "w1",
+      position: 0,
+      type: "long-y",
+      config,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+  }
+
+  test("accepte tiles + tileHeight cohérents", () => {
+    const result = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: TILES[0],
+        width: 600,
+        height: 2500,
+        tiles: TILES,
+        tileHeight: 1000,
+      }),
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  test("accepte une section sans tuiles (rétrocompatibilité)", () => {
+    const result = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: "strip.webp",
+        width: 600,
+        height: 3000,
+      }),
+    );
+
+    expect(result.success).toBe(true);
+  });
+
+  test("refuse tiles sans tileHeight", () => {
+    const result = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: TILES[0],
+        width: 600,
+        height: 2500,
+        tiles: TILES,
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.includes("tileHeight"))).toBe(true);
+    }
+  });
+
+  test("refuse tileHeight sans tiles", () => {
+    const result = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: "strip.webp",
+        width: 600,
+        height: 3000,
+        tileHeight: 1000,
+      }),
+    );
+
+    expect(result.success).toBe(false);
+  });
+
+  test("refuse des tuiles dupliquées", () => {
+    const result = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: TILES[0],
+        width: 600,
+        height: 2500,
+        tiles: [TILES[0], TILES[0], TILES[1]],
+        tileHeight: 1000,
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues.some((issue) => issue.path.includes("tiles"))).toBe(true);
+    }
+  });
+
+  test("refuse une hauteur incohérente avec le nombre de tuiles", () => {
+    const tooTall = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: TILES[0],
+        width: 600,
+        height: 5000,
+        tiles: TILES,
+        tileHeight: 1000,
+      }),
+    );
+    const tooShort = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: TILES[0],
+        width: 600,
+        height: 1500,
+        tiles: TILES,
+        tileHeight: 1000,
+      }),
+    );
+
+    expect(tooTall.success).toBe(false);
+    expect(tooShort.success).toBe(false);
+  });
+
+  test("tolère 1 px d'arrondi aux bornes de hauteur", () => {
+    const upperEdge = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: TILES[0],
+        width: 600,
+        height: 3001,
+        tiles: TILES,
+        tileHeight: 1000,
+      }),
+    );
+    const lowerEdge = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: TILES[0],
+        width: 600,
+        height: 1999,
+        tiles: TILES,
+        tileHeight: 1000,
+      }),
+    );
+
+    expect(upperEdge.success).toBe(true);
+    expect(lowerEdge.success).toBe(true);
+  });
+
+  test("borne tiles entre 2 et 32 entrées", () => {
+    const single = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: "tiles-1/0.webp",
+        width: 600,
+        height: 1000,
+        tiles: ["tiles-1/0.webp"],
+        tileHeight: 1000,
+      }),
+    );
+    const tooMany = sectionSchema.safeParse(
+      section({
+        type: "long-y",
+        imagePath: "tiles-1/0.webp",
+        width: 600,
+        height: 33000,
+        tiles: Array.from({ length: 33 }, (_, index) => `tiles-1/${index}.webp`),
+        tileHeight: 1000,
+      }),
+    );
+
+    expect(single.success).toBe(false);
+    expect(tooMany.success).toBe(false);
+  });
+
+  test("longYSectionConfigSchema seul accepte les champs tuiles", () => {
+    const result = longYSectionConfigSchema.safeParse({
+      type: "long-y",
+      imagePath: TILES[0],
+      width: 600,
+      height: 2500,
+      tiles: TILES,
+      tileHeight: 1000,
+    });
+
+    expect(result.success).toBe(true);
   });
 });
 

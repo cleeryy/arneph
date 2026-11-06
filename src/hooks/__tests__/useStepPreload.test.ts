@@ -62,6 +62,44 @@ describe("stepImageUrls", () => {
     expect(stepImageUrls(steps[0])[0]).toContain("width=960");
   });
 
+  test("long-y tuilé : précharge les deux premières tuiles seulement", () => {
+    const steps = buildReaderSteps([
+      section("long-y", {
+        type: "long-y",
+        imagePath: "tiles/0.webp",
+        width: 800,
+        height: 10000,
+        tileHeight: 4096,
+        tiles: ["tiles/0.webp", "tiles/1.webp", "tiles/2.webp"],
+      }),
+    ]);
+
+    const urls = stepImageUrls(steps[0]);
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).toContain("tiles/0.webp");
+    expect(urls[0]).toContain("width=960");
+    expect(urls[1]).toContain("tiles/1.webp");
+    // Ni la 3e tuile ni l'enregistrement `images[0]` hors tuiles.
+    expect(urls.some((url) => url.includes("tiles/2.webp"))).toBe(false);
+    expect(urls.some((url) => url.includes("page.webp"))).toBe(false);
+  });
+
+  test("long-y sans tuiles : comportement historique conservé", () => {
+    const steps = buildReaderSteps([
+      section("long-y", {
+        type: "long-y",
+        imagePath: "webtoons/s1/page.webp",
+        width: 800,
+        height: 1200,
+      }),
+    ]);
+
+    const urls = stepImageUrls(steps[0]);
+    expect(urls).toEqual([expect.stringContaining("/render/image/public/")]);
+    expect(urls[0]).toContain("webtoons/s1/page.webp");
+    expect(urls[0]).toContain("width=960");
+  });
+
   test("animation en frames : précharge la première frame", () => {
     const steps = buildReaderSteps([
       section("animation", {

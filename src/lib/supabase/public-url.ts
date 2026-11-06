@@ -7,6 +7,8 @@
  * utilisateur utilisent déjà des chemins horodatés ; ce levier couvre les
  * assets stables (seed, corrections) sans renommer de fichier en base.
  */
+import { isSafeStoragePath } from "@/lib/storage/paths";
+
 /**
  * URL de transformation d'image servie par imgproxy (stack Supabase).
  * Permet des `srcset` responsives : on ne télécharge que la largeur utile.
@@ -15,6 +17,10 @@ export function getSupabaseRenderUrl(
   storagePath: string,
   options: { width: number; quality?: number },
 ): string {
+  if (!isSafeStoragePath(storagePath)) {
+    throw new Error("Chemin Storage invalide.");
+  }
+
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!base) throw new Error("NEXT_PUBLIC_SUPABASE_URL is not configured");
 
@@ -35,6 +41,10 @@ export function getSupabaseRenderUrl(
 }
 
 export function getSupabasePublicObjectUrl(storagePath: string): string {
+  if (!isSafeStoragePath(storagePath)) {
+    throw new Error("Chemin Storage invalide.");
+  }
+
   const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
   if (!base) {

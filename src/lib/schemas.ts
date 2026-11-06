@@ -38,6 +38,14 @@ export const longYSectionConfigSchema = z.object({
   imagePath: z.string().min(1),
   width: z.number().positive(),
   height: z.number().positive(),
+  /**
+   * Tuiles verticales d'une planche trop haute pour un canvas unique.
+   * `imagePath` reste la première tuile. Absent = rendu historique en une
+   * seule image.
+   */
+  tiles: z.array(z.string().min(1)).min(2).max(32).optional(),
+  /** Hauteur d'une tuile (celle des tuiles de sortie, pas de la source). */
+  tileHeight: z.number().int().min(256).max(16384).optional(),
   audioPath: z.string().optional(),
   fxPath: z.string().optional(),
   fxConfig: fxOverlayConfigSchema.optional(),
@@ -92,6 +100,52 @@ export const sectionSchema = z
   .refine((s) => s.type === s.config.type, {
     message: 'section.type doit correspondre à section.config.type',
     path: ['type'],
+  })
+  .superRefine((section, ctx) => {
+    // Cohérence des tuiles `long-y` : soit aucune tuile (rendu historique en
+    // une image), soit un lot complet avec sa hauteur de tuile. La plage de
+    // hauteur est dérivée du nombre de tuiles, avec 1 px de tolérance pour les
+    // arrondis du redimensionnement navigateur.
+    if (section.config.type !== 'long-y') return;
+    const { tiles, tileHeight, height } = section.config;
+
+    if (!tiles) {
+      if (tileHeight !== undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'tileHeight exige une liste tiles non vide',
+          path: ['config', 'tileHeight'],
+        });
+      }
+      return;
+    }
+
+    if (tileHeight === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'tileHeight est requis quand tiles est fourni',
+        path: ['config', 'tileHeight'],
+      });
+      return;
+    }
+
+    if (new Set(tiles).size !== tiles.length) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Les tuiles long-y doivent être uniques',
+        path: ['config', 'tiles'],
+      });
+    }
+
+    const minHeight = (tiles.length - 1) * tileHeight;
+    const maxHeight = tiles.length * tileHeight;
+    if (height < minHeight - 1 || height > maxHeight + 1) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `Hauteur ${height}px incohérente avec ${tiles.length} tuiles de ${tileHeight}px (attendu entre ${minHeight + 1} et ${maxHeight}px)`,
+        path: ['config', 'height'],
+      });
+    }
   });
 
 export const webtoonSchema = z.object({

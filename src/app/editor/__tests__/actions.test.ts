@@ -300,10 +300,10 @@ describe("saveWebtoon — FX config persistence", () => {
         type: "image",
         config: {
           type: "image",
-          imagePath: "test.webp",
+          imagePath: "webtoons/sections/s1/test.webp",
           width: 800,
           height: 1200,
-          fxPath: "fx/overlay.gif",
+          fxPath: "webtoons/sections/s1/fx/overlay.gif",
           fxConfig: {
             position: { x: "center", y: "center" },
             size: { mode: "px", width: 100, height: 100 },
@@ -324,7 +324,7 @@ describe("saveWebtoon — FX config persistence", () => {
         p_sections: [
           expect.objectContaining({
             config: expect.objectContaining({
-              fxPath: "fx/overlay.gif",
+              fxPath: "webtoons/sections/s1/fx/overlay.gif",
               fxConfig: {
                 position: { x: "center", y: "center" },
                 size: { mode: "px", width: 100, height: 100 },
@@ -346,7 +346,7 @@ describe("saveWebtoon — FX config persistence", () => {
         type: "image",
         config: {
           type: "image",
-          imagePath: "test.webp",
+          imagePath: "webtoons/sections/client-temp-id/test.webp",
           width: 800,
           height: 1200,
         },
@@ -398,7 +398,7 @@ describe("saveWebtoon — FX config persistence", () => {
             webtoonId: "w1",
             position: 0,
             type: "image",
-            config: { type: "image", imagePath: "old.webp", width: 800, height: 1200 },
+            config: { type: "image", imagePath: "webtoons/sections/s1/old.webp", width: 800, height: 1200 },
             audioPath: undefined,
             createdAt: "2026-01-01T00:00:00.000Z",
             updatedAt: "2026-01-01T00:00:00.000Z",
@@ -415,10 +415,10 @@ describe("saveWebtoon — FX config persistence", () => {
           type: "image",
           config: {
             type: "image",
-            imagePath: "test.webp",
+            imagePath: "webtoons/sections/s1/test.webp",
             width: 800,
             height: 1200,
-            fxPath: "fx/overlay.gif",
+            fxPath: "webtoons/sections/s1/fx/overlay.gif",
             fxConfig: {
               position: { x: "center", y: "center" },
               size: { mode: "px", width: 100, height: 100 },
@@ -441,7 +441,7 @@ describe("saveWebtoon — FX config persistence", () => {
             expect.objectContaining({
               id: "s1",
               config: expect.objectContaining({
-                fxPath: "fx/overlay.gif",
+                fxPath: "webtoons/sections/s1/fx/overlay.gif",
                 fxConfig: {
                   position: { x: "center", y: "center" },
                   size: { mode: "px", width: 100, height: 100 },
@@ -493,7 +493,7 @@ describe("saveWebtoon — FX config persistence", () => {
         type: "image",
         config: {
           type: "image",
-          imagePath: "test.webp",
+          imagePath: "webtoons/sections/s1/test.webp",
           width: 800,
           height: 1200,
         },
@@ -512,7 +512,7 @@ describe("saveWebtoon — FX config persistence", () => {
           expect.objectContaining({
             config: expect.objectContaining({
               type: "image",
-              imagePath: "test.webp",
+              imagePath: "webtoons/sections/s1/test.webp",
               width: 800,
               height: 1200,
             }),
@@ -566,7 +566,7 @@ describe("saveWebtoon — revision and transactional RPC contract", () => {
           webtoonId: "w1",
           position: 0,
           type: "image",
-          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+          config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
           audioPath: undefined,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
@@ -624,7 +624,7 @@ describe("saveWebtoon — revision and transactional RPC contract", () => {
         webtoonId: "w1",
         position: 0,
         type: "image",
-        config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+        config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
         audioPath: undefined,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -648,7 +648,7 @@ describe("saveWebtoon — removed-section storage cleanup ordering", () => {
     type: "image" as const,
     config: {
       type: "image" as const,
-      imagePath: "kept.webp",
+      imagePath: "webtoons/sections/s1/kept.webp",
       width: 800,
       height: 1200,
     },
@@ -667,7 +667,7 @@ describe("saveWebtoon — removed-section storage cleanup ordering", () => {
         webtoonId: "w1",
         position: 0,
         type: "image",
-        config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+        config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
         audioPath: undefined,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -678,7 +678,7 @@ describe("saveWebtoon — removed-section storage cleanup ordering", () => {
         webtoonId: "w1",
         position: 1,
         type: "image",
-        config: { type: "image", imagePath: "removed.webp", width: 800, height: 1200 },
+        config: { type: "image", imagePath: "webtoons/sections/s2/removed.webp", width: 800, height: 1200 },
         audioPath: undefined,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -733,7 +733,7 @@ describe("saveWebtoon — removed-section storage cleanup ordering", () => {
     expect(removeMock).toHaveBeenCalledWith(
       expect.arrayContaining([
         "webtoons/sections/s2/1.webp",
-        "removed.webp",
+        "webtoons/sections/s2/removed.webp",
       ]),
     );
     // La transaction d'abord : aucun fichier supprimé avant le RPC.
@@ -756,7 +756,7 @@ describe("saveWebtoon — removed sections handled by the RPC (P0-1)", () => {
     type: "image" as const,
     config: {
       type: "image" as const,
-      imagePath: "kept.webp",
+      imagePath: "webtoons/sections/s1/kept.webp",
       width: 800,
       height: 1200,
     },
@@ -772,11 +772,11 @@ describe("saveWebtoon — removed sections handled by the RPC (P0-1)", () => {
     type: "image" as const,
     config: {
       type: "image" as const,
-      imagePath: "removed.webp",
+      imagePath: "webtoons/sections/s2/removed.webp",
       width: 800,
       height: 1200,
     },
-    audioPath: "removed-audio.mp3",
+    audioPath: "webtoons/sections/s2/removed-audio.mp3",
     ...timestamps,
     images: [
       {
@@ -842,8 +842,8 @@ describe("saveWebtoon — removed sections handled by the RPC (P0-1)", () => {
     expect(removeMock).toHaveBeenCalledWith(
       expect.arrayContaining([
         "webtoons/sections/s2/1.webp",
-        "removed.webp",
-        "removed-audio.mp3",
+        "webtoons/sections/s2/removed.webp",
+        "webtoons/sections/s2/removed-audio.mp3",
       ]),
     );
   });
@@ -864,7 +864,7 @@ describe("saveWebtoon — removed sections handled by the RPC (P0-1)", () => {
         type: "image" as const,
         config: {
           type: "image" as const,
-          imagePath: "new.webp",
+          imagePath: "webtoons/sections/s-new/new.webp",
           width: 800,
           height: 1200,
         },
@@ -893,7 +893,7 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
           webtoonId: "w1",
           position: 0,
           type: "image",
-          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+          config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
           audioPath: undefined,
           ...timestamps,
           images: [],
@@ -905,7 +905,7 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
           type: "animation",
           config: {
             type: "animation",
-            spritePath: "sprite.webp",
+            spritePath: "webtoons/sections/s2/sprite.webp",
             framePaths: [
               "webtoons/sections/s2/frames/1700000000000/0.webp",
               "webtoons/sections/s2/frames/1700000000000/1.webp",
@@ -915,9 +915,9 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
             columns: 2,
             rows: 1,
             frameCount: 2,
-            audioPath: "config-audio.mp3",
+            audioPath: "webtoons/sections/s2/config-audio.mp3",
           },
-          audioPath: "section-audio.mp3",
+          audioPath: "webtoons/sections/s2/section-audio.mp3",
           ...timestamps,
           images: [],
         },
@@ -937,7 +937,7 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
         type: "image" as const,
         config: {
           type: "image" as const,
-          imagePath: "kept.webp",
+          imagePath: "webtoons/sections/s1/kept.webp",
           width: 800,
           height: 1200,
         },
@@ -950,16 +950,121 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
     expect(result.ok).toBe(true);
     expect(removeMock).toHaveBeenCalledWith(
       expect.arrayContaining([
-        "sprite.webp",
+        "webtoons/sections/s2/sprite.webp",
         "webtoons/sections/s2/frames/1700000000000/0.webp",
         "webtoons/sections/s2/frames/1700000000000/1.webp",
-        "config-audio.mp3",
-        "section-audio.mp3",
+        "webtoons/sections/s2/config-audio.mp3",
+        "webtoons/sections/s2/section-audio.mp3",
       ]),
     );
   });
 
-  test("never deletes a path still referenced by an incoming section (keepPaths)", async () => {
+  test("removing a tiled long-y section deletes config.tiles and orphan tile batches", async () => {
+    const timestamps = {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const tiles = [
+      "webtoons/sections/s2/tiles-1700000000000/0.webp",
+      "webtoons/sections/s2/tiles-1700000000000/1.webp",
+    ];
+    vi.mocked(getWebtoon).mockResolvedValueOnce(
+      buildWebtoonWithSections([
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image",
+          config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
+          audioPath: undefined,
+          ...timestamps,
+          images: [],
+        },
+        {
+          id: "s2",
+          webtoonId: "w1",
+          position: 1,
+          type: "long-y",
+          config: {
+            type: "long-y",
+            imagePath: tiles[0],
+            tiles,
+            tileHeight: 4096,
+            width: 800,
+            height: 8000,
+          },
+          audioPath: undefined,
+          ...timestamps,
+          images: [],
+        },
+      ]),
+    );
+    const removeMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    // Listing récursif borné : le dossier horodaté est couvert, y compris les
+    // tuiles absentes de `config.tiles` (orphelines).
+    const listMock = vi.fn(async (prefix: string) => {
+      if (prefix === "webtoons/sections/s2/") {
+        return {
+          data: [
+            { name: "tiles-1700000000000", id: null },
+            { name: "orphan.webp", id: "file-1" },
+          ],
+          error: null,
+        };
+      }
+      if (prefix === "webtoons/sections/s2/tiles-1700000000000/") {
+        return {
+          data: [
+            { name: "0.webp", id: "tile-0" },
+            { name: "1.webp", id: "tile-1" },
+            { name: "2.webp", id: "tile-2" },
+          ],
+          error: null,
+        };
+      }
+      return { data: [], error: null };
+    });
+    vi.mocked(supabase.storage.from).mockReturnValue({
+      list: listMock,
+      remove: removeMock,
+    } as unknown as ReturnType<typeof supabase.storage.from>);
+
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image" as const,
+        config: {
+          type: "image" as const,
+          imagePath: "webtoons/sections/s1/kept.webp",
+          width: 800,
+          height: 1200,
+        },
+        audioPath: undefined,
+        ...timestamps,
+        images: [],
+      },
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(listMock).toHaveBeenCalledWith(
+      "webtoons/sections/s2/",
+      expect.objectContaining({ limit: 1000 }),
+    );
+    const removedPaths: string[] = removeMock.mock.calls[0][0];
+    expect(removedPaths).toEqual(
+      expect.arrayContaining([
+        ...tiles,
+        "webtoons/sections/s2/tiles-1700000000000/2.webp",
+        "webtoons/sections/s2/orphan.webp",
+      ]),
+    );
+    // Déduplication : une tuile connue et listée n'est supprimée qu'une fois.
+    expect(new Set(removedPaths).size).toBe(removedPaths.length);
+  });
+
+  test("never deletes a path outside the removed section prefix (foreign path)", async () => {
     const timestamps = {
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
@@ -973,7 +1078,7 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
           type: "image",
           config: {
             type: "image",
-            imagePath: "shared.webp",
+            imagePath: "webtoons/sections/s1/shared.webp",
             width: 800,
             height: 1200,
           },
@@ -988,7 +1093,9 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
           type: "image",
           config: {
             type: "image",
-            imagePath: "shared.webp",
+            // Chemin étranger : une ligne corrompue ne doit jamais faire
+            // supprimer le fichier d'une autre section.
+            imagePath: "webtoons/sections/s1/shared.webp",
             width: 800,
             height: 1200,
           },
@@ -1012,7 +1119,7 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
         type: "image" as const,
         config: {
           type: "image" as const,
-          imagePath: "shared.webp",
+          imagePath: "webtoons/sections/s1/shared.webp",
           width: 800,
           height: 1200,
         },
@@ -1024,7 +1131,7 @@ describe("collectSectionStoragePaths — framePaths and keepPaths (DATA-6/7/8)",
 
     expect(result.ok).toBe(true);
     for (const call of removeMock.mock.calls) {
-      expect(call[0]).not.toContain("shared.webp");
+      expect(call[0]).not.toContain("webtoons/sections/s1/shared.webp");
     }
   });
 });
@@ -1057,12 +1164,12 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
           type: "image",
           config: {
             type: "image",
-            imagePath: "old-image.webp",
+            imagePath: "webtoons/sections/s1/old-image.webp",
             width: 800,
             height: 1200,
-            fxPath: "old-fx.gif",
+            fxPath: "webtoons/sections/s1/old-fx.gif",
           },
-          audioPath: "old-audio.mp3",
+          audioPath: "webtoons/sections/s1/old-audio.mp3",
           ...baseTimestamps,
           images: [
             {
@@ -1084,7 +1191,7 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
           type: "animation",
           config: {
             type: "animation",
-            spritePath: "old-sprite.webp",
+            spritePath: "webtoons/sections/s2/old-sprite.webp",
             frameWidth: 100,
             frameHeight: 100,
             columns: 4,
@@ -1107,12 +1214,12 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
         type: "image" as const,
         config: {
           type: "image" as const,
-          imagePath: "new-image.webp",
+          imagePath: "webtoons/sections/s1/new-image.webp",
           width: 800,
           height: 1200,
-          fxPath: "new-fx.gif",
+          fxPath: "webtoons/sections/s1/new-fx.gif",
         },
-        audioPath: "new-audio.mp3",
+        audioPath: "webtoons/sections/s1/new-audio.mp3",
         ...baseTimestamps,
         images: [
           {
@@ -1134,7 +1241,7 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
         type: "animation" as const,
         config: {
           type: "animation" as const,
-          spritePath: "new-sprite.webp",
+          spritePath: "webtoons/sections/s2/new-sprite.webp",
           frameWidth: 100,
           frameHeight: 100,
           columns: 4,
@@ -1153,18 +1260,18 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
     expect(removedPaths).toEqual(
       expect.arrayContaining([
         "webtoons/sections/s1/old.webp",
-        "old-audio.mp3",
-        "old-image.webp",
-        "old-fx.gif",
-        "old-sprite.webp",
+        "webtoons/sections/s1/old-audio.mp3",
+        "webtoons/sections/s1/old-image.webp",
+        "webtoons/sections/s1/old-fx.gif",
+        "webtoons/sections/s2/old-sprite.webp",
       ]),
     );
     for (const kept of [
       "webtoons/sections/s1/new.webp",
-      "new-audio.mp3",
-      "new-image.webp",
-      "new-fx.gif",
-      "new-sprite.webp",
+      "webtoons/sections/s1/new-audio.mp3",
+      "webtoons/sections/s1/new-image.webp",
+      "webtoons/sections/s1/new-fx.gif",
+      "webtoons/sections/s2/new-sprite.webp",
     ]) {
       expect(removedPaths).not.toContain(kept);
     }
@@ -1185,12 +1292,12 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
           type: "image",
           config: {
             type: "image",
-            imagePath: "shared.webp",
+            imagePath: "webtoons/sections/s1/shared.webp",
             width: 800,
             height: 1200,
-            fxPath: "old-fx.gif",
+            fxPath: "webtoons/sections/s1/old-fx.gif",
           },
-          audioPath: "old-audio.mp3",
+          audioPath: "webtoons/sections/s1/old-audio.mp3",
           ...baseTimestamps,
           images: [
             {
@@ -1217,12 +1324,12 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
         type: "image" as const,
         config: {
           type: "image" as const,
-          imagePath: "new-image.webp",
+          imagePath: "webtoons/sections/s1/new-image.webp",
           width: 800,
           height: 1200,
-          fxPath: "new-fx.gif",
+          fxPath: "webtoons/sections/s1/new-fx.gif",
         },
-        audioPath: "new-audio.mp3",
+        audioPath: "webtoons/sections/s1/new-audio.mp3",
         ...baseTimestamps,
         images: [
           {
@@ -1244,7 +1351,7 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
         type: "image" as const,
         config: {
           type: "image" as const,
-          imagePath: "shared.webp",
+          imagePath: "webtoons/sections/s2/shared.webp",
           width: 800,
           height: 1200,
         },
@@ -1258,10 +1365,13 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
     expect(removeMock).toHaveBeenCalledTimes(1);
     const removedPaths: string[] = removeMock.mock.calls[0][0];
     expect(removedPaths).not.toContain("webtoons/sections/s1/old.webp");
-    expect(removedPaths).not.toContain("shared.webp");
     // Unshared stale paths are still cleaned.
     expect(removedPaths).toEqual(
-      expect.arrayContaining(["old-audio.mp3", "old-fx.gif"]),
+      expect.arrayContaining([
+        "webtoons/sections/s1/old-audio.mp3",
+        "webtoons/sections/s1/old-fx.gif",
+        "webtoons/sections/s1/shared.webp",
+      ]),
     );
   });
 
@@ -1275,8 +1385,8 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
           webtoonId: "w1",
           position: 0,
           type: "image",
-          config: { type: "image", imagePath: "old-image.webp", width: 800, height: 1200 },
-          audioPath: "old-audio.mp3",
+          config: { type: "image", imagePath: "webtoons/sections/s1/old-image.webp", width: 800, height: 1200 },
+          audioPath: "webtoons/sections/s1/old-audio.mp3",
           ...baseTimestamps,
           images: [
             {
@@ -1307,11 +1417,11 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
         type: "image" as const,
         config: {
           type: "image" as const,
-          imagePath: "new-image.webp",
+          imagePath: "webtoons/sections/s1/new-image.webp",
           width: 800,
           height: 1200,
         },
-        audioPath: "new-audio.mp3",
+        audioPath: "webtoons/sections/s1/new-audio.mp3",
         ...baseTimestamps,
         images: [
           {
@@ -1344,7 +1454,7 @@ describe("fxPath storage cleanup", () => {
           webtoonId: "w1",
           position: 0,
           type: "image",
-          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+          config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
           audioPath: undefined,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
@@ -1357,10 +1467,10 @@ describe("fxPath storage cleanup", () => {
           type: "image",
           config: {
             type: "image",
-            imagePath: "removed.webp",
+            imagePath: "webtoons/sections/s2/removed.webp",
             width: 800,
             height: 1200,
-            fxPath: "fx/overlay.gif",
+            fxPath: "webtoons/sections/s2/fx/overlay.gif",
           },
           audioPath: undefined,
           createdAt: "2026-01-01T00:00:00.000Z",
@@ -1383,7 +1493,7 @@ describe("fxPath storage cleanup", () => {
       type: "image" as const,
       config: {
         type: "image" as const,
-        imagePath: "kept.webp",
+        imagePath: "webtoons/sections/s1/kept.webp",
         width: 800,
         height: 1200,
       },
@@ -1398,7 +1508,7 @@ describe("fxPath storage cleanup", () => {
     expect(result.ok).toBe(true);
     expect(removeMock).toHaveBeenCalledTimes(1);
     expect(removeMock).toHaveBeenCalledWith(
-      expect.arrayContaining(["fx/overlay.gif"]),
+      expect.arrayContaining(["webtoons/sections/s2/fx/overlay.gif"]),
     );
   });
 
@@ -1414,10 +1524,10 @@ describe("fxPath storage cleanup", () => {
           type: "image",
           config: {
             type: "image",
-            imagePath: "cover.webp",
+            imagePath: "webtoons/sections/s1/cover.webp",
             width: 800,
             height: 1200,
-            fxPath: "fx/overlay.gif",
+            fxPath: "webtoons/sections/s1/fx/overlay.gif",
           },
           audioPath: undefined,
           createdAt: "2026-01-01T00:00:00.000Z",
@@ -1437,7 +1547,7 @@ describe("fxPath storage cleanup", () => {
 
     expect(result.ok).toBe(true);
     expect(removeMock).toHaveBeenCalledWith(
-      expect.arrayContaining(["fx/overlay.gif"]),
+      expect.arrayContaining(["webtoons/sections/s1/fx/overlay.gif"]),
     );
   });
 });
@@ -1785,7 +1895,7 @@ describe("saveWebtoon — defensive webtoonId", () => {
     type: "image" as const,
     config: {
       type: "image" as const,
-      imagePath: "test.webp",
+      imagePath: "webtoons/sections/s-new/test.webp",
       width: 800,
       height: 1200,
     },
@@ -1835,7 +1945,7 @@ describe("saveWebtoon — defensive webtoonId", () => {
           webtoonId: "w1",
           position: 0,
           type: "image",
-          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+          config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
           audioPath: undefined,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
@@ -1854,7 +1964,7 @@ describe("saveWebtoon — defensive webtoonId", () => {
         webtoonId: "w1",
         position: 0,
         type: "image",
-        config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
+        config: { type: "image", imagePath: "webtoons/sections/s1/kept.webp", width: 800, height: 1200 },
         audioPath: undefined,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -1929,7 +2039,7 @@ describe("deleteWebtoonAction — storage cleanup resilience", () => {
           webtoonId: "w1",
           position: 0,
           type: "image",
-          config: { type: "image", imagePath: "cover.webp", width: 800, height: 1200 },
+          config: { type: "image", imagePath: "webtoons/sections/s1/cover.webp", width: 800, height: 1200 },
           audioPath: undefined,
           createdAt: "2026-01-01T00:00:00.000Z",
           updatedAt: "2026-01-01T00:00:00.000Z",
@@ -1978,7 +2088,7 @@ describe("deleteWebtoonAction — DB before Storage (DATA-4) and cover cleanup",
           type: "image" as const,
           config: {
             type: "image" as const,
-            imagePath: "image.webp",
+            imagePath: "webtoons/sections/s1/image.webp",
             width: 800,
             height: 1200,
           },
@@ -2098,5 +2208,181 @@ describe("editor actions — authentication guard (P0-2)", () => {
 
     expect(result).toEqual({ ok: false, error: "unauthenticated" });
     expect(updateWebtoon).not.toHaveBeenCalled();
+  });
+});
+
+describe("editor actions — storage path validation (P0-2b)", () => {
+  const timestamps = {
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  test("saveWebtoon refuses an imagePath outside the section prefix without calling the RPC", async () => {
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: {
+          type: "image",
+          imagePath: "webtoons/sections/s2/stolen.webp",
+          width: 800,
+          height: 1200,
+        },
+        audioPath: undefined,
+        ...timestamps,
+        images: [],
+      },
+    ]);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Chemin de stockage invalide.",
+    });
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  test("saveWebtoon refuses a traversal path in an image record", async () => {
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: {
+          type: "image",
+          imagePath: "webtoons/sections/s1/image.webp",
+          width: 800,
+          height: 1200,
+        },
+        audioPath: undefined,
+        ...timestamps,
+        images: [
+          {
+            id: "img-1",
+            sectionId: "s1",
+            webtoonId: "w1",
+            storagePath: "webtoons/sections/s1/../../../secret.webp",
+            width: 800,
+            height: 1200,
+            mimeType: "image/webp",
+            position: 0,
+          },
+        ],
+      },
+    ]);
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Chemin de stockage invalide.",
+    });
+    expect(supabase.rpc).not.toHaveBeenCalled();
+  });
+
+  test("saveWebtoon accepts seed assets", async () => {
+    const result = await saveWebtoon("w1", [
+      {
+        id: "s1",
+        webtoonId: "w1",
+        position: 0,
+        type: "image",
+        config: {
+          type: "image",
+          imagePath: "webtoons/seed/demo/image.png",
+          width: 800,
+          height: 1200,
+        },
+        audioPath: undefined,
+        ...timestamps,
+        images: [],
+      },
+    ]);
+
+    expect(result).toEqual({ ok: true, revision: 1 });
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
+      expect.objectContaining({
+        p_sections: [
+          expect.objectContaining({
+            config: expect.objectContaining({
+              imagePath: "webtoons/seed/demo/image.png",
+            }),
+          }),
+        ],
+      }),
+    );
+  });
+
+  test("deleteWebtoonAction ignores unsafe paths", async () => {
+    const removeMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    vi.mocked(supabase.storage.from).mockReturnValue({
+      list: vi.fn().mockResolvedValue({ data: [], error: null }),
+      remove: removeMock,
+    } as unknown as ReturnType<typeof supabase.storage.from>);
+    vi.mocked(getWebtoon).mockResolvedValueOnce({
+      ...buildWebtoon({
+        id: "w1",
+        coverPath: "webtoons/covers/w1/../../../secret-cover.webp",
+      }),
+      sections: [
+        {
+          id: "s1",
+          webtoonId: "w1",
+          position: 0,
+          type: "image" as const,
+          config: {
+            type: "image" as const,
+            imagePath: "webtoons/sections/s1/image.webp",
+            width: 800,
+            height: 1200,
+          },
+          audioPath: "../../secret-audio.mp3",
+          ...timestamps,
+          images: [],
+        },
+      ],
+    });
+
+    const result = await deleteWebtoonAction("w1");
+
+    expect(result).toEqual({ ok: true });
+    expect(removeMock).toHaveBeenCalledWith(["webtoons/sections/s1/image.webp"]);
+    for (const call of removeMock.mock.calls) {
+      for (const path of call[0] as string[]) {
+        expect(path).not.toContain("..");
+      }
+    }
+  });
+
+  test("updateWebtoonMetadataAction refuses a cover outside the webtoon prefix", async () => {
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      coverPath: "webtoons/covers/w2/cover.webp",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "Chemin de stockage invalide.",
+    });
+    expect(updateWebtoon).not.toHaveBeenCalled();
+  });
+
+  test("updateWebtoonMetadataAction does not remove an unsafe previous cover", async () => {
+    vi.mocked(getWebtoonCoverPath).mockResolvedValueOnce("../../secret.webp");
+    vi.mocked(updateWebtoon).mockResolvedValueOnce(buildWebtoon({ id: "w1" }));
+    const removeMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    vi.mocked(supabase.storage.from).mockReturnValue({
+      list: vi.fn().mockResolvedValue({ data: [], error: null }),
+      remove: removeMock,
+    } as unknown as ReturnType<typeof supabase.storage.from>);
+
+    const result = await updateWebtoonMetadataAction("w1", {
+      title: "Titre",
+      coverPath: "",
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(removeMock).not.toHaveBeenCalled();
   });
 });

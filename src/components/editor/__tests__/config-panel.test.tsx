@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { NextIntlClientProvider } from "next-intl";
 
 import { SectionConfigPanel } from "../SectionConfigPanel";
@@ -74,6 +74,15 @@ vi.mock("@/lib/image/process", async () => {
     resizeImage: vi.fn().mockResolvedValue(new Blob(["resized"], { type: "image/webp" })),
     toWebP: vi.fn().mockResolvedValue(new Blob(["webp"], { type: "image/webp" })),
     readImageDimensions: vi.fn().mockResolvedValue({ width: 800, height: 600 }),
+    sliceLongYImage: vi.fn().mockResolvedValue({
+      tiles: [
+        new Blob(["tile-0"], { type: "image/webp" }),
+        new Blob(["tile-1"], { type: "image/webp" }),
+      ],
+      width: 800,
+      height: 20000,
+      tileHeight: 4096,
+    }),
     buildSpriteSheet: vi.fn().mockResolvedValue({
       spriteBlob: new Blob(["sprite"], { type: "image/webp" }),
       frameWidth: 100,
@@ -98,6 +107,7 @@ import {
   toWebP,
   readImageDimensions,
   buildSpriteSheet,
+  sliceLongYImage,
   sliceSpriteSheet,
 } from "@/lib/image/process";
 
@@ -1436,5 +1446,187 @@ describe("SectionConfigPanel — upload hardening", () => {
     });
 
     await waitFor(() => expect(fileInput).not.toBeDisabled());
+  });
+});
+
+describe("SectionConfigPanel — long-y tiling (Phase 2C-1)", () => {
+  beforeEach(() => {
+    // `clearAllMocks` ne réinitialise pas les implémentations : repartir d'un
+    // état propre évite qu'un test laisse un upload en échec ou une dimension
+    // de source à un autre.
+    uploadSpy.mockReset();
+    uploadSpy.mockResolvedValue({ data: { path: "uploaded/path.webp" }, error: null });
+    vi.mocked(readImageDimensions).mockResolvedValue({ width: 800, height: 600 });
+    vi.mocked(sliceLongYImage).mockResolvedValue({
+      tiles: [
+        new Blob(["tile-0"], { type: "image/webp" }),
+        new Blob(["tile-1"], { type: "image/webp" }),
+      ],
+      width: 800,
+      height: 20000,
+      tileHeight: 4096,
+    });
+  });
+
+  test("slices an oversized long-y strip, uploads tiles sequentially and stores config.tiles", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(false);
+    vi.mocked(readImageDimensions).mockResolvedValue({ width: 800, height: 20000 });
+    const tileBlobs = [
+      new Blob(["tile-0"], { type: "image/webp" }),
+      new Blob(["tile-1"], { type: "image/webp" }),
+      new Blob(["tile-2"], { type: "image/webp" }),
+    ];
+    vi.mocked(sliceLongYImage).mockResolvedValue({
+      tiles: tileBlobs,
+      width: 800,
+      height: 20000,
+      tileHeight: 4096,
+    });
+    uploadSpy.mockImplementation(async (path: string) => ({
+      data: { path },
+      error: null,
+    }));
+
+    const section = makeSection({
+      type: "long-y",
+      config: { type: "long-y", imagePath: "old/strip.webp", width: 800, height: 20000 },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    const file = new File(["strip"], "strip.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("Uploader une image"), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+
+    // La décision de tuiler se prend sur les dimensions SOURCE.
+    expect(readImageDimensions).toHaveBeenCalledWith(file);
+    expect(sliceLongYImage).toHaveBeenCalledWith(file);
+    // `resizeImage` ne doit jamais voir une planche hors canvas.
+    expect(resizeImage).not.toHaveBeenCalled();
+
+    const uploadedPaths = uploadSpy.mock.calls.map((call) => call[0] as string);
+    expect(uploadedPaths).toHaveLength(3);
+    uploadedPaths.forEach((path, index) => {
+      expect(path).toMatch(
+        new RegExp(`^webtoons/sections/sec-1/tiles-\\d+/${index}\\.webp$`),
+      );
+    });
+    // Un seul dossier horodaté pour tout le lot.
+    const batches = new Set(uploadedPaths.map((path) => path.split("/")[3]));
+    expect(batches.size).toBe(1);
+    expect(uploadSpy.mock.calls.map((call) => call[1])).toEqual(tileBlobs);
+
+    const updated = lastCall(onChange);
+    expect(updated.images).toEqual([]);
+    expect(updated.config).toMatchObject({
+      type: "long-y",
+      imagePath: uploadedPaths[0],
+      tiles: uploadedPaths,
+      tileHeight: 4096,
+      width: 800,
+      height: 20000,
+    });
+  });
+
+  test("long-y under the canvas budget only constrains width (never maxDimension)", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(false);
+    vi.mocked(readImageDimensions).mockResolvedValue({ width: 800, height: 600 });
+    const section = makeSection({
+      type: "long-y",
+      config: {
+        type: "long-y",
+        imagePath: "old/strip.webp",
+        width: 800,
+        height: 600,
+        tiles: ["tiles-old/0.webp", "tiles-old/1.webp"],
+        tileHeight: 300,
+      },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    fireEvent.change(screen.getByLabelText("Uploader une image"), {
+      target: { files: [new File(["image"], "strip.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+
+    expect(sliceLongYImage).not.toHaveBeenCalled();
+    expect(resizeImage).toHaveBeenCalledWith(expect.any(File), {
+      maxWidth: 1600,
+    });
+
+    const updated = lastCall(onChange);
+    expect(updated.config).toMatchObject({
+      type: "long-y",
+      imagePath: "uploaded/path.webp",
+      width: 800,
+      height: 600,
+    });
+    // Un ré-upload simple efface le tuilage précédent.
+    expect(updated.config).not.toHaveProperty("tiles");
+    expect(updated.config).not.toHaveProperty("tileHeight");
+  });
+
+  test("image sections keep the two-axis maxDimension resize", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(false);
+    vi.mocked(readImageDimensions).mockResolvedValue({ width: 800, height: 600 });
+    const section = makeSection({ type: "image" });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    fireEvent.change(screen.getByLabelText("Uploader une image"), {
+      target: { files: [new File(["image"], "photo.png", { type: "image/png" })] },
+    });
+
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+
+    expect(sliceLongYImage).not.toHaveBeenCalled();
+    expect(resizeImage).toHaveBeenCalledWith(expect.any(File), {
+      maxDimension: 1600,
+    });
+  });
+
+  test("a partial tile upload failure removes the tiles already uploaded", async () => {
+    const { isAnimatedImage } = await import("@/lib/image/animated");
+    vi.mocked(isAnimatedImage).mockResolvedValue(false);
+    vi.mocked(readImageDimensions).mockResolvedValue({ width: 800, height: 20000 });
+    vi.mocked(sliceLongYImage).mockResolvedValue({
+      tiles: [
+        new Blob(["tile-0"], { type: "image/webp" }),
+        new Blob(["tile-1"], { type: "image/webp" }),
+      ],
+      width: 800,
+      height: 20000,
+      tileHeight: 4096,
+    });
+    let uploadCount = 0;
+    uploadSpy.mockImplementation(async (path: string) => {
+      uploadCount += 1;
+      if (uploadCount === 2) throw new Error("storage down");
+      return { data: { path }, error: null };
+    });
+
+    const section = makeSection({
+      type: "long-y",
+      config: { type: "long-y", imagePath: "", width: 0, height: 0 },
+    });
+    const onChange = vi.fn();
+    render(wrap(<SectionConfigPanel section={section} onSectionChange={onChange} onClose={vi.fn()} />));
+
+    fireEvent.change(screen.getByLabelText("Uploader une image"), {
+      target: { files: [new File(["strip"], "strip.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByText("Erreur lors du téléchargement de l'image.")).toBeInTheDocument();
+    const firstTilePath = uploadSpy.mock.calls[0][0] as string;
+    expect(removeSpy).toHaveBeenCalledWith([firstTilePath]);
+    expect(onChange).not.toHaveBeenCalled();
   });
 });

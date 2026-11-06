@@ -7,6 +7,7 @@ import type { SectionWithImages } from "@/lib/db/queries";
 import { normalizeWheelDelta } from "@/hooks/useReaderNavigation";
 import type { FxOverlayConfig, LongYSectionConfig } from "@/types/webtoon";
 import { FxOverlay } from "../FxOverlay";
+import { LongYTile } from "./LongYTile";
 import { StepImage } from "./StepImage";
 
 export type LongYBoundaryEdge = "top" | "bottom";
@@ -60,6 +61,14 @@ export function LongYStep({
   const t = useTranslations("reader.section");
   const config = section.config as LongYSectionConfig;
   const fxPath = typeof config.fxPath === "string" ? config.fxPath.trim() : "";
+
+  // Planche segmentée : au moins deux tuiles. Les données historiques n'ont
+  // pas `tiles` et gardent le rendu mono-image via `StepImage`.
+  const tiles =
+    Array.isArray(config.tiles) && config.tiles.length >= 2
+      ? config.tiles
+      : null;
+  const tileHeight = config.tileHeight ?? 4096;
 
   const scrollerRef = React.useRef<HTMLDivElement>(null);
   const latchedRef = React.useRef<LongYBoundaryEdge | null>(null);
@@ -318,12 +327,32 @@ export function LongYStep({
         className="h-full w-full overflow-hidden"
       >
         <div className="relative w-full">
-          <StepImage
-            section={section}
-            alt={t("longY")}
-            testId="long-y-step-image"
-            className="block h-auto w-full max-w-none select-none"
-          />
+          {tiles ? (
+            <div data-testid="long-y-step-image" data-image-variant="tiles">
+              {tiles.map((tilePath, index) => (
+                <LongYTile
+                  key={`${tilePath}-${index}`}
+                  storagePath={tilePath}
+                  alt={t("longY")}
+                  width={config.width}
+                  height={Math.max(
+                    1,
+                    Math.min(tileHeight, config.height - index * tileHeight),
+                  )}
+                  priority={index === 0}
+                  index={index}
+                  testId={`long-y-tile-${index}`}
+                />
+              ))}
+            </div>
+          ) : (
+            <StepImage
+              section={section}
+              alt={t("longY")}
+              testId="long-y-step-image"
+              className="block h-auto w-full max-w-none select-none"
+            />
+          )}
           {fxPath ? (
             <FxOverlay
               fxPath={fxPath}

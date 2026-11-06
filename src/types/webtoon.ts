@@ -38,9 +38,17 @@ export interface ImageSectionConfig {
 /** Image haute, défilement natif sans animation. */
 export interface LongYSectionConfig {
   type: 'long-y';
+  /** Première tuile quand `tiles` est présent. */
   imagePath: string;
   width: number;
   height: number;
+  /**
+   * Tuiles verticales d'une planche trop haute pour un canvas unique
+   * (≥ 2, max 32). Absent = rendu historique en une seule image.
+   */
+  tiles?: string[];
+  /** Hauteur d'une tuile de sortie, en pixels (256–16384). */
+  tileHeight?: number;
   audioPath?: string;
   /** Overlay GIF/WebP animé (positionné par fxConfig). */
   fxPath?: string;

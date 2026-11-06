@@ -18,3 +18,20 @@ export const MAX_IMAGE_PIXELS = 40_000_000;
  * main thread. La limite Storage du bucket est de 50 MiB.
  */
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Hauteur source d'une tuile `long-y`, en pixels. Les planches plus hautes que
+ * `MAX_CANVAS_DIMENSION` sont découpées en tranches de cette taille pour
+ * rester dans les limites de canvas du navigateur.
+ */
+export const LONG_Y_TILE_HEIGHT = 4096;
+
+/** Nombre maximal de tuiles acceptées pour une section `long-y`. */
+export const MAX_LONG_Y_TILES = 32;
+
+/**
+ * Budget mémoire d'une planche `long-y` avant découpage, en pixels
+ * (60 Mpx ≈ 240 Mo en RGBA décodé). Au-delà, le décodage navigateur devient
+ * risqué même découpé : la section doit être ré-uploadée en tuiles.
+ */
+export const MAX_LONG_Y_PIXELS = 60_000_000;

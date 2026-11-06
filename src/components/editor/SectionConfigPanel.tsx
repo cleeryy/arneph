@@ -25,11 +25,13 @@ import {
   resizeImage,
   buildSpriteSheet,
   sliceSpriteSheet,
+  sliceLongYImage,
   readImageDimensions,
+  MAX_CANVAS_DIMENSION,
   ImageProcessingError,
 } from "@/lib/image/process";
 import { isAnimatedImage } from "@/lib/image/animated";
-import { MAX_UPLOAD_BYTES } from "@/lib/image/limits";
+import { MAX_IMAGE_PIXELS, MAX_UPLOAD_BYTES } from "@/lib/image/limits";
 import { SCROLL_DISTANCES } from "@/lib/scroll/constants";
 import { uploadSectionAsset, removeSectionAssets } from "@/lib/supabase/upload";
 import { sectionTypeLabel } from "@/lib/editor/section-labels";
@@ -41,6 +43,7 @@ import type {
   ImageFocus,
   ImageSectionConfig,
   FxOverlayConfig,
+  LongYSectionConfig,
   PanXSectionConfig,
   AnimationSectionConfig,
 } from "@/types/webtoon";
@@ -55,6 +58,8 @@ const AUDIO_MIME_TYPES = ["audio/mpeg", "audio/webm", "audio/ogg"];
 
 /** Les images de section sont rendues plein écran : 1600 px suffit. */
 const SECTION_IMAGE_MAX_DIMENSION = 1600;
+/** Une planche `long-y` n'est bornée qu'en largeur, jamais en hauteur. */
+const SECTION_IMAGE_MAX_WIDTH = 1600;
 
 type StaticSectionConfig = Extract<
   SectionWithImages["config"],
@@ -243,44 +248,151 @@ export function SectionConfigPanel({
     }
 
     setUploading(true);
+    // Tuiles déjà écrites sur Storage : retirées si le lot échoue en route.
+    const uploadedTiles: string[] = [];
+    const buildImageRecord = (
+      storagePath: string,
+      dimensions: { width: number; height: number },
+      mimeType: string,
+    ): ImageRecord => ({
+      id: crypto.randomUUID(),
+      sectionId: section.id,
+      webtoonId: section.webtoonId,
+      storagePath,
+      width: dimensions.width,
+      height: dimensions.height,
+      mimeType,
+      position: 0,
+    });
+
     try {
       const animated = await isAnimatedImage(file);
 
-      let uploadBlob: Blob;
-      let mimeType: string;
-      let dimensions: { width: number; height: number };
-
       if (animated) {
-        uploadBlob = file;
-        mimeType = file.type;
-        dimensions = await readImageDimensions(file);
-      } else {
-        // `resizeImage()` encode déjà en WebP : le repasser dans `toWebP()`
-        // serait un double encodage (perte de qualité + CPU inutile).
-        const resized = await resizeImage(file, {
-          maxDimension: SECTION_IMAGE_MAX_DIMENSION,
+        const dimensions = await readImageDimensions(file);
+        const storagePath = await uploadSectionAsset(
+          generateStoragePath(section.id, file.name),
+          file,
+          file.type,
+        );
+
+        if (section.config.type === "long-y") {
+          const nextConfig: LongYSectionConfig = {
+            ...(section.config as LongYSectionConfig),
+            imagePath: storagePath,
+            width: dimensions.width,
+            height: dimensions.height,
+          };
+          // Un GIF remplace la planche tuilée : aucune tuile périmée.
+          delete nextConfig.tiles;
+          delete nextConfig.tileHeight;
+          onSectionChange({
+            ...section,
+            images: [buildImageRecord(storagePath, dimensions, file.type)],
+            config: nextConfig,
+          });
+          return;
+        }
+
+        const imageConfig = section.config as Extract<
+          SectionWithImages["config"],
+          { type: "image" | "pan-x" }
+        >;
+        onSectionChange({
+          ...section,
+          images: [buildImageRecord(storagePath, dimensions, file.type)],
+          config: {
+            ...imageConfig,
+            imagePath: storagePath,
+            width: dimensions.width,
+            height: dimensions.height,
+          },
         });
-        dimensions = await readImageDimensions(resized);
-        uploadBlob = resized;
-        mimeType = "image/webp";
+        return;
       }
 
-      const path = generateStoragePath(section.id, file.name);
-      const storagePath = await uploadSectionAsset(path, uploadBlob, mimeType);
+      // Dimensions lues AVANT de choisir le pipeline : une planche `long-y`
+      // au-delà du canvas ne doit jamais passer par `resizeImage`.
+      const source = await readImageDimensions(file);
+      const needsTiling =
+        section.config.type === "long-y" &&
+        (source.height > MAX_CANVAS_DIMENSION ||
+          source.width * source.height > MAX_IMAGE_PIXELS);
 
-      const imageConfig = section.config as Extract<SectionWithImages["config"], { type: "image" | "long-y" | "pan-x" }>;
-      const imageRecord: ImageRecord = {
-        id: crypto.randomUUID(),
-        sectionId: section.id,
-        webtoonId: section.webtoonId,
-        storagePath,
-        width: dimensions.width,
-        height: dimensions.height,
-        mimeType,
-        position: 0,
-      };
+      if (needsTiling) {
+        const sliced = await sliceLongYImage(file);
+        // Batch horodaté : `upsert: false`, donc un ré-upload doit écrire
+        // dans un dossier neuf au lieu d'écraser les tuiles précédentes.
+        const tileBatch = Date.now();
+        const tiles: string[] = [];
+        for (let index = 0; index < sliced.tiles.length; index += 1) {
+          const tilePath = await uploadSectionAsset(
+            `webtoons/sections/${section.id}/tiles-${tileBatch}/${index}.webp`,
+            sliced.tiles[index],
+            "image/webp",
+          );
+          uploadedTiles.push(tilePath);
+          tiles.push(tilePath);
+        }
 
-      const updatedSection: SectionWithImages = {
+        const longYConfig = section.config as LongYSectionConfig;
+        onSectionChange({
+          ...section,
+          images: [],
+          config: {
+            ...longYConfig,
+            type: "long-y",
+            imagePath: tiles[0],
+            tiles,
+            tileHeight: sliced.tileHeight,
+            width: sliced.width,
+            height: sliced.height,
+          },
+        });
+        return;
+      }
+
+      // Planche `long-y` sous les limites : ne réduire QUE la largeur.
+      // `maxDimension` écraserait la hauteur sous la limite canvas.
+      const resized = await resizeImage(
+        file,
+        section.config.type === "long-y"
+          ? { maxWidth: SECTION_IMAGE_MAX_WIDTH }
+          : { maxDimension: SECTION_IMAGE_MAX_DIMENSION },
+      );
+      const dimensions = await readImageDimensions(resized);
+      const storagePath = await uploadSectionAsset(
+        generateStoragePath(section.id, file.name),
+        resized,
+        "image/webp",
+      );
+      const imageRecord = buildImageRecord(storagePath, dimensions, "image/webp");
+
+      if (section.config.type === "long-y") {
+        const nextConfig: LongYSectionConfig = {
+          ...(section.config as LongYSectionConfig),
+          imagePath: storagePath,
+          width: dimensions.width,
+          height: dimensions.height,
+        };
+        // Une ré-upload simple remplace le tuilage : jamais de `tiles`
+        // périmées pointant vers l'ancien batch.
+        delete nextConfig.tiles;
+        delete nextConfig.tileHeight;
+
+        onSectionChange({
+          ...section,
+          images: [imageRecord],
+          config: nextConfig,
+        });
+        return;
+      }
+
+      const imageConfig = section.config as Extract<
+        SectionWithImages["config"],
+        { type: "image" | "pan-x" }
+      >;
+      onSectionChange({
         ...section,
         images: [imageRecord],
         config: {
@@ -289,9 +401,13 @@ export function SectionConfigPanel({
           width: dimensions.width,
           height: dimensions.height,
         },
-      };
-      onSectionChange(updatedSection);
+      });
     } catch (err) {
+      if (uploadedTiles.length > 0) {
+        await removeSectionAssets(uploadedTiles).catch(() => {
+          // Nettoyage best-effort : ne pas masquer l'erreur d'upload.
+        });
+      }
       if (err instanceof ImageProcessingError) {
         setError(err.message);
       } else {

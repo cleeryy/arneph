@@ -6,6 +6,12 @@ import { LongYStep } from "../LongYStep";
 import type { LongYSectionConfig } from "@/types/webtoon";
 import { makeImage, makeSection, wrap } from "./fixtures";
 
+const imageMock = vi.hoisted(() => ({
+  loader: undefined as
+    | undefined
+    | ((args: { src: string; width: number; quality?: number }) => string),
+}));
+
 vi.mock("next/image", () => ({
   default: (props: Record<string, unknown>) => {
     const {
@@ -14,6 +20,11 @@ vi.mock("next/image", () => ({
       width,
       height,
       loading,
+      priority,
+      sizes,
+      loader,
+      decoding,
+      draggable,
       unoptimized,
       className,
       style,
@@ -24,10 +35,16 @@ vi.mock("next/image", () => ({
       width: number;
       height: number;
       loading?: "eager" | "lazy";
+      priority?: boolean;
+      sizes?: string;
+      loader?: (args: { src: string; width: number; quality?: number }) => string;
+      decoding?: "async" | "sync" | "auto";
+      draggable?: boolean;
       unoptimized?: boolean;
       className?: string;
       style?: CSSProperties;
     };
+    imageMock.loader = loader;
     return (
       <img
         src={src}
@@ -35,9 +52,14 @@ vi.mock("next/image", () => ({
         width={width}
         height={height}
         loading={loading}
+        sizes={sizes}
+        decoding={decoding}
+        draggable={draggable}
         className={className}
         style={style}
-        data-unoptimized={String(unoptimized)}
+        data-priority={String(priority)}
+        data-draggable={String(draggable)}
+        data-unoptimized={String(Boolean(unoptimized))}
         {...rest}
       />
     );
@@ -159,6 +181,76 @@ describe("LongYStep — conteneur de scroll", () => {
       "src",
       expect.stringContaining("fx/rain.webp"),
     );
+  });
+});
+
+describe("LongYStep — planche tuilée", () => {
+  const tileSection = () =>
+    longSection({
+      height: 10000,
+      tileHeight: 4096,
+      tiles: ["tiles/0.webp", "tiles/1.webp", "tiles/2.webp"],
+    });
+
+  test("3 tuiles → 3 images, première prioritaire, suivantes paresseuses", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://supabase.example.com");
+    render(wrap(<LongYStep section={tileSection()} onBoundary={vi.fn()} />));
+
+    expect(screen.getAllByTestId(/long-y-tile-/)).toHaveLength(3);
+    expect(screen.getByTestId("long-y-step-image").tagName).toBe("DIV");
+
+    const first = screen.getByTestId("long-y-tile-0");
+    expect(first).toHaveAttribute("src", "tiles/0.webp");
+    expect(first).toHaveAttribute("loading", "eager");
+    expect(first).toHaveAttribute("data-priority", "true");
+    expect(first).toHaveAttribute("sizes", "100vw");
+    expect(first).toHaveAttribute("decoding", "async");
+    expect(first).toHaveAttribute("draggable", "false");
+    expect(first).toHaveAttribute("data-unoptimized", "false");
+
+    const second = screen.getByTestId("long-y-tile-1");
+    expect(second).toHaveAttribute("src", "tiles/1.webp");
+    expect(second).toHaveAttribute("loading", "lazy");
+    expect(second).toHaveAttribute("data-priority", "false");
+
+    const third = screen.getByTestId("long-y-tile-2");
+    expect(third).toHaveAttribute("loading", "lazy");
+  });
+
+  test("largeur partagée et hauteurs exactes, dernière tuile plus courte", () => {
+    render(wrap(<LongYStep section={tileSection()} onBoundary={vi.fn()} />));
+
+    const heights = [0, 1, 2].map((index) => {
+      const tile = screen.getByTestId(`long-y-tile-${index}`);
+      expect(tile).toHaveAttribute("width", "800");
+      return Number(tile.getAttribute("height"));
+    });
+    expect(heights).toEqual([4096, 4096, 10000 - 2 * 4096]);
+  });
+
+  test("le loader des tuiles passe par imgproxy (~960 px)", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://supabase.example.com");
+    render(wrap(<LongYStep section={tileSection()} onBoundary={vi.fn()} />));
+
+    const url = imageMock.loader?.({ src: "tiles/0.webp", width: 960 });
+    expect(url).toContain("/storage/v1/render/image/public/webtoon-images/");
+    expect(url).toContain("tiles/0.webp");
+    expect(url).toContain("width=960");
+  });
+
+  test("moins de 2 tuiles → rendu mono-image historique", () => {
+    render(
+      wrap(
+        <LongYStep
+          section={longSection({ tiles: ["tiles/0.webp"] })}
+          onBoundary={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(screen.queryByTestId("long-y-tile-0")).not.toBeInTheDocument();
+    const image = screen.getByTestId("long-y-step-image");
+    expect(image.tagName).toBe("IMG");
   });
 });
 
