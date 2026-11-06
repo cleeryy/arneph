@@ -23,6 +23,8 @@ export type Database = {
           visibility: "draft" | "published";
           settings: Record<string, unknown>;
           owner_id: string | null;
+          /** Verrou optimiste : incrémenté par `save_webtoon`. */
+          revision: number;
           created_at: string;
           updated_at: string;
         };
@@ -34,6 +36,7 @@ export type Database = {
           visibility?: SectionVisibility;
           settings?: Record<string, unknown>;
           owner_id?: string | null;
+          revision?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -44,6 +47,7 @@ export type Database = {
           visibility?: SectionVisibility;
           settings?: Record<string, unknown>;
           owner_id?: string | null;
+          revision?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -118,7 +122,17 @@ export type Database = {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      save_webtoon: {
+        Args: {
+          p_webtoon_id: string;
+          p_owner_id: string;
+          p_expected_revision: number | null;
+          p_sections: unknown;
+        };
+        Returns: { revision: number } | null;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

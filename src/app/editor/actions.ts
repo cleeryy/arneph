@@ -10,18 +10,13 @@ import {
   type SectionWithImages,
 } from "@/lib/db/queries";
 import {
-  createSection,
   createWebtoon,
-  deleteSection,
-  deleteSectionsByIds,
   deleteWebtoon,
   getWebtoon,
   getWebtoonCoverPath,
-  reorderSections,
   updateWebtoon,
   type UpdateWebtoonData,
 } from "@/lib/db/queries";
-import type { ImageRecord } from "@/types/webtoon";
 
 const imageRecordSchema = z.object({
   id: z.string().min(1),
@@ -290,35 +285,28 @@ async function cleanupSectionStorage(
 }
 
 /**
- * Compense une sauvegarde qui a échoué après la création de sections :
- * supprime (au mieux) les sections créées pendant la tentative. Sans ce
- * rollback, un retry recréerait les sections déjà persistées et dupliquerait
- * le webtoon. Les images liées partent via la cascade SQL
- * (`images.section_id ... on delete cascade`). Les sections préexistantes ne
- * sont jamais passées ici : seul l'appelant garde la liste des ids créés.
- *
- * Retourne le message d'échec de compensation, ou `null` si tout a été nettoyé.
+ * Résultat d'une sauvegarde transactionnelle.
+ * `sectionIds` n'est plus produit par le RPC (les UUID client sont conservés)
+ * mais reste accepté par le client pour compatibilité avec d'anciennes
+ * réponses.
  */
-async function rollbackCreatedSections(
-  createdSectionIds: string[],
-): Promise<string | null> {
-  let failure: string | null = null;
+export interface SaveWebtoonResult {
+  ok: boolean;
+  error?: string;
+  revision?: number;
+  conflict?: boolean;
+  sectionIds?: Record<string, string>;
+}
 
-  // Ordre inverse de création : la dernière section persistée part en premier.
-  for (const sectionId of [...createdSectionIds].reverse()) {
-    try {
-      await deleteSection(sectionId);
-    } catch (cleanupError) {
-      const cleanupMessage = errorMessage(cleanupError);
-      failure ??= cleanupMessage;
-      console.warn(
-        `rollbackCreatedSections failed for ${sectionId}:`,
-        cleanupMessage,
-      );
-    }
-  }
+const REVISION_CONFLICT_MESSAGE =
+  "Ce webtoon a été modifié dans une autre session. Rechargez la page pour repartir de la dernière version.";
 
-  return failure;
+/** Détecte le refus du verrou optimiste renvoyé par `save_webtoon`. */
+function isRevisionConflict(error: {
+  message?: string;
+  code?: string;
+}): boolean {
+  return error.code === "40001" || /REVISION_CONFLICT/i.test(error.message ?? "");
 }
 
 export async function createWebtoonAction(
@@ -443,7 +431,8 @@ export async function updateWebtoonMetadataAction(
 export async function saveWebtoon(
   webtoonId: string,
   sections: SectionWithImages[],
-): Promise<{ ok: boolean; error?: string; sectionIds?: Record<string, string> }> {
+  expectedRevision?: number,
+): Promise<SaveWebtoonResult> {
   const auth = await requireUser();
   if (!auth.ok) return { ok: false, error: auth.error };
 
@@ -455,21 +444,19 @@ export async function saveWebtoon(
     };
   }
 
-  const createdSectionIds: string[] = [];
-
   try {
     const { webtoonId: wid, sections: incomingSections } = parse.data;
+
+    // Lecture AVANT l'écriture : elle sert uniquement à calculer les chemins
+    // Storage devenus orphelins (sections retirées + fichiers remplacés).
     const current = await getWebtoon(wid, auth.user.id);
     if (!current) {
-      // Ne jamais créer de sections orphelines pour un webtoon inexistant.
       return { ok: false, error: "Webtoon introuvable." };
     }
 
-    const existingSectionIds = new Set(current.sections.map((s) => s.id));
     const incomingSectionIds = new Set(
-      incomingSections.map((s) => s.id),
+      incomingSections.map((section) => section.id),
     );
-
     const removedSections = current.sections.filter(
       (section) => !incomingSectionIds.has(section.id),
     );
@@ -477,161 +464,72 @@ export async function saveWebtoon(
     const removedStorage = removedSections.map((section) =>
       collectSectionStoragePaths(section),
     );
-    const retainedSections = new Map(
-      current.sections
-        .filter((section) => incomingSectionIds.has(section.id))
-        .map((section) => [section.id, section] as const),
-    );
-    const persistedIds = new Map<string, string>();
-    for (const section of incomingSections) {
-      if (existingSectionIds.has(section.id)) {
-        await upsertSection(wid, section);
-        persistedIds.set(section.id, section.id);
-      } else {
-        const created = await createSection({
-          webtoonId: wid,
-          type: section.type,
-          config: section.config,
-          position: section.position,
-          audioPath: section.audioPath,
-        });
-        createdSectionIds.push(created.id);
-        persistedIds.set(section.id, created.id);
-        await syncImages(wid, created.id, section.images);
-      }
-    }
-
-    const orderedIds = [...incomingSections]
-      .sort((a, b) => a.position - b.position)
-      .map((s) => persistedIds.get(s.id))
-      .filter((id): id is string => Boolean(id));
-    await reorderSections(wid, orderedIds);
-
-    // P0-1 : supprimer les sections retirées en base AVANT tout nettoyage
-    // Storage. Une ligne fantôme réapparaîtrait au rechargement avec des
-    // médias déjà effacés, et compterait dans la publication.
-    if (removedIds.length > 0) {
-      await deleteSectionsByIds(wid, removedIds);
-    }
-
     const incomingPaths = new Set(
       incomingSections.flatMap((section) => collectSectionStoragePaths(section)),
     );
-    const replacedPaths = [...retainedSections.values()].flatMap((previous) =>
-      collectSectionStoragePaths(previous).filter((path) => !incomingPaths.has(path)),
-    );
-    await removeStoragePaths(replacedPaths);
+    const replacedPaths = current.sections
+      .filter((section) => incomingSectionIds.has(section.id))
+      .flatMap((previous) =>
+        collectSectionStoragePaths(previous).filter(
+          (path) => !incomingPaths.has(path),
+        ),
+      );
 
-    await Promise.all(
-      removedIds.map((id, index) =>
-        cleanupSectionStorage(id, removedStorage[index], incomingPaths),
-      ),
-    );
+    // Une seule transaction côté Postgres : sections supprimées/upsertées,
+    // images synchronisées, révision incrémentée. Aucun rollback JS possible
+    // ni nécessaire en cas d'échec.
+    const { data, error } = await supabase.rpc("save_webtoon", {
+      p_webtoon_id: wid,
+      p_owner_id: auth.user.id,
+      p_expected_revision: expectedRevision ?? null,
+      p_sections: incomingSections,
+    });
+
+    if (error) {
+      if (isRevisionConflict(error)) {
+        return {
+          ok: false,
+          conflict: true,
+          error: REVISION_CONFLICT_MESSAGE,
+        };
+      }
+      if (error.code === "P0002" || /WEBTOON_NOT_FOUND/i.test(error.message)) {
+        return { ok: false, error: "Webtoon introuvable." };
+      }
+      if (/SECTION_NOT_OWNED|IMAGE_NOT_OWNED/i.test(error.message)) {
+        return {
+          ok: false,
+          error: "Cette section ou cette image appartient à un autre webtoon.",
+        };
+      }
+      throw new Error(`db.saveWebtoon failed: ${error.message}`);
+    }
+
+    const revision = data?.revision ?? current.revision + 1;
+
+    // Nettoyage Storage best-effort, seulement APRÈS une transaction réussie :
+    // un incident Storage ne doit jamais transformer un succès en échec.
+    try {
+      await removeStoragePaths(replacedPaths);
+      await Promise.all(
+        removedIds.map((id, index) =>
+          cleanupSectionStorage(id, removedStorage[index], incomingPaths),
+        ),
+      );
+    } catch (cleanupError) {
+      console.warn(
+        `saveWebtoon storage cleanup failed for ${wid}:`,
+        errorMessage(cleanupError),
+      );
+    }
 
     revalidatePath(`/editor/${wid}`);
     revalidatePath("/read");
 
-    return { ok: true, sectionIds: Object.fromEntries(persistedIds) };
+    return { ok: true, revision };
   } catch (err) {
-    const message = publicErrorMessage(err);
-
-    if (createdSectionIds.length === 0) {
-      return { ok: false, error: message };
-    }
-
-    // Best-effort rollback: the caller retries the whole save on failure, so
-    // sections persisted by this attempt must not survive to be duplicated.
-    const cleanupFailure = await rollbackCreatedSections(createdSectionIds);
-    if (cleanupFailure) {
-      return {
-        ok: false,
-        error: `${message} (nettoyage partiel : ${cleanupFailure})`,
-      };
-    }
-
-    return { ok: false, error: message };
+    return { ok: false, error: publicErrorMessage(err) };
   }
-}
-
-async function upsertSection(
-  webtoonId: string,
-  section: SectionWithImages,
-): Promise<void> {
-  const { data: rows, error } = await supabase
-    .from("sections")
-    .update({
-      type: section.type,
-      config: section.config,
-      position: section.position,
-      audio_path: section.audioPath ?? null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", section.id)
-    .eq("webtoon_id", webtoonId)
-    .select("id");
-
-  if (error) throw new Error(`updateSection failed: ${error.message}`);
-  if (!rows || rows.length === 0) {
-    throw new Error(
-      `updateSection failed: section ${section.id} introuvable pour le webtoon ${webtoonId}`,
-    );
-  }
-  await syncImages(webtoonId, section.id, section.images);
-}
-
-/**
- * Synchronise les lignes `images` d'une section sans jamais vider la table
- * avant un insert réussi :
- * 1. lire les ids existants,
- * 2. upsert des images entrantes (conflit sur `id`),
- * 3. supprimer uniquement les ids absents du payload.
- * Un échec d'upsert laisse donc les lignes existantes intactes.
- */
-async function syncImages(
-  webtoonId: string,
-  sectionId: string,
-  images: ImageRecord[],
-): Promise<void> {
-  const { data: existingRows, error: selectError } = await supabase
-    .from("images")
-    .select("id")
-    .eq("section_id", sectionId);
-
-  if (selectError) throw new Error(`syncImages failed: ${selectError.message}`);
-
-  if (images.length > 0) {
-    const { error: upsertError } = await supabase
-      .from("images")
-      .upsert(
-        images.map((img) => ({
-          id: img.id,
-          section_id: sectionId,
-          webtoon_id: webtoonId,
-          storage_path: img.storagePath,
-          width: img.width,
-          height: img.height,
-          mime_type: img.mimeType,
-          position: img.position,
-        })),
-        { onConflict: "id" },
-      );
-
-    if (upsertError) throw new Error(`syncImages failed: ${upsertError.message}`);
-  }
-
-  const incomingIds = new Set(images.map((img) => img.id));
-  const staleIds = (existingRows ?? [])
-    .map((row) => row.id)
-    .filter((id) => !incomingIds.has(id));
-
-  if (staleIds.length === 0) return;
-
-  const { error: deleteError } = await supabase
-    .from("images")
-    .delete()
-    .in("id", staleIds);
-
-  if (deleteError) throw new Error(`syncImages failed: ${deleteError.message}`);
 }
 
 export async function publishWebtoon(

@@ -21,6 +21,8 @@ interface WebtoonRow {
   visibility: SectionVisibility;
   settings: Record<string, unknown>;
   owner_id: string | null;
+  /** Absent des bases antérieures à la migration 20261107. */
+  revision?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +58,7 @@ function mapWebtoon(row: WebtoonRow): Webtoon {
     coverPath: row.cover_path ?? undefined,
     visibility: row.visibility,
     settings: row.settings,
+    revision: row.revision ?? 0,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

@@ -15,6 +15,8 @@ import { sectionTypeLabel } from "@/lib/editor/section-labels";
 interface ActionResult {
   ok: boolean;
   error?: string;
+  /** Le serveur a refusé la sauvegarde à cause du verrou optimiste. */
+  conflict?: boolean;
 }
 
 /**
@@ -26,11 +28,14 @@ export function EditorDetailLayoutContent({
   children,
   webtoonId,
   initialCoverPath = null,
+  initialRevision = 0,
 }: {
   children: React.ReactNode;
   webtoonId: string;
   /** Couverture persistée, hydratée par la route serveur. */
   initialCoverPath?: string | null;
+  /** Révision lue au chargement, utilisée comme verrou optimiste. */
+  initialRevision?: number;
 }) {
   const t = useTranslations("editor");
   const {
@@ -50,6 +55,11 @@ export function EditorDetailLayoutContent({
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<ActionResult | null>(null);
+  // Verrou optimiste : dernière révision confirmée par le serveur. La ref
+  // évite qu'un second save lancé avant le re-render reparte de l'ancienne
+  // valeur et se fasse refuser pour un conflit fantôme.
+  const [revision, setRevision] = React.useState(initialRevision);
+  const revisionRef = React.useRef(initialRevision);
 
   // Latest-value refs are required here: a save resolves after the await and
   // must apply its id map to the sections edited meanwhile, never to the
@@ -146,11 +156,26 @@ export function EditorDetailLayoutContent({
 
     setSaving(true);
     try {
-      const result = await saveWebtoon(webtoonId, sectionsAtSave);
-      setSaveResult(result);
+      const result = await saveWebtoon(
+        webtoonId,
+        sectionsAtSave,
+        revisionRef.current,
+      );
+      setSaveResult({
+        ok: result.ok,
+        error: result.error,
+        conflict: result.conflict,
+      });
       if (result.ok) {
+        // La révision avance à chaque sauvegarde réussie : les sauvegardes
+        // suivantes doivent partir de cette valeur sous peine de conflit.
+        const nextRevision = result.revision ?? revisionRef.current;
+        revisionRef.current = nextRevision;
+        setRevision(nextRevision);
         // Edits made while the request was in flight must survive the
         // response: remap the latest sections, never the save snapshot.
+        // Le RPC conserve désormais les UUID client : ce remap ne sert plus
+        // qu'aux réponses d'anciennes versions (compatibilité).
         const currentSections = sectionsRef.current;
         const changedDuringSave = currentSections !== sectionsAtSave;
         if (result.sectionIds) {
@@ -363,7 +388,17 @@ export function EditorDetailLayoutContent({
         <div className="mx-auto mt-2 max-w-7xl px-4" data-testid="save-error">
           <div className="rounded-md bg-destructive/10 px-4 py-2 text-sm text-destructive flex items-center gap-2">
             <AlertCircle className="size-4 shrink-0" />
-            {saveResult.error}
+            <span className="flex-1">{saveResult.error}</span>
+            {saveResult.conflict && (
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="shrink-0 rounded-md border border-destructive/40 px-2.5 py-1 text-xs font-medium text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                data-testid="save-reload"
+              >
+                {t("reload")}
+              </button>
+            )}
           </div>
         </div>
       )}

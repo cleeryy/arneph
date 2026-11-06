@@ -16,13 +16,9 @@ import type { Webtoon } from "@/types/webtoon";
 import { requireUser } from "@/lib/auth/require-user";
 import {
   createWebtoon,
-  deleteSection,
-  deleteSectionsByIds,
   deleteWebtoon,
   getWebtoon,
   getWebtoonCoverPath,
-  createSection,
-  reorderSections,
   updateWebtoon,
 } from "@/lib/db/queries";
 
@@ -54,6 +50,7 @@ vi.mock("@/lib/db/server", () => ({
         resolve({ data: [{ id: "s1" }], error: null }),
       ),
     })),
+    rpc: vi.fn(),
     storage: {
       from: vi.fn(() => ({
         list: vi.fn().mockResolvedValue({ data: [], error: null }),
@@ -75,24 +72,12 @@ vi.mock("@/lib/db/queries", () => ({
     coverPath: undefined,
     visibility: "draft",
     settings: {},
+    revision: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     sections: [],
   }),
   createWebtoon: vi.fn(),
-  createSection: vi.fn().mockResolvedValue({
-    id: "new-id",
-    type: "image",
-    config: {},
-    position: 0,
-    webtoonId: "w1",
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  }),
-  upsertSection: vi.fn().mockResolvedValue(undefined),
-  reorderSections: vi.fn().mockResolvedValue(undefined),
-  deleteSectionsByIds: vi.fn().mockResolvedValue(0),
-  deleteSection: vi.fn().mockResolvedValue(true),
   deleteWebtoon: vi.fn().mockResolvedValue(true),
   getWebtoonCoverPath: vi.fn().mockResolvedValue(null),
   updateWebtoon: vi.fn().mockResolvedValue(null),
@@ -128,12 +113,13 @@ beforeEach(() => {
         remove: vi.fn().mockResolvedValue({ data: null, error: null }),
       }) as unknown as ReturnType<typeof supabase.storage.from>,
   );
-  // Compensating-delete mock is re-armed per test: a test that makes it throw
-  // must not leak that rejection into later tests.
-  vi.mocked(deleteSection).mockReset();
-  vi.mocked(deleteSection).mockResolvedValue(true);
-  vi.mocked(deleteSectionsByIds).mockReset();
-  vi.mocked(deleteSectionsByIds).mockResolvedValue(0);
+  // Le RPC transactionnel réussit par défaut (revision 1) ; les tests de
+  // conflit ou d'échec surchargent explicitement la réponse.
+  vi.mocked(supabase.rpc).mockReset();
+  vi.mocked(supabase.rpc).mockResolvedValue({
+    data: { revision: 1 },
+    error: null,
+  } as never);
   vi.mocked(deleteWebtoon).mockReset();
   vi.mocked(deleteWebtoon).mockResolvedValue(true);
   vi.mocked(getWebtoonCoverPath).mockReset();
@@ -144,24 +130,6 @@ beforeEach(() => {
     user: { id: TEST_USER_ID, email: "test@example.com" },
   });
 });
-
-/**
- * `syncImages` appelle `from("images")` deux fois (select puis upsert) et
- * parfois une troisième (delete des ids obsolètes) : retrouver la chaîne qui
- * a réellement reçu l'upsert.
- */
-function findImagesUpsert() {
-  const results = vi.mocked(supabase.from).mock.results;
-  for (let index = results.length - 1; index >= 0; index -= 1) {
-    const chain = results[index].value as {
-      upsert?: ReturnType<typeof vi.fn>;
-    };
-    if (chain?.upsert && chain.upsert.mock.calls.length > 0) {
-      return chain.upsert;
-    }
-  }
-  return null;
-}
 
 describe("saveWebtoon — zod validation", () => {
   const timestamps = {
@@ -323,7 +291,7 @@ describe("deleteWebtoonAction", () => {
 });
 
 describe("saveWebtoon — FX config persistence", () => {
-  test("saveWebtoon with fxPath/fxConfig on image section persists full config via createSection", async () => {
+  test("saveWebtoon with fxPath/fxConfig on image section sends the full config to the RPC", async () => {
     const result = await saveWebtoon("w1", [
       {
         id: "s1",
@@ -350,21 +318,26 @@ describe("saveWebtoon — FX config persistence", () => {
     ]);
 
     expect(result.ok).toBe(true);
-    expect(createSection).toHaveBeenCalledWith(
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
       expect.objectContaining({
-        config: expect.objectContaining({
-          fxPath: "fx/overlay.gif",
-          fxConfig: {
-            position: { x: "center", y: "center" },
-            size: { mode: "px", width: 100, height: 100 },
-            opacity: 0.5,
-          },
-        }),
+        p_sections: [
+          expect.objectContaining({
+            config: expect.objectContaining({
+              fxPath: "fx/overlay.gif",
+              fxConfig: {
+                position: { x: "center", y: "center" },
+                size: { mode: "px", width: 100, height: 100 },
+                opacity: 0.5,
+              },
+            }),
+          }),
+        ],
       }),
     );
   });
 
-  test("saveWebtoon remaps images to server-created section id (AGENTS.md rule)", async () => {
+  test("sends client section and image ids to the RPC (idempotent server ids)", async () => {
     const result = await saveWebtoon("w1", [
       {
         id: "client-temp-id",
@@ -396,24 +369,26 @@ describe("saveWebtoon — FX config persistence", () => {
     ]);
 
     expect(result.ok).toBe(true);
-
-    const fromCalls = vi.mocked(supabase.from).mock.calls;
-    const imagesIndex = fromCalls.map((call) => call[0]).lastIndexOf("images");
-    expect(imagesIndex).toBeGreaterThanOrEqual(0);
-    const upsert = findImagesUpsert();
-    expect(upsert).not.toBeNull();
-    expect(upsert).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({
-          section_id: "new-id",
-          storage_path: "webtoons/sections/client-temp-id/1.webp",
-        }),
-      ],
-      { onConflict: "id" },
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
+      expect.objectContaining({
+        p_sections: [
+          expect.objectContaining({
+            id: "client-temp-id",
+            images: [
+              expect.objectContaining({
+                id: "img-1",
+                sectionId: "client-temp-id",
+                storagePath: "webtoons/sections/client-temp-id/1.webp",
+              }),
+            ],
+          }),
+        ],
+      }),
     );
   });
 
-    test("saveWebtoon with existing section persists full fx config via supabase update", async () => {
+    test("saveWebtoon with existing section sends the full fx config to the RPC", async () => {
       vi.mocked(getWebtoon).mockResolvedValueOnce({
         id: "w1",
         title: "Test",
@@ -458,24 +433,23 @@ describe("saveWebtoon — FX config persistence", () => {
       ]);
 
       expect(result.ok).toBe(true);
-      expect(createSection).not.toHaveBeenCalled();
 
-      const fromCalls = vi.mocked(supabase.from).mock.calls;
-      const sectionsIndex = fromCalls.findIndex(
-        (call) => call[0] === "sections",
-      );
-      expect(sectionsIndex).toBeGreaterThanOrEqual(0);
-      const chain = vi.mocked(supabase.from).mock.results[sectionsIndex].value;
-      expect(chain.update).toHaveBeenCalledWith(
+      expect(supabase.rpc).toHaveBeenCalledWith(
+        "save_webtoon",
         expect.objectContaining({
-          config: expect.objectContaining({
-            fxPath: "fx/overlay.gif",
-            fxConfig: {
-              position: { x: "center", y: "center" },
-              size: { mode: "px", width: 100, height: 100 },
-              opacity: 0.5,
-            },
-          }),
+          p_sections: [
+            expect.objectContaining({
+              id: "s1",
+              config: expect.objectContaining({
+                fxPath: "fx/overlay.gif",
+                fxConfig: {
+                  position: { x: "center", y: "center" },
+                  size: { mode: "px", width: 100, height: 100 },
+                  opacity: 0.5,
+                },
+              }),
+            }),
+          ],
         }),
       );
     });
@@ -531,55 +505,62 @@ describe("saveWebtoon — FX config persistence", () => {
     ]);
 
     expect(result.ok).toBe(true);
-    expect(createSection).toHaveBeenCalledWith(
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
       expect.objectContaining({
-        config: expect.objectContaining({
-          type: "image",
-          imagePath: "test.webp",
-          width: 800,
-          height: 1200,
-        }),
+        p_sections: [
+          expect.objectContaining({
+            config: expect.objectContaining({
+              type: "image",
+              imagePath: "test.webp",
+              width: 800,
+              height: 1200,
+            }),
+          }),
+        ],
       }),
     );
   });
 });
 
-describe("saveWebtoon — server id mapping (duplicate-save guard)", () => {
-  test("returns serializable client→server section id mapping", async () => {
-    const result = await saveWebtoon("w1", [
-      {
-        id: "client-temp-id",
-        webtoonId: "w1",
-        position: 0,
-        type: "image",
-        config: {
-          type: "image",
-          imagePath: "test.webp",
-          width: 800,
-          height: 1200,
-        },
-        audioPath: undefined,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        images: [],
-      },
-    ]);
+describe("saveWebtoon — revision and transactional RPC contract", () => {
+  test("passes webtoon id, owner id and expected revision to save_webtoon", async () => {
+    const result = await saveWebtoon("w1", [], 7);
 
-    expect(result.ok).toBe(true);
-    expect((result as { sectionIds?: unknown }).sectionIds).toEqual({
-      "client-temp-id": "new-id",
+    expect(result).toEqual({ ok: true, revision: 1 });
+    expect(supabase.rpc).toHaveBeenCalledWith("save_webtoon", {
+      p_webtoon_id: "w1",
+      p_owner_id: TEST_USER_ID,
+      p_expected_revision: 7,
+      p_sections: [],
     });
-    // Must be plain JSON-serializable (Server Action return constraint).
-    expect(JSON.parse(JSON.stringify((result as { sectionIds?: unknown }).sectionIds))).toEqual({
-      "client-temp-id": "new-id",
-    });
+    expect(revalidatePath).toHaveBeenCalledWith("/editor/w1");
+    expect(revalidatePath).toHaveBeenCalledWith("/read");
   });
 
-  test("maps existing sections to themselves", async () => {
-    vi.mocked(getWebtoon).mockResolvedValueOnce({
-      id: "w1",
-      title: "Test",
-      sections: [
+  test("sends a null expected revision when the caller omits it", async () => {
+    await saveWebtoon("w1", []);
+
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
+      expect.objectContaining({ p_expected_revision: null }),
+    );
+  });
+
+  test("returns the revision produced by the RPC", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: { revision: 42 },
+      error: null,
+    } as never);
+
+    const result = await saveWebtoon("w1", []);
+
+    expect(result).toEqual({ ok: true, revision: 42 });
+  });
+
+  test("maps REVISION_CONFLICT to a conflict result without touching Storage", async () => {
+    vi.mocked(getWebtoon).mockResolvedValueOnce(
+      buildWebtoonWithSections([
         {
           id: "s1",
           webtoonId: "w1",
@@ -591,21 +572,59 @@ describe("saveWebtoon — server id mapping (duplicate-save guard)", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
           images: [],
         },
-      ],
-    } as unknown as WebtoonWithSections);
+      ]),
+    );
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: null,
+      error: { message: "REVISION_CONFLICT", code: "40001" },
+    } as never);
+    const removeMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    vi.mocked(supabase.storage.from).mockReturnValue({
+      list: vi.fn().mockResolvedValue({ data: [], error: null }),
+      remove: removeMock,
+    } as unknown as ReturnType<typeof supabase.storage.from>);
 
-    const result = await saveWebtoon("w1", [
+    const result = await saveWebtoon("w1", [], 2);
+
+    expect(result).toEqual({
+      ok: false,
+      conflict: true,
+      error: expect.stringMatching(/autre session/),
+    });
+    expect(removeMock).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  test("treats SQLSTATE 40001 as a conflict even without the message", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: null,
+      error: { message: "could not serialize access", code: "40001" },
+    } as never);
+
+    const result = await saveWebtoon("w1", [], 0);
+
+    expect(result).toMatchObject({ ok: false, conflict: true });
+  });
+
+  test("surfaces WEBTOON_NOT_FOUND when the row disappears before the RPC", async () => {
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: null,
+      error: { message: "WEBTOON_NOT_FOUND", code: "P0002" },
+    } as never);
+
+    const result = await saveWebtoon("w1", []);
+
+    expect(result).toEqual({ ok: false, error: "Webtoon introuvable." });
+  });
+
+  test("does not issue direct section or image writes (all in the RPC)", async () => {
+    await saveWebtoon("w1", [
       {
         id: "s1",
         webtoonId: "w1",
         position: 0,
-        type: "image" as const,
-        config: {
-          type: "image" as const,
-          imagePath: "kept.webp",
-          width: 800,
-          height: 1200,
-        },
+        type: "image",
+        config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
         audioPath: undefined,
         createdAt: "2026-01-01T00:00:00.000Z",
         updatedAt: "2026-01-01T00:00:00.000Z",
@@ -613,133 +632,13 @@ describe("saveWebtoon — server id mapping (duplicate-save guard)", () => {
       },
     ]);
 
-    expect(result.ok).toBe(true);
-    expect((result as { sectionIds?: unknown }).sectionIds).toEqual({ s1: "s1" });
+    const tables = vi.mocked(supabase.from).mock.calls.map((call) => call[0]);
+    expect(tables).not.toContain("sections");
+    expect(tables).not.toContain("images");
+    expect(supabase.rpc).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("saveWebtoon — non-destructive image sync (DATA-3)", () => {
-  const storedSection = {
-    id: "s1",
-    webtoonId: "w1",
-    position: 0,
-    type: "image" as const,
-    config: {
-      type: "image" as const,
-      imagePath: "kept.webp",
-      width: 800,
-      height: 1200,
-    },
-    audioPath: undefined,
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-    images: [
-      {
-        id: "img-old",
-        sectionId: "s1",
-        webtoonId: "w1",
-        storagePath: "webtoons/sections/s1/old.webp",
-        width: 800,
-        height: 1200,
-        mimeType: "image/webp",
-        position: 0,
-      },
-    ],
-  };
-
-  const incomingSection = {
-    ...storedSection,
-    images: [
-      {
-        id: "img-new",
-        sectionId: "s1",
-        webtoonId: "w1",
-        storagePath: "webtoons/sections/s1/new.webp",
-        width: 800,
-        height: 1200,
-        mimeType: "image/webp",
-        position: 0,
-      },
-    ],
-  };
-
-  test("keeps existing image rows and skips reorder when the upsert fails", async () => {
-    vi.mocked(getWebtoon).mockResolvedValueOnce(
-      buildWebtoonWithSections([storedSection]),
-    );
-
-    const deleteMock = vi.fn();
-    const sectionsChain = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      then: vi.fn((resolve: (v: unknown) => unknown) =>
-        resolve({ data: [{ id: "s1" }], error: null }),
-      ),
-    };
-    const imagesChain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockResolvedValue({
-        data: [{ id: "img-old" }],
-        error: null,
-      }),
-      upsert: vi.fn().mockResolvedValue({
-        data: null,
-        error: { message: "upsert boom" },
-      }),
-      delete: deleteMock,
-    };
-    vi.mocked(supabase.from)
-      .mockImplementationOnce(() => sectionsChain as never)
-      .mockImplementation(() => imagesChain as never);
-
-    const result = await saveWebtoon("w1", [incomingSection]);
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/upsert boom|syncImages/);
-    // Aucune ligne existante ne doit être supprimée avant un upsert réussi.
-    expect(deleteMock).not.toHaveBeenCalled();
-    expect(reorderSections).not.toHaveBeenCalled();
-  });
-
-  test("deletes only stale image ids after a successful upsert", async () => {
-    vi.mocked(getWebtoon).mockResolvedValueOnce(
-      buildWebtoonWithSections([storedSection]),
-    );
-
-    const deleteIn = vi.fn().mockResolvedValue({
-      data: null,
-      error: { message: "delete boom" },
-    });
-    const sectionsChain = {
-      update: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      select: vi.fn().mockReturnThis(),
-      then: vi.fn((resolve: (v: unknown) => unknown) =>
-        resolve({ data: [{ id: "s1" }], error: null }),
-      ),
-    };
-    const imagesChain = {
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockResolvedValue({
-        data: [{ id: "img-old" }],
-        error: null,
-      }),
-      upsert: vi.fn().mockResolvedValue({ data: null, error: null }),
-      delete: vi.fn(() => ({ in: deleteIn })),
-    };
-    vi.mocked(supabase.from)
-      .mockImplementationOnce(() => sectionsChain as never)
-      .mockImplementation(() => imagesChain as never);
-
-    const result = await saveWebtoon("w1", [incomingSection]);
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/delete boom|syncImages/);
-    expect(deleteIn).toHaveBeenCalledWith("id", ["img-old"]);
-    expect(reorderSections).not.toHaveBeenCalled();
-  });
-});
 
 describe("saveWebtoon — removed-section storage cleanup ordering", () => {
   const keptSection = {
@@ -799,9 +698,12 @@ describe("saveWebtoon — removed-section storage cleanup ordering", () => {
     ],
   } as unknown as WebtoonWithSections;
 
-  test("does not delete removed-section Storage objects when reorder fails", async () => {
+  test("does not delete removed-section Storage objects when the RPC fails", async () => {
     vi.mocked(getWebtoon).mockResolvedValueOnce(currentWithRemovedSection);
-    vi.mocked(reorderSections).mockRejectedValueOnce(new Error("reorder boom"));
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: null,
+      error: { message: "save boom" },
+    } as never);
     const removeMock = vi.fn().mockResolvedValue({ data: null, error: null });
     const listMock = vi.fn().mockResolvedValue({ data: [], error: null });
     vi.mocked(supabase.storage.from).mockReturnValue({
@@ -815,7 +717,7 @@ describe("saveWebtoon — removed-section storage cleanup ordering", () => {
     expect(removeMock).not.toHaveBeenCalled();
   });
 
-  test("deletes removed-section Storage objects after successful save", async () => {
+  test("deletes removed-section Storage objects after a successful RPC", async () => {
     vi.mocked(getWebtoon).mockResolvedValueOnce(currentWithRemovedSection);
     const removeMock = vi.fn().mockResolvedValue({ data: null, error: null });
     const listMock = vi.fn().mockResolvedValue({ data: [], error: null });
@@ -834,10 +736,14 @@ describe("saveWebtoon — removed-section storage cleanup ordering", () => {
         "removed.webp",
       ]),
     );
+    // La transaction d'abord : aucun fichier supprimé avant le RPC.
+    expect(
+      vi.mocked(supabase.rpc).mock.invocationCallOrder[0],
+    ).toBeLessThan(removeMock.mock.invocationCallOrder[0]);
   });
 });
 
-describe("saveWebtoon — removed sections deleted in database (P0-1)", () => {
+describe("saveWebtoon — removed sections handled by the RPC (P0-1)", () => {
   const timestamps = {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -886,7 +792,7 @@ describe("saveWebtoon — removed sections deleted in database (P0-1)", () => {
     ],
   };
 
-  test("deletes removed ids after reorder and before Storage cleanup", async () => {
+  test("sends only the retained sections to the RPC before Storage cleanup", async () => {
     vi.mocked(getWebtoon).mockResolvedValueOnce(
       buildWebtoonWithSections([keptSection, removedSection]),
     );
@@ -899,17 +805,24 @@ describe("saveWebtoon — removed sections deleted in database (P0-1)", () => {
     const result = await saveWebtoon("w1", [keptSection]);
 
     expect(result.ok).toBe(true);
-    expect(deleteSectionsByIds).toHaveBeenCalledWith("w1", ["s2"]);
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
+      expect.objectContaining({
+        p_sections: [expect.objectContaining({ id: "s1" })],
+      }),
+    );
+    const rpcPayload = vi.mocked(supabase.rpc).mock.calls[0][1] as {
+      p_sections: { id: string }[];
+    };
+    expect(rpcPayload.p_sections.map((section) => section.id)).toEqual(["s1"]);
 
-    const reorderOrder = vi.mocked(reorderSections).mock.invocationCallOrder[0];
-    const deleteOrder = vi.mocked(deleteSectionsByIds).mock.invocationCallOrder[0];
+    const rpcOrder = vi.mocked(supabase.rpc).mock.invocationCallOrder[0];
     const storageOrder = removeMock.mock.invocationCallOrder[0];
-    expect(reorderOrder).toBeLessThan(deleteOrder);
-    // La base d'abord : aucun fichier supprimé avant la suppression des lignes.
-    expect(deleteOrder).toBeLessThan(storageOrder);
+    // La base d'abord : aucun fichier supprimé avant la transaction.
+    expect(rpcOrder).toBeLessThan(storageOrder);
   });
 
-  test("sections: [] deletes every existing section and their assets", async () => {
+  test("sections: [] sends an empty payload and cleans every asset", async () => {
     vi.mocked(getWebtoon).mockResolvedValueOnce(
       buildWebtoonWithSections([keptSection, removedSection]),
     );
@@ -921,9 +834,11 @@ describe("saveWebtoon — removed sections deleted in database (P0-1)", () => {
 
     const result = await saveWebtoon("w1", []);
 
-    expect(result).toEqual({ ok: true, sectionIds: {} });
-    expect(reorderSections).toHaveBeenCalledWith("w1", []);
-    expect(deleteSectionsByIds).toHaveBeenCalledWith("w1", ["s1", "s2"]);
+    expect(result).toEqual({ ok: true, revision: 1 });
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
+      expect.objectContaining({ p_sections: [] }),
+    );
     expect(removeMock).toHaveBeenCalledWith(
       expect.arrayContaining([
         "webtoons/sections/s2/1.webp",
@@ -933,8 +848,13 @@ describe("saveWebtoon — removed sections deleted in database (P0-1)", () => {
     );
   });
 
-  test("returns Webtoon introuvable before creating anything when the webtoon is missing", async () => {
+  test("returns Webtoon introuvable before calling the RPC when the webtoon is missing", async () => {
     vi.mocked(getWebtoon).mockResolvedValueOnce(null);
+    const removeMock = vi.fn().mockResolvedValue({ data: null, error: null });
+    vi.mocked(supabase.storage.from).mockReturnValue({
+      list: vi.fn().mockResolvedValue({ data: [], error: null }),
+      remove: removeMock,
+    } as unknown as ReturnType<typeof supabase.storage.from>);
 
     const result = await saveWebtoon("w1", [
       {
@@ -955,8 +875,8 @@ describe("saveWebtoon — removed sections deleted in database (P0-1)", () => {
     ]);
 
     expect(result).toEqual({ ok: false, error: "Webtoon introuvable." });
-    expect(createSection).not.toHaveBeenCalled();
-    expect(reorderSections).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
+    expect(removeMock).not.toHaveBeenCalled();
   });
 });
 
@@ -1345,7 +1265,7 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
     );
   });
 
-  test("does not remove replaced-file paths when reorder fails", async () => {
+  test("does not remove replaced-file paths when the RPC fails", async () => {
     vi.mocked(getWebtoon).mockResolvedValueOnce({
       id: "w1",
       title: "Test",
@@ -1373,7 +1293,10 @@ describe("saveWebtoon — retained-section replaced-file storage cleanup", () =>
         },
       ],
     } as unknown as WebtoonWithSections);
-    vi.mocked(reorderSections).mockRejectedValueOnce(new Error("reorder boom"));
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: null,
+      error: { message: "save boom" },
+    } as never);
     const { removeMock } = mockStorage();
 
     const result = await saveWebtoon("w1", [
@@ -1531,6 +1454,7 @@ function buildWebtoon(overrides: Partial<Webtoon> = {}): Webtoon {
     coverPath: undefined,
     visibility: "draft",
     settings: {},
+    revision: 0,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
@@ -1882,26 +1806,28 @@ describe("saveWebtoon — defensive webtoonId", () => {
     ],
   };
 
-  test("creates sections and images under the validated webtoonId", async () => {
+  test("sends the validated webtoon and owner ids to the RPC", async () => {
     const result = await saveWebtoon("w1", [baseSection]);
 
     expect(result.ok).toBe(true);
-    expect(createSection).toHaveBeenCalledWith(
-      expect.objectContaining({ webtoonId: "w1" }),
+    expect(supabase.rpc).toHaveBeenCalledWith(
+      "save_webtoon",
+      expect.objectContaining({
+        p_webtoon_id: "w1",
+        p_owner_id: TEST_USER_ID,
+        p_sections: [expect.objectContaining({ id: "s-new" })],
+      }),
     );
-
-    const fromCalls = vi.mocked(supabase.from).mock.calls;
-    const imagesIndex = fromCalls.map((call) => call[0]).lastIndexOf("images");
-    expect(imagesIndex).toBeGreaterThanOrEqual(0);
-    const upsert = findImagesUpsert();
-    expect(upsert).not.toBeNull();
-    expect(upsert).toHaveBeenCalledWith(
-      [expect.objectContaining({ webtoon_id: "w1", section_id: "new-id" })],
-      { onConflict: "id" },
-    );
+    // Le payload client ne pilote jamais le webtoon_id : la fonction le force.
+    const payload = (
+      vi.mocked(supabase.rpc).mock.calls[0][1] as {
+        p_sections: { webtoonId?: string }[];
+      }
+    ).p_sections;
+    expect(payload[0]?.webtoonId).toBe("attacker-webtoon");
   });
 
-  test("scopes existing-section updates to the validated webtoonId", async () => {
+  test("surfaces a SECTION_NOT_OWNED error from the RPC", async () => {
     vi.mocked(getWebtoon).mockResolvedValueOnce(
       buildWebtoonWithSections([
         {
@@ -1917,53 +1843,10 @@ describe("saveWebtoon — defensive webtoonId", () => {
         },
       ]),
     );
-
-    const select = vi.fn().mockResolvedValue({ data: [{ id: "s1" }], error: null });
-    const eqWebtoon = vi.fn(() => ({ select }));
-    const eqId = vi.fn(() => ({ eq: eqWebtoon }));
-    const update = vi.fn(() => ({ eq: eqId }));
-    vi.mocked(supabase.from).mockImplementationOnce(() => ({ update }) as never);
-
-    const result = await saveWebtoon("w1", [
-      {
-        id: "s1",
-        webtoonId: "attacker-webtoon",
-        position: 0,
-        type: "image",
-        config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
-        audioPath: undefined,
-        createdAt: "2026-01-01T00:00:00.000Z",
-        updatedAt: "2026-01-01T00:00:00.000Z",
-        images: [],
-      },
-    ]);
-
-    expect(result.ok).toBe(true);
-    expect(eqWebtoon).toHaveBeenCalledWith("webtoon_id", "w1");
-  });
-
-  test("fails when the section update affects zero rows", async () => {
-    vi.mocked(getWebtoon).mockResolvedValueOnce(
-      buildWebtoonWithSections([
-        {
-          id: "s1",
-          webtoonId: "w1",
-          position: 0,
-          type: "image",
-          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
-          audioPath: undefined,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          updatedAt: "2026-01-01T00:00:00.000Z",
-          images: [],
-        },
-      ]),
-    );
-
-    const select = vi.fn().mockResolvedValue({ data: [], error: null });
-    const eqWebtoon = vi.fn(() => ({ select }));
-    const eqId = vi.fn(() => ({ eq: eqWebtoon }));
-    const update = vi.fn(() => ({ eq: eqId }));
-    vi.mocked(supabase.from).mockImplementationOnce(() => ({ update }) as never);
+    vi.mocked(supabase.rpc).mockResolvedValueOnce({
+      data: null,
+      error: { message: "SECTION_NOT_OWNED", code: "42501" },
+    } as never);
 
     const result = await saveWebtoon("w1", [
       {
@@ -1980,8 +1863,7 @@ describe("saveWebtoon — defensive webtoonId", () => {
     ]);
 
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/introuvable|aucune section/i);
-    expect(reorderSections).not.toHaveBeenCalled();
+    expect(result.error).toMatch(/autre webtoon/);
   });
 });
 
@@ -2168,108 +2050,6 @@ describe("deleteWebtoonAction — DB before Storage (DATA-4) and cover cleanup",
   });
 });
 
-describe("saveWebtoon — compensating cleanup on failure", () => {  const baseTimestamps = {
-    createdAt: "2026-01-01T00:00:00.000Z",
-    updatedAt: "2026-01-01T00:00:00.000Z",
-  };
-
-  function buildSection(id: string, position: number) {
-    return {
-      id,
-      webtoonId: "w1",
-      position,
-      type: "image" as const,
-      config: {
-        type: "image" as const,
-        imagePath: `${id}.webp`,
-        width: 800,
-        height: 1200,
-      },
-      audioPath: undefined,
-      ...baseTimestamps,
-      images: [],
-    };
-  }
-
-  test("deletes sections created before a later creation fails", async () => {
-    vi.mocked(createSection)
-      .mockResolvedValueOnce(buildSection("created-1", 0))
-      .mockRejectedValueOnce(new Error("createSection failed: boom"));
-
-    const result = await saveWebtoon("w1", [
-      buildSection("temp-1", 0),
-      buildSection("temp-2", 1),
-    ]);
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/createSection failed: boom/);
-    expect(deleteSection).toHaveBeenCalledTimes(1);
-    expect(deleteSection).toHaveBeenCalledWith("created-1");
-  });
-
-  test("never deletes pre-existing sections when a later step fails", async () => {
-    vi.mocked(getWebtoon).mockResolvedValueOnce(
-      buildWebtoonWithSections([
-        {
-          id: "s1",
-          webtoonId: "w1",
-          position: 0,
-          type: "image",
-          config: { type: "image", imagePath: "kept.webp", width: 800, height: 1200 },
-          audioPath: undefined,
-          ...baseTimestamps,
-          images: [],
-        },
-      ]),
-    );
-    vi.mocked(createSection).mockResolvedValueOnce(buildSection("created-1", 1));
-    vi.mocked(reorderSections).mockRejectedValueOnce(new Error("reorder boom"));
-
-    const result = await saveWebtoon("w1", [
-      {
-        ...buildSection("s1", 0),
-        config: {
-          type: "image" as const,
-          imagePath: "kept.webp",
-          width: 800,
-          height: 1200,
-        },
-      },
-      buildSection("temp-1", 1),
-    ]);
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/reorder boom/);
-    expect(deleteSection).toHaveBeenCalledTimes(1);
-    expect(deleteSection).toHaveBeenCalledWith("created-1");
-    expect(deleteSection).not.toHaveBeenCalledWith("s1");
-  });
-
-  test("still returns the original error when the compensating delete fails", async () => {
-    vi.mocked(createSection)
-      .mockResolvedValueOnce(buildSection("created-1", 0))
-      .mockRejectedValueOnce(new Error("createSection failed: boom"));
-    vi.mocked(deleteSection).mockRejectedValueOnce(new Error("delete boom"));
-
-    const result = await saveWebtoon("w1", [
-      buildSection("temp-1", 0),
-      buildSection("temp-2", 1),
-    ]);
-
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/createSection failed: boom/);
-    expect(result.error).toMatch(/nettoyage partiel/i);
-  });
-
-  test("does not delete anything when the save succeeds", async () => {
-    const result = await saveWebtoon("w1", [buildSection("temp-1", 0)]);
-
-    expect(result.ok).toBe(true);
-    expect(result.sectionIds).toEqual({ "temp-1": "new-id" });
-    expect(deleteSection).not.toHaveBeenCalled();
-  });
-});
-
 describe("editor actions — authentication guard (P0-2)", () => {
   test("createWebtoonAction refuses an unauthenticated caller", async () => {
     vi.mocked(requireUser).mockResolvedValueOnce({
@@ -2293,7 +2073,7 @@ describe("editor actions — authentication guard (P0-2)", () => {
 
     expect(result).toEqual({ ok: false, error: "unauthenticated" });
     expect(getWebtoon).not.toHaveBeenCalled();
-    expect(reorderSections).not.toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   test("deleteWebtoonAction refuses an unauthenticated caller", async () => {

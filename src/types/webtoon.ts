@@ -114,6 +114,8 @@ export interface Webtoon {
   coverPath?: string;
   visibility: SectionVisibility;
   settings: Record<string, unknown>;
+  /** Verrou optimiste : incrémenté à chaque sauvegarde transactionnelle. */
+  revision: number;
   createdAt: string;
   updatedAt: string;
 }

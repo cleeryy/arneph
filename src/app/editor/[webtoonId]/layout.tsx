@@ -28,6 +28,7 @@ export default async function EditorDetailLayout({
       <EditorDetailLayoutContent
         webtoonId={webtoonId}
         initialCoverPath={webtoon?.coverPath ?? null}
+        initialRevision={webtoon?.revision ?? 0}
       >
         {children}
       </EditorDetailLayoutContent>

@@ -155,6 +155,7 @@
     "publishNoSections": "No sections: add one before publishing.",
     "publishError": "Could not publish the webtoon.",
     "saveError": "Could not save the changes.",
+    "reload": "Reload",
     "duplicateSection": "Duplicate section",
     "undo": "Undo",
     "redo": "Redo",

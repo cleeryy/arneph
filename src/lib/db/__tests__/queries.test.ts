@@ -50,6 +50,7 @@ const webtoonRow = {
   cover_path: null,
   visibility: "draft" as const,
   settings: {},
+  revision: 2,
   created_at: "2026-01-01T00:00:00.000Z",
   updated_at: "2026-01-01T00:00:00.000Z",
 };
@@ -89,9 +90,19 @@ describe("createWebtoon", () => {
       coverPath: undefined,
       visibility: "draft",
       settings: {},
+      revision: 2,
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     });
+  });
+
+  test("falls back to revision 0 for rows predating the revision column", async () => {
+    const legacyRow = { ...webtoonRow, revision: undefined };
+    fromMock.mockReturnValueOnce(queryChain({ data: legacyRow, error: null }));
+
+    const webtoon = await createWebtoon({ title: "Titre" });
+
+    expect(webtoon.revision).toBe(0);
   });
 });
 

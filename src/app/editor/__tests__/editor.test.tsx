@@ -554,6 +554,117 @@ describe("Editor detail — hardened save (ED-1/ED-2)", () => {
   });
 });
 
+describe("Editor detail — optimistic revision lock", () => {
+  const WEBTOON_ID = "11111111-2222-4333-8444-555555555555";
+
+  function makeRevisionSection(id: string): SectionWithImages {
+    return {
+      id,
+      webtoonId: WEBTOON_ID,
+      position: 1,
+      type: "image",
+      config: { type: "image", imagePath: "test.webp", width: 800, height: 1200 },
+      audioPath: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      images: [],
+    };
+  }
+
+  function Seed({ sections }: { sections: SectionWithImages[] }) {
+    const { setSections, setIsDirty } = useEditorState();
+    React.useEffect(() => {
+      setSections(sections);
+      setIsDirty(true);
+    }, [sections, setSections, setIsDirty]);
+    return null;
+  }
+
+  function MakeDirty() {
+    const { setIsDirty } = useEditorState();
+    return (
+      <button
+        type="button"
+        data-testid="make-dirty"
+        onClick={() => setIsDirty(true)}
+      >
+        dirty
+      </button>
+    );
+  }
+
+  async function renderShell(initialRevision: number) {
+    const { EditorDetailLayoutContent } = await import(
+      "@/components/editor/EditorDetailShell"
+    );
+    const { EditorStateProvider } = await import(
+      "@/components/editor/EditorStateContext"
+    );
+    const seed = [makeRevisionSection("sec-1")];
+
+    render(
+      <NextIntlClientProvider locale="fr" messages={frMessages}>
+        <EditorStateProvider>
+          <EditorDetailLayoutContent
+            webtoonId={WEBTOON_ID}
+            initialRevision={initialRevision}
+          >
+            <Seed sections={seed} />
+            <MakeDirty />
+          </EditorDetailLayoutContent>
+        </EditorStateProvider>
+      </NextIntlClientProvider>,
+    );
+
+    await screen.findByRole("button", { name: "Enregistrer" });
+  }
+
+  test("sends the current revision and stores the one returned by the server", async () => {
+    vi.mocked(saveWebtoon)
+      .mockResolvedValueOnce({ ok: true, revision: 1 })
+      .mockResolvedValueOnce({ ok: true, revision: 2 });
+
+    await renderShell(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    await waitFor(() => {
+      expect(vi.mocked(saveWebtoon)).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(saveWebtoon).mock.calls[0][2]).toBe(0);
+
+    fireEvent.click(screen.getByTestId("make-dirty"));
+    const saveButton = screen.getByRole("button", { name: "Enregistrer" });
+    await waitFor(() => {
+      expect(saveButton).toBeEnabled();
+    });
+    fireEvent.click(saveButton);
+    await waitFor(() => {
+      expect(vi.mocked(saveWebtoon)).toHaveBeenCalledTimes(2);
+    });
+    expect(vi.mocked(saveWebtoon).mock.calls[1][2]).toBe(1);
+  });
+
+  test("a revision conflict shows the server message and a reload action", async () => {
+    vi.mocked(saveWebtoon).mockResolvedValueOnce({
+      ok: false,
+      conflict: true,
+      error:
+        "Ce webtoon a été modifié dans une autre session. Rechargez la page pour repartir de la dernière version.",
+    });
+
+    await renderShell(4);
+
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    const error = await screen.findByTestId("save-error");
+    expect(error).toHaveTextContent(/autre session/);
+    expect(
+      screen.getByRole("button", { name: "Recharger" }),
+    ).toBeInTheDocument();
+    expect(vi.mocked(saveWebtoon).mock.calls[0][2]).toBe(4);
+  });
+});
+
 describe("EditorCanvasClient — one-shot hydration (ED-14)", () => {
   function makeHydrationSection(id: string): SectionWithImages {
     return {
