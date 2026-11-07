@@ -2,8 +2,8 @@
 
 - **Branche** : `audit-hardening`
 - **Base audit** : commit `b11f916` + rapport `docs/AUDIT-2026-11-06.md`
-- **Dernier commit de code** : `a096e92`, poussé sur `origin/main`
-  (branche `audit-hardening` également poussée).
+- **Dernier commit de code** : `f545725` (signup/profils), poussé sur
+  `origin/main`. Production redéployée le 2026-11-07.
 - **Validation** : `npm test` 645 tests / 44 fichiers, `npm run lint` 0 erreur,
   `npm run typecheck` OK, `npm run build` OK, image Docker standalone testée
   (non-root, healthcheck, headers).
@@ -62,6 +62,10 @@
 - Double header éditeur supprimé (header unique par route, déconnexion conservée).
 - `getWebtoon` mémoïsé par requête, erreurs image mappées sur des clés i18n,
   `/api/health` ajouté.
+- **Inscription email/mot de passe** : `/signup`, login mot de passe + lien
+  magique, table `profiles` + trigger, page `/account`, lien « Mon compte »
+  dans l'éditeur. Migration `20261108_profiles.sql` appliquée en prod.
+  E2E réel signup → éditeur → compte → déconnexion → login mot de passe validé.
 
 ## Reste à faire (non bloquant)
 
@@ -95,8 +99,9 @@
    `/editor`, `/read`, une image Supabase (200) et les headers.
 8. Tester le magic link de bout en bout avec un compte réel.
 
-> **État au moment de la rédaction** : le code est poussé sur `main`, mais le
-> conteneur Dokploy `arneph-app-*` tournait encore l'ancienne image (11 h) et
-> `/api/health` répondait 404. Un redéploiement Dokploy est nécessaire après
-> application des migrations et configuration Auth. Ne pas considérer la
-> production comme à jour tant que `/api/health` ne répond pas 200.
+> **État au 2026-11-07** : migrations appliquées, image reconstruite et service
+> Swarm `arneph-app-vgglmn` mis à jour manuellement (Dokploy n'a pas
+> auto-déployé sur le push). Vérifié en prod : `/api/health` 200, `/signup` et
+> `/login` 200, `/account` redirige vers login, headers actifs, healthcheck
+> `healthy`. SMTP configuré et `AUTOCONFIRM=true` ; le clic réel d'un magic
+> link reste à tester avec une boîte mail réelle.
