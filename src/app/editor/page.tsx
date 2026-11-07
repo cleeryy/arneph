@@ -35,6 +35,12 @@ export default async function EditorPage() {
             >
               {t("readerLink")}
             </Link>
+            <Link
+              href="/account"
+              className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+            >
+              {t("account")}
+            </Link>
             <form action={signOut}>
               <button
                 type="submit"

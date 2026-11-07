@@ -40,11 +40,16 @@ on conflict (id) do update set
   allowed_mime_types = excluded.allowed_mime_types;
 
 -- ---------- Policies : retirer toute écriture anon ----------
+-- Les noms historiques de la prod self-hosted sont en minuscules
+-- (`allow_update`, `allow_delete`, `allow_upload`, `allow_select`) et
+-- s'appliquent à PUBLIC. On supprime les deux conventions pour être
+-- idempotent quel que soit l'état de départ.
+drop policy if exists "allow_update" on storage.objects;
+drop policy if exists "allow_delete" on storage.objects;
+drop policy if exists "allow_upload" on storage.objects;
+drop policy if exists "allow_select" on storage.objects;
 drop policy if exists "Allow anon update" on storage.objects;
 drop policy if exists "Allow anon delete" on storage.objects;
-
--- Recréation explicite `TO anon` : l'ancienne migration créait ces policies
--- sans clause `TO`, donc pour PUBLIC.
 drop policy if exists "Allow anon upload" on storage.objects;
 drop policy if exists "Allow anon select" on storage.objects;
 

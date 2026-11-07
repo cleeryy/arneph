@@ -4,7 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database";
 
 /**
- * Rafraîchit la session Supabase et protège les routes éditeur.
+ * Rafraîchit la session Supabase et protège les routes privées (éditeur et
+ * compte).
  *
  * Appelé une seule fois par requête depuis `src/proxy.ts` (proxy Next 16).
  * `getClaims()` valide le JWT (JWKS ou serveur Auth) alors que `getSession()`
@@ -58,10 +59,13 @@ export async function updateSession(request: NextRequest) {
   const claims = data?.claims ?? null;
 
   const { pathname, search } = request.nextUrl;
-  const isEditorRoute =
-    pathname === "/editor" || pathname.startsWith("/editor/");
+  const isProtectedRoute =
+    pathname === "/editor" ||
+    pathname.startsWith("/editor/") ||
+    pathname === "/account" ||
+    pathname.startsWith("/account/");
 
-  if (isEditorRoute && !claims) {
+  if (isProtectedRoute && !claims) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     loginUrl.search = "";

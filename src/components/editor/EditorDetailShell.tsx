@@ -319,6 +319,13 @@ export function EditorDetailLayoutContent({
             >
               {t("readerLink")}
             </Link>
+            <Link
+              href="/account"
+              onClick={guardLink}
+              className="text-sm font-medium text-muted-foreground underline-offset-4 hover:underline"
+            >
+              {t("account")}
+            </Link>
             <form action={signOut} onSubmit={guardSignOut}>
               <button
                 type="submit"
